@@ -1,21 +1,30 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Printer, Download } from "lucide-react";
-import { useAppContext } from "../context/AppContext"; // Adjust path if needed
+import {
+  ArrowLeft,
+  Printer,
+  Download,
+  RefreshCw,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import { useAppContext } from "../context/AppContext";
 import html2pdf from "html2pdf.js";
+import parse from "html-react-parser";
 
 const Preview = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const params = useParams(); // In case we load by ID URL
+  const params = useParams();
   const { axios, createrToken } = useAppContext();
   const componentRef = useRef(null);
+  const scalingWrapperRef = useRef(null);
 
-  // State to hold data (either passed via nav or fetched)
   const [data, setData] = useState(location.state || null);
   const [loading, setLoading] = useState(!location.state);
+  const [zoom, setZoom] = useState(1.0);
 
-  // --- Fetch Data if accessed directly via URL (Optional Fallback) ---
+  // --- Fetch data if URL accessed directly ---
   useEffect(() => {
     const loadData = async () => {
       if (!data && params.id) {
@@ -24,17 +33,16 @@ const Preview = () => {
             headers: { createrToken },
           });
           if (res.data.success) {
-            // Transform Backend Data Structure to Frontend State Structure
-            // (Reusing the populate logic from CreatePD would be ideal, but mapping here for display)
             const pd = res.data.pd;
             const s1 = pd.section1_info;
             const s2 = pd.section2_objectives;
             const s3 = pd.section3_structure;
             const s4 = pd.section4_electives;
 
-            const formattedData = {
+            setData({
               metaData: {
                 programName: s1.programName,
+                programCode: pd.programCode,
                 schemeYear: pd.schemeYear,
                 versionNo: pd.pdVersion,
                 effectiveAy: pd.effectiveAcademicYear,
@@ -89,8 +97,7 @@ const Preview = () => {
                   courses: g.courses,
                 })),
               },
-            };
-            setData(formattedData);
+            });
           }
         } catch (error) {
           console.error("Failed to load preview data");
@@ -102,642 +109,789 @@ const Preview = () => {
     loadData();
   }, [params.id, data, axios, createrToken]);
 
-  if (loading)
-    return <div className="p-10 text-center">Loading Preview...</div>;
-  if (!data) return <div className="p-10 text-center">No Data to Preview</div>;
+  // --- Zoom controls ---
+  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.1, 2.0));
+  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.1, 0.5));
 
-  const { pdData, metaData } = data;
+  // --- Browser print ---
+  const handlePrint = () => window.print();
 
-  // --- DOWNLOAD HANDLERS ---
-
-  const handlePrint = () => {
-    window.print();
-  };
-
+  // --- PDF generation (optimised) ---
   const handleDownloadPDF = () => {
     const element = componentRef.current;
+
+    // Disable zoom transform during capture
+    if (scalingWrapperRef.current) {
+      scalingWrapperRef.current.style.transform = "none";
+    }
+
     const opt = {
-      margin: [10, 10, 10, 10], // mm
-      filename: `PD_${metaData.programCode || "Doc"}_${metaData.versionNo}.pdf`,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      margin: [15, 15, 15, 15],
+      filename: `PD_${data?.metaData?.programCode || "Doc"}_v${data?.metaData?.versionNo || "1.0"}.pdf`,
+      image: { type: "jpeg", quality: 0.95 },
+      html2canvas: {
+        scale: 3, // crisp text, moderate file size
+        useCORS: true,
+        letterRendering: true,
+        scrollY: 0,
+        backgroundColor: "#ffffff",
+      },
+      jsPDF: {
+        unit: "mm",
+        format: "a4",
+        orientation: "portrait",
+        compress: true,
+      },
       pagebreak: { mode: ["css", "legacy"] },
     };
-    html2pdf().set(opt).from(element).save();
+
+    html2pdf()
+      .set(opt)
+      .from(element)
+      .save()
+      .then(() => {
+        // Restore zoom
+        if (scalingWrapperRef.current) {
+          scalingWrapperRef.current.style.transform = `scale(${zoom})`;
+        }
+      })
+      .catch((err) => {
+        console.error("PDF Error", err);
+        if (scalingWrapperRef.current) {
+          scalingWrapperRef.current.style.transform = `scale(${zoom})`;
+        }
+      });
   };
 
-  // --- STYLES (Exact copy of PHP CSS) ---
+  if (loading)
+    return (
+      <div className="flex justify-center items-center h-screen bg-gray-100">
+        <RefreshCw className="animate-spin text-gray-500" size={40} />
+      </div>
+    );
+  if (!data)
+    return (
+      <div className="p-10 text-center text-red-500 font-bold">
+        Error: No Data Found
+      </div>
+    );
+
+  const { pdData, metaData } = data;
+  const sumCredits = (courses) =>
+    courses.reduce((acc, c) => acc + (parseFloat(c.credits) || 0), 0);
+
+  // ========== STYLES – PURE BLACK & WHITE, GRAY HEADERS, NO UNDERLINES ==========
   const styles = `
-    @import url('https://fonts.googleapis.com/css2?family=Times+New+Roman&display=swap');
-    
-    .pd-preview-root {
-        font-family: 'Times New Roman', Times, serif;
-        color: #000;
+    /* Screen View */
+    .pd-preview-wrapper {
         background-color: #525659;
         padding: 40px 0;
         min-height: 100vh;
+        overflow: auto;
+        display: flex;
+        justify-content: center;
+        font-family: Arial, Helvetica, sans-serif;
     }
 
+    .scaling-wrapper {
+        transform-origin: top center;
+        transition: transform 0.2s ease;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+    }
+
+    /* A4 Container – perfect centered box */
     .doc-container {
-        width: 210mm; /* A4 Width */
-        min-height: 297mm; /* A4 Height */
-        margin: 0 auto;
-        padding: 15mm;
+        width: 210mm;
+        min-height: 297mm;
+        padding: 20mm;
         background-color: white;
-        box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
         box-sizing: border-box;
-        position: relative;
+        color: #000;
+        font-size: 10.5pt;
+        line-height: 1.5;
+        margin: 0 auto;
     }
 
-    /* Typography Matches */
+    /* Table Styles – crisp black borders, gray headers */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+        page-break-inside: auto;
+        border: 1px solid #000;
+    }
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+    tr { page-break-inside: avoid; page-break-after: auto; }
+    th, td {
+        border: 1px solid #000;
+        padding: 6px 8px;
+        text-align: left;
+        vertical-align: top;
+    }
+    th {
+        background-color: #f0f0f0; /* light gray – matches reference */
+        font-weight: bold;
+        text-align: center;
+        -webkit-print-color-adjust: exact;
+    }
+    td {
+        background-color: white;
+    }
+
+    /* Utilities */
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .text-justify { text-align: justify; }
+    .font-bold { font-weight: bold; }
+    .italic { font-style: italic; }
+    .uppercase { text-transform: uppercase; }
+    .mb-2 { margin-bottom: 0.5rem; }
+    .mb-4 { margin-bottom: 1rem; }
+
+    /* Fixed column widths */
+    .w-40px { width: 40px; text-align: center; }
+    .w-100px { width: 100px; }
+    .w-200px { width: 200px; font-weight: bold; }
+    .w-300px { width: 300px; font-weight: bold; }
+
+    /* Cover page – no underline, pure black */
+    .cover-page {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        height: 257mm; /* full A4 minus padding */
+        page-break-after: always;
+    }
     .uni-name {
         font-size: 36pt;
         font-weight: bold;
-        color: #800000; /* Dark Maroon */
+        color: #000;
         margin-bottom: 40px;
-        text-align: center;
+        text-transform: uppercase;
     }
     .doc-type-title {
         font-size: 22pt;
         font-weight: bold;
-        text-decoration: underline;
         margin-bottom: 5px;
-        text-align: center;
+        text-transform: uppercase;
+        /* no underline */
     }
     .scheme-title {
         font-size: 20pt;
         font-weight: bold;
         margin-bottom: 10px;
-        text-align: center;
+        text-transform: uppercase;
     }
     .sem-range {
         font-size: 16pt;
         margin-bottom: 60px;
-        text-align: center;
+        text-transform: uppercase;
     }
-    .prog-name-title {
+    .program-title {
         font-size: 24pt;
         font-weight: bold;
-        line-height: 1.2;
-        text-align: center;
-    }
-    
-    h1.internal-header {
-        text-align: center;
-        font-size: 16pt;
-        font-weight: bold;
-        margin: 0 0 5px 0;
-        color: #000;
+        line-height: 1.4;
+        margin-top: 40px;
         text-transform: uppercase;
     }
 
-    /* Table Styles */
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 20px;
-    }
-    th, td {
-        border: 1px solid #000;
-        padding: 8px 12px;
-        text-align: left;
-        vertical-align: top;
-        font-size: 11pt;
-        line-height: 1.4;
-    }
-    th {
-        background-color: #f0f0f0;
+    /* Internal headers – centered, bold, no underline */
+    h1.internal-header {
+        font-size: 18pt;
         font-weight: bold;
+        text-align: center;
+        text-transform: uppercase;
+        margin: 20px 0 10px;
     }
-    
-    /* Utility Classes */
-    .text-center { text-align: center; }
-    .text-right { text-align: right; }
-    .font-bold { font-weight: bold; }
-    .w-40px { width: 40px; }
-    .w-200px { width: 200px; }
-    .w-300px { width: 300px; }
-    .mt-15 { margin-top: 15px; }
-    .mb-10 { margin-bottom: 10px; }
-    .text-justify { text-align: justify; }
-    .page-break { page-break-after: always; }
-    .cover-page {
-        height: 90vh;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
+    h2.section-header {
+        font-size: 14pt;
+        font-weight: bold;
+        text-align: center;
+        margin: 30px 0 15px;
+        text-transform: uppercase;
+        /* no underline */
+    }
+    h3.sem-header {
+        font-size: 12pt;
+        font-weight: bold;
+        text-align: center;
+        margin: 15px 0 10px;
+        text-transform: uppercase;
     }
 
+    /* Page break control */
+    .page-break {
+        page-break-after: always;
+        display: block;
+        height: 0;
+    }
+
+    /* Print overrides – ensure gray headers print */
     @media print {
         .no-print { display: none !important; }
-        .pd-preview-root { padding: 0; background-color: white; }
-        .doc-container { box-shadow: none; margin: 0; width: 100%; }
+        .pd-preview-wrapper { background-color: white; padding: 0; }
+        .scaling-wrapper { transform: none !important; }
+        .doc-container { box-shadow: none; margin: 0; width: 100%; padding: 10mm; }
         @page { size: A4; margin: 15mm; }
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        th { background-color: #f0f0f0 !important; }
     }
   `;
 
   return (
-    <div className="pd-preview-root">
+    <div className="pd-preview-wrapper">
       <style>{styles}</style>
 
-      {/* Toolbar - No Print */}
-      <div className="no-print fixed top-0 left-0 right-0 bg-white shadow-md p-4 flex justify-between items-center z-50">
+      {/* Toolbar – no-print */}
+      <div className="no-print fixed top-0 left-0 right-0 bg-white border-b shadow-sm p-2 flex justify-between items-center z-50 px-4 h-14">
         <button
           onClick={() => navigate(-1)}
           className="flex items-center gap-2 text-gray-700 hover:text-black font-medium"
         >
-          <ArrowLeft size={20} /> Back to Editor
+          <ArrowLeft size={18} /> Back
         </button>
-        <div className="flex gap-3">
+
+        <div className="flex items-center gap-2 bg-gray-100 rounded px-2 py-1">
+          <button
+            onClick={handleZoomOut}
+            className="p-1 hover:bg-gray-200 rounded"
+          >
+            <ZoomOut size={16} />
+          </button>
+          <span className="text-xs font-semibold w-10 text-center">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            onClick={handleZoomIn}
+            className="p-1 hover:bg-gray-200 rounded"
+          >
+            <ZoomIn size={16} />
+          </button>
+        </div>
+
+        <div className="flex gap-2">
           <button
             onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
           >
-            <Printer size={18} /> Print / Save as PDF
+            <Printer size={16} /> Print
           </button>
           <button
             onClick={handleDownloadPDF}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 transition"
+            className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 text-white rounded text-sm hover:bg-gray-900"
           >
-            <Download size={18} /> Download
+            <Download size={16} /> PDF
           </button>
         </div>
       </div>
 
-      {/* PREVIEW CONTENT START */}
-      <div ref={componentRef} className="doc-container">
-        {/* --- COVER PAGE --- */}
-        <div className="cover-page page-break">
-          <div className="uni-name">{pdData.details.university}</div>
-          <div className="doc-type-title">PROGRAM DOCUMENT</div>
-          <div className="scheme-title">{metaData.schemeYear} SCHEME</div>
-          <div className="sem-range">I - VIII SEMESTER</div>
-
-          <div style={{ marginTop: "20px" }}>
-            <div className="prog-name-title">
-              {pdData.award.title.toUpperCase() || metaData.programName}
+      {/* Scaling wrapper – zoom only affects preview */}
+      <div
+        ref={scalingWrapperRef}
+        className="scaling-wrapper"
+        style={{ transform: `scale(${zoom})`, marginTop: "60px" }}
+      >
+        {/* Document container – captured for PDF */}
+        <div ref={componentRef} className="doc-container">
+          {/* ---------- COVER PAGE ---------- */}
+          <div className="cover-page">
+            <div className="uni-name">{pdData.details.university}</div>
+            <div className="doc-type-title">PROGRAM DOCUMENT</div>
+            <div className="scheme-title">{metaData.schemeYear} SCHEME</div>
+            <div className="sem-range">I - VIII SEMESTER</div>
+            <div className="program-title">
+              {pdData.award.title?.toUpperCase() ||
+                metaData.programName?.toUpperCase() ||
+                "PROGRAM NAME"}
+            </div>
+            <div
+              style={{
+                marginTop: "80px",
+                fontSize: "14pt",
+                fontWeight: "bold",
+              }}
+            >
+              {pdData.details.school}
+              <br />
+              {pdData.details.faculty}
             </div>
           </div>
-        </div>
 
-        {/* --- PAGE 2: DETAILS --- */}
-        <h1 className="internal-header">{pdData.details.program_name}</h1>
-        <div
-          style={{
-            textAlign: "center",
-            marginBottom: "30px",
-            fontWeight: "bold",
-            fontSize: "11pt",
-            color: "#666",
-          }}
-        >
-          Version: {metaData.versionNo}
-          {metaData.effectiveAy &&
-            ` | Effective Academic Year: ${metaData.effectiveAy}`}
-        </div>
+          {/* ---------- PROGRAM & AWARD DETAILS ---------- */}
+          <h1 className="internal-header">{pdData.details.program_name}</h1>
+          <div
+            className="text-center font-bold mb-4"
+            style={{ fontSize: "11pt" }}
+          >
+            Version: {metaData.versionNo}{" "}
+            {metaData.effectiveAy &&
+              `| Effective Academic Year: ${metaData.effectiveAy}`}
+          </div>
 
-        {/* Info Table */}
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-200px font-bold">Faculty</td>
-              <td>{pdData.details.faculty}</td>
-            </tr>
-            <tr>
-              <td className="font-bold">School</td>
-              <td>{pdData.details.school}</td>
-            </tr>
-            <tr>
-              <td className="font-bold">Department</td>
-              <td>{pdData.details.department}</td>
-            </tr>
-            <tr>
-              <td className="font-bold">Director of School</td>
-              <td>{pdData.details.director}</td>
-            </tr>
-            <tr>
-              <td className="font-bold">Head of Department</td>
-              <td>{pdData.details.hod}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        {/* Specs Table */}
-        <table>
-          <tbody>
-            {[
-              {
-                id: "1.",
-                label: "Title of the Award",
-                val: pdData.award.title,
-              },
-              { id: "2.", label: "Modes of Study", val: pdData.award.mode },
-              {
-                id: "3.",
-                label: "Awarding Institution /Body",
-                val: pdData.award.awarding_body,
-              },
-              { id: "4.", label: "Joint Award", val: pdData.award.joint_award },
-              {
-                id: "5.",
-                label: "Teaching Institution",
-                val: pdData.award.teaching_institution,
-              },
-              {
-                id: "6.",
-                label: "Date of Program Specifications",
-                val: pdData.award.date_program_specs,
-              },
-              {
-                id: "7.",
-                label: "Date of Course Approval",
-                val: pdData.award.date_approval,
-              },
-              {
-                id: "8.",
-                label: "Next Review Date",
-                val: pdData.award.next_review,
-              },
-              {
-                id: "9.",
-                label: "Program Approving Body",
-                val: pdData.award.approving_body,
-              },
-              {
-                id: "10.",
-                label: "Program Accredited Body",
-                val: pdData.award.accredited_body,
-              },
-              {
-                id: "11.",
-                label: "Grade Awarded",
-                val: pdData.award.accreditation_grade,
-              },
-              {
-                id: "12.",
-                label: "Accreditation Validity",
-                val: pdData.award.accreditation_validity,
-              },
-              {
-                id: "13.",
-                label: "Program Benchmark",
-                val: pdData.award.benchmark,
-              },
-            ].map((row) => (
-              <tr key={row.id}>
-                <td className="w-40px text-center font-bold">{row.id}</td>
-                <td className="w-300px font-bold">{row.label}</td>
-                <td>{row.val}</td>
+          <table>
+            <tbody>
+              <tr>
+                <td className="w-200px">Faculty</td>
+                <td>{pdData.details.faculty}</td>
               </tr>
-            ))}
-          </tbody>
-        </table>
+              <tr>
+                <td className="w-200px">School</td>
+                <td>{pdData.details.school}</td>
+              </tr>
+              <tr>
+                <td className="w-200px">Department</td>
+                <td>{pdData.details.department}</td>
+              </tr>
+              <tr>
+                <td className="w-200px">Program</td>
+                <td>{pdData.details.program_name}</td>
+              </tr>
+              <tr>
+                <td className="w-200px">Director of School</td>
+                <td>{pdData.details.director}</td>
+              </tr>
+              <tr>
+                <td className="w-200px">Head of Department</td>
+                <td>{pdData.details.hod}</td>
+              </tr>
+            </tbody>
+          </table>
 
-        {/* --- SECTION 14: OVERVIEW --- */}
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-40px text-center font-bold">14.</td>
-              <td colSpan="2">
-                <div className="font-bold mb-10">Program Overview</div>
-                <div className="text-justify whitespace-pre-wrap">
-                  {pdData.overview}
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+          <table>
+            <tbody>
+              {[
+                {
+                  id: "1.",
+                  label: "Title of the Award",
+                  val: pdData.award.title,
+                },
+                { id: "2.", label: "Modes of Study", val: pdData.award.mode },
+                {
+                  id: "3.",
+                  label: "Awarding Institution / Body",
+                  val: pdData.award.awarding_body,
+                },
+                {
+                  id: "4.",
+                  label: "Joint Award",
+                  val: pdData.award.joint_award,
+                },
+                {
+                  id: "5.",
+                  label: "Teaching Institution",
+                  val: pdData.award.teaching_institution,
+                },
+                {
+                  id: "6.",
+                  label: "Date of Program Specifications",
+                  val: pdData.award.date_program_specs,
+                },
+                {
+                  id: "7.",
+                  label: "Date of Course Approval",
+                  val: pdData.award.date_approval,
+                },
+                {
+                  id: "8.",
+                  label: "Next Review Date",
+                  val: pdData.award.next_review,
+                },
+                {
+                  id: "9.",
+                  label: "Program Approving Body",
+                  val: pdData.award.approving_body,
+                },
+                {
+                  id: "10.",
+                  label: "Program Accredited Body",
+                  val: pdData.award.accredited_body,
+                },
+                {
+                  id: "11.",
+                  label: "Grade Awarded",
+                  val: pdData.award.accreditation_grade,
+                },
+                {
+                  id: "12.",
+                  label: "Accreditation Validity",
+                  val: pdData.award.accreditation_validity,
+                },
+                {
+                  id: "13.",
+                  label: "Program Benchmark",
+                  val: pdData.award.benchmark,
+                },
+              ].map((row) => (
+                <tr key={row.id}>
+                  <td className="w-40px font-bold">{row.id}</td>
+                  <td className="w-300px">{row.label}</td>
+                  <td>{row.val || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
-        {/* --- SECTION 15: PEOs --- */}
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-40px text-center font-bold">15.</td>
-              <td colSpan="2">
-                <div className="font-bold mb-10">
-                  Program Educational Objectives (PEOs)
-                </div>
-                <div className="mt-15">
-                  {pdData.peos.map(
-                    (peo, i) =>
-                      peo && (
-                        <div key={i} className="mb-10 text-justify">
-                          <span className="font-bold">PEO-{i + 1}: </span> {peo}
-                        </div>
-                      ),
+          {/* 14. PROGRAM OVERVIEW */}
+          <table>
+            <tbody>
+              <tr>
+                <td className="w-40px font-bold">14.</td>
+                <td>
+                  <div className="font-bold mb-2">PROGRAM OVERVIEW</div>
+                  <div className="text-justify">
+                    {parse(pdData.overview || "")}
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* 15. PEOs */}
+          <table>
+            <tbody>
+              <tr>
+                <td className="w-40px font-bold">15.</td>
+                <td>
+                  <div className="font-bold mb-2">
+                    PROGRAM EDUCATIONAL OBJECTIVES (PEOs)
+                  </div>
+                  {pdData.peos.map((peo, i) =>
+                    peo ? (
+                      <div
+                        key={i}
+                        style={{
+                          marginBottom: "8px",
+                          display: "flex",
+                          gap: "5px",
+                        }}
+                      >
+                        <span className="font-bold">PEO-{i + 1}:</span>
+                        <span>{parse(peo)}</span>
+                      </div>
+                    ) : null,
                   )}
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
-        {/* --- SECTION 16: POs --- */}
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-40px text-center font-bold">16.</td>
-              <td colSpan="2">
-                <div className="font-bold mb-10">Program Outcomes (POs)</div>
-                <div>
-                  {pdData.pos.map((po, i) => (
-                    <div key={i} className="mb-10 text-justify">
-                      <span className="font-bold">PO-{i + 1}: </span> {po}
-                    </div>
-                  ))}
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        {/* --- SECTION 17: PSOs --- */}
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-40px text-center font-bold">17.</td>
-              <td colSpan="2">
-                <div className="font-bold mb-10">
-                  Program Specific Outcomes (PSOs)
-                </div>
-                <p
-                  className="mb-10 italic text-justify"
-                  style={{ fontSize: "11pt" }}
-                >
-                  Upon successful completion of the program, graduates will
-                  possess the capability to:
-                </p>
-                <div>
-                  {pdData.psos.map(
-                    (pso, i) =>
-                      pso && (
-                        <div key={i} className="mb-10 text-justify">
-                          <span className="font-bold">PSO-{i + 1}: </span> {pso}
-                        </div>
-                      ),
+          {/* 16. POs */}
+          <table>
+            <tbody>
+              <tr>
+                <td className="w-40px font-bold">16.</td>
+                <td>
+                  <div className="font-bold mb-2">PROGRAM OUTCOMES (POs)</div>
+                  {pdData.pos.map((po, i) =>
+                    po ? (
+                      <div
+                        key={i}
+                        style={{
+                          marginBottom: "8px",
+                          display: "flex",
+                          gap: "5px",
+                        }}
+                      >
+                        <span className="font-bold">PO-{i + 1}:</span>
+                        <span>{parse(po)}</span>
+                      </div>
+                    ) : null,
                   )}
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
-        {/* --- SECTION 18: STRUCTURE --- */}
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-40px text-center font-bold">18.</td>
-              <td colSpan="2">
-                <div className="font-bold mb-10">Programme Structure</div>
-                <div className="mb-10" style={{ fontSize: "10.5pt" }}>
-                  <span className="font-bold underline">
-                    Definition of Credit:
-                  </span>
-                  <br />1 Hr. Lecture (L) per week : {pdData.credit_def.L}{" "}
-                  Credit | 2 Hr. Tutorial (T) per week : {pdData.credit_def.T}{" "}
-                  Credit | 2 Hr. Practical (P) per week : {pdData.credit_def.P}{" "}
-                  Credit
-                </div>
+          {/* 17. PSOs */}
+          <table>
+            <tbody>
+              <tr>
+                <td className="w-40px font-bold">17.</td>
+                <td>
+                  <div className="font-bold mb-2">
+                    PROGRAM SPECIFIC OUTCOMES (PSOs)
+                  </div>
+                  <p className="italic mb-2">
+                    Upon successful completion of the program, graduates will
+                    possess the capability to:
+                  </p>
+                  {pdData.psos.map((pso, i) =>
+                    pso ? (
+                      <div
+                        key={i}
+                        style={{
+                          marginBottom: "8px",
+                          display: "flex",
+                          gap: "5px",
+                        }}
+                      >
+                        <span className="font-bold">PSO-{i + 1}:</span>
+                        <span>{parse(pso)}</span>
+                      </div>
+                    ) : null,
+                  )}
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
+          {/* 18. PROGRAMME STRUCTURE */}
+          <table>
+            <tbody>
+              <tr>
+                <td className="w-40px font-bold">18.</td>
+                <td>
+                  <div className="font-bold mb-2">PROGRAMME STRUCTURE</div>
+                  <div
+                    className="mb-4 p-2 border"
+                    style={{
+                      border: "1px solid black",
+                      backgroundColor: "#fafafa",
+                    }}
+                  >
+                    <span className="font-bold">Definition of Credit:</span>
+                    <br />1 Hr. Lecture (L) per week : {
+                      pdData.credit_def.L
+                    }{" "}
+                    Credit |&nbsp; 2 Hr. Tutorial (T) per week :{" "}
+                    {pdData.credit_def.T} Credit |&nbsp; 2 Hr. Practical (P) per
+                    week : {pdData.credit_def.P} Credit
+                  </div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Category Name</th>
+                        <th className="text-center">Credits</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pdData.structure_table.map((row, i) => (
+                        <tr key={i}>
+                          <td>{row.category || "—"}</td>
+                          <td className="text-center">{row.credits ?? 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr
+                        style={{
+                          backgroundColor: "#f0f0f0",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        <td
+                          className="text-right"
+                          style={{ paddingRight: "15px" }}
+                        >
+                          Total Credits:
+                        </td>
+                        <td className="text-center">
+                          {pdData.structure_table.reduce(
+                            (acc, r) => acc + (parseFloat(r.credits) || 0),
+                            0,
+                          )}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* 19. CREDIT DEFINITIONS (L-T-P) */}
+          <table>
+            <tbody>
+              <tr>
+                <td className="w-40px font-bold">19.</td>
+                <td>
+                  <div className="font-bold mb-2">
+                    CREDIT DEFINITIONS (L-T-P)
+                  </div>
+                  <table style={{ width: "60%", margin: "0 auto" }}>
+                    <thead>
+                      <tr>
+                        <th>Component</th>
+                        <th>Credits</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="text-center">Lecture</td>
+                        <td className="text-center">{pdData.credit_def.L}</td>
+                      </tr>
+                      <tr>
+                        <td className="text-center">Tutorial</td>
+                        <td className="text-center">{pdData.credit_def.T}</td>
+                      </tr>
+                      <tr>
+                        <td className="text-center">Practical</td>
+                        <td className="text-center">{pdData.credit_def.P}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div className="page-break"></div>
+
+          {/* 20. SEMESTER-WISE COURSES */}
+          <h2 className="section-header">20. SEMESTER-WISE COURSES</h2>
+          {pdData.semesters.map((sem) =>
+            sem.courses.length > 0 ? (
+              <div
+                key={sem.sem_no}
+                style={{ marginBottom: "25px", pageBreakInside: "avoid" }}
+              >
+                <h3 className="sem-header">Semester {sem.sem_no}</h3>
                 <table>
                   <thead>
                     <tr>
-                      <th>Category Name</th>
-                      <th>Credits</th>
+                      <th className="w-40px">S.No</th>
+                      <th className="w-100px">Code</th>
+                      <th>Course Title</th>
+                      <th className="w-40px">Cr</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {pdData.structure_table.map((row, i) => (
+                    {sem.courses.map((c, i) => (
                       <tr key={i}>
-                        <td>{row.category}</td>
-                        <td className="text-center">{row.credits}</td>
+                        <td className="text-center">{i + 1}</td>
+                        <td>{c.code || "—"}</td>
+                        <td>{c.title || "—"}</td>
+                        <td className="text-center">{c.credits ?? 0}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr style={{ backgroundColor: "#f8f9fa" }}>
+                    <tr
+                      style={{ backgroundColor: "#f0f0f0", fontWeight: "bold" }}
+                    >
                       <td
-                        className="text-right font-bold"
+                        colSpan="3"
+                        className="text-right"
                         style={{ paddingRight: "15px" }}
                       >
-                        Total Credits:
+                        Total:
                       </td>
-                      <td className="text-center font-bold">
-                        {pdData.structure_table.reduce(
-                          (acc, curr) => acc + (parseInt(curr.credits) || 0),
-                          0,
-                        )}
-                      </td>
+                      <td className="text-center">{sumCredits(sem.courses)}</td>
                     </tr>
                   </tfoot>
                 </table>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              </div>
+            ) : null,
+          )}
 
-        {/* --- SECTION 19: CREDIT DEF (Table) --- */}
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-40px text-center font-bold">19.</td>
-              <td colSpan="2">
-                <div className="font-bold mt-15 mb-10">
-                  Credit Definitions (L-T-P)
+          <div className="page-break"></div>
+
+          {/* 21. PROFESSIONAL ELECTIVES */}
+          {pdData.prof_electives.length > 0 && (
+            <>
+              <h2 className="section-header">21. PROFESSIONAL ELECTIVES</h2>
+              {pdData.prof_electives.map((group, i) => (
+                <div
+                  key={i}
+                  style={{ marginBottom: "25px", pageBreakInside: "avoid" }}
+                >
+                  <div
+                    style={{
+                      fontWeight: "bold",
+                      marginBottom: "8px",
+                      fontSize: "11pt",
+                    }}
+                  >
+                    {group.title} (Semester {group.sem})
+                  </div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th className="w-40px">#</th>
+                        <th className="w-100px">Code</th>
+                        <th>Title</th>
+                        <th className="w-40px">Cr</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.courses.map((c, idx) => (
+                        <tr key={idx}>
+                          <td className="text-center">{idx + 1}</td>
+                          <td>{c.code || "—"}</td>
+                          <td>{c.title || "—"}</td>
+                          <td className="text-center">{c.credits ?? 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Component</th>
-                      <th>Credits</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="text-center">Lecture</td>
-                      <td className="text-center">{pdData.credit_def.L}</td>
-                    </tr>
-                    <tr>
-                      <td className="text-center">Tutorial</td>
-                      <td className="text-center">{pdData.credit_def.T}</td>
-                    </tr>
-                    <tr>
-                      <td className="text-center">Practical</td>
-                      <td className="text-center">{pdData.credit_def.P}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              ))}
+            </>
+          )}
 
-        {/* --- SECTION 20: SEMESTER COURSES --- */}
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-40px text-center font-bold">20.</td>
-              <td colSpan="2">
-                <div className="font-bold mb-10">Semester-wise Courses</div>
-                {pdData.semesters.map(
-                  (sem) =>
-                    sem.courses.length > 0 && (
-                      <div key={sem.sem_no}>
-                        <h3
-                          style={{
-                            margin: "15px 0 10px 0",
-                            fontSize: "11pt",
-                            fontWeight: "bold",
-                          }}
-                        >
-                          Semester {sem.sem_no}
-                        </h3>
-                        <table>
-                          <thead>
-                            <tr>
-                              <th className="w-40px">S.No</th>
-                              <th style={{ width: "100px" }}>Code</th>
-                              <th>Title</th>
-                              <th style={{ width: "50px" }}>Credits</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sem.courses.map((course, i) => (
-                              <tr key={i}>
-                                <td className="text-center">{i + 1}</td>
-                                <td>{course.code}</td>
-                                <td>{course.title}</td>
-                                <td className="text-center">
-                                  {course.credits}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          <tfoot>
-                            <tr style={{ backgroundColor: "#f8f9fa" }}>
-                              <td
-                                colSpan="3"
-                                className="text-right font-bold"
-                                style={{ paddingRight: "15px" }}
-                              >
-                                Total Credits:
-                              </td>
-                              <td className="text-center font-bold">
-                                {sem.courses.reduce(
-                                  (acc, curr) =>
-                                    acc + (parseInt(curr.credits) || 0),
-                                  0,
-                                )}
-                              </td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-                    ),
-                )}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+          {/* 22. OPEN ELECTIVES */}
+          {pdData.open_electives.length > 0 && (
+            <>
+              <h2 className="section-header">22. OPEN ELECTIVES</h2>
+              {pdData.open_electives.map((group, i) => (
+                <div
+                  key={i}
+                  style={{ marginBottom: "25px", pageBreakInside: "avoid" }}
+                >
+                  <div
+                    style={{
+                      fontWeight: "bold",
+                      marginBottom: "8px",
+                      fontSize: "11pt",
+                    }}
+                  >
+                    {group.title} (Semester {group.sem})
+                  </div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th className="w-40px">#</th>
+                        <th className="w-100px">Code</th>
+                        <th>Title</th>
+                        <th className="w-40px">Cr</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.courses.map((c, idx) => (
+                        <tr key={idx}>
+                          <td className="text-center">{idx + 1}</td>
+                          <td>{c.code || "—"}</td>
+                          <td>{c.title || "—"}</td>
+                          <td className="text-center">{c.credits ?? 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </>
+          )}
 
-        {/* --- SECTION 21: PROFESSIONAL ELECTIVES --- */}
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-40px text-center font-bold">21.</td>
-              <td colSpan="2">
-                <div className="font-bold mb-10">Professional Electives</div>
-                {pdData.prof_electives.length > 0 ? (
-                  pdData.prof_electives.map((group, i) => (
-                    <div key={i} className="mb-10">
-                      <div className="font-bold mb-10 italic">
-                        {group.title} (Sem {group.sem})
-                      </div>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th className="w-40px">#</th>
-                            <th>Code</th>
-                            <th>Title</th>
-                            <th>Credits</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.courses.map((c, idx) => (
-                            <tr key={idx}>
-                              <td className="text-center">{idx + 1}</td>
-                              <td>{c.code}</td>
-                              <td>{c.title}</td>
-                              <td className="text-center">{c.credits}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ))
-                ) : (
-                  <p className="italic text-gray-500">None specified</p>
-                )}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        {/* --- SECTION 22: OPEN ELECTIVES --- */}
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-40px text-center font-bold">22.</td>
-              <td colSpan="2">
-                <div className="font-bold mb-10">Open Electives</div>
-                {pdData.open_electives.length > 0 ? (
-                  pdData.open_electives.map((group, i) => (
-                    <div key={i} className="mb-10">
-                      <div className="font-bold mb-10 italic">
-                        {group.title} (Sem {group.sem})
-                      </div>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th className="w-40px">#</th>
-                            <th>Code</th>
-                            <th>Title</th>
-                            <th>Credits</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.courses.map((c, idx) => (
-                            <tr key={idx}>
-                              <td className="text-center">{idx + 1}</td>
-                              <td>{c.code}</td>
-                              <td>{c.title}</td>
-                              <td className="text-center">{c.credits}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ))
-                ) : (
-                  <p className="italic text-gray-500">None specified</p>
-                )}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        {/* --- FOOTER --- */}
-        <div
-          style={{
-            marginTop: "50px",
-            textAlign: "center",
-            fontSize: "9pt",
-            color: "#999",
-          }}
-        >
-          <p>Generated by CDMS Program Document System</p>
+          {/* FOOTER */}
+          <div
+            style={{
+              marginTop: "50px",
+              textAlign: "center",
+              fontSize: "8pt",
+              color: "#666",
+              borderTop: "1px solid #ccc",
+              paddingTop: "10px",
+            }}
+          >
+            Generated by CDMS Program Document System •{" "}
+            {new Date().toLocaleDateString()}
+          </div>
         </div>
       </div>
     </div>
