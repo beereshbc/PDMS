@@ -39,9 +39,11 @@ import {
   ArrowLeft,
   ChevronRight,
   RotateCcw,
+  UploadCloud,
+  FileUp,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import html2pdf from "html2pdf.js";
 
 // --- REACT 19 COMPATIBLE EDITOR ---
@@ -213,15 +215,18 @@ const ProgressSummary = React.memo(({ metaData, pdData, activeStep }) => {
 const CreatePD = () => {
   const navigate = useNavigate();
   const { axios, createrToken } = useAppContext();
+  const location = useLocation();
 
   // UI State
   const [activeStep, setActiveStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false); // For import loading state
   const [searchProgram, setSearchProgram] = useState("");
   const [showProgramDropdown, setShowProgramDropdown] = useState(false);
   const [recentVersions, setRecentVersions] = useState([]);
   const previewRef = useRef(null);
   const editorRef = useRef(null);
+  const fileInputRef = useRef(null); // Ref for file input
 
   // Dirty State Tracking
   const [dirtySections, setDirtySections] = useState(new Set());
@@ -283,6 +288,15 @@ const CreatePD = () => {
       program.code.toLowerCase().includes(searchProgram.toLowerCase()) ||
       program.name.toLowerCase().includes(searchProgram.toLowerCase()),
   );
+  useEffect(() => {
+    // Check if we navigated here with a 'loadId' (from History or Dashboard)
+    if (location.state && location.state.loadId) {
+      const idToLoad = location.state.loadId;
+      // Clear the state to prevent reloading on simple refreshes if desired,
+      // but keeping it is fine for now.
+      fetchFullPD(idToLoad);
+    }
+  }, [location.state]);
 
   // --- API HANDLERS ---
   const fetchRecentVersions = async (progCode) => {
@@ -325,6 +339,8 @@ const CreatePD = () => {
       });
       if (data.success) {
         populateForm(data.pd);
+        // Also fetch history for this program code
+        fetchRecentVersions(data.pd.programCode);
         toast.success(`Loaded version ${data.pd.pdVersion}`);
       } else {
         toast.error(data.message);
@@ -335,6 +351,189 @@ const CreatePD = () => {
       setLoading(false);
     }
   };
+  // --- FILE IMPORT HANDLER ---
+  // ... inside CreatePD component
+
+  // --- FILE IMPORT HANDLER (ENHANCED) ---
+  const handleFileUpload = async (e) => {
+    alert(
+      "Select Program in below dropdown before importing. Imported data will merge with current form values, preserving existing data where possible.",
+    );
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      return toast.error("Only PDF files are supported for import.");
+    }
+
+    setImporting(true);
+    const formData = new FormData();
+    formData.append("pdFile", file);
+
+    try {
+      const { data } = await axios.post("/api/creater/pd/import", formData, {
+        headers: {
+          createrToken,
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      if (data.success) {
+        const imported = data.parsedData;
+
+        // Deep merge imported data into current pdData, preserving defaults
+        setPdData((prev) => {
+          const newData = { ...prev };
+
+          // 1. Details (only overwrite non-empty values)
+          if (imported.details) {
+            newData.details = { ...prev.details, ...imported.details };
+          }
+
+          // 2. Award
+          if (imported.award) {
+            newData.award = { ...prev.award, ...imported.award };
+          }
+
+          // 3. Overview (string)
+          if (imported.overview) {
+            newData.overview = imported.overview;
+          }
+
+          // 4. PEOs – ensure at least 3 slots
+          if (Array.isArray(imported.peos) && imported.peos.length > 0) {
+            newData.peos = [...imported.peos];
+            while (newData.peos.length < 3) newData.peos.push("");
+          }
+
+          // 5. POs – if empty, keep existing (or STANDARD_POS)
+          if (Array.isArray(imported.pos) && imported.pos.length > 0) {
+            newData.pos = [...imported.pos];
+          }
+
+          // 6. PSOs – ensure at least 3 slots
+          if (Array.isArray(imported.psos) && imported.psos.length > 0) {
+            newData.psos = [...imported.psos];
+            while (newData.psos.length < 3) newData.psos.push("");
+          }
+
+          // 7. Credit definitions
+          if (imported.credit_def) {
+            newData.credit_def = { ...prev.credit_def, ...imported.credit_def };
+          }
+
+          // 8. Structure table
+          if (Array.isArray(imported.structure_table)) {
+            newData.structure_table = imported.structure_table.map((row) => ({
+              category: row.category || "",
+              credits: row.credits || 0,
+              code: row.code || "",
+            }));
+          }
+
+          // 9. Semesters – replace with imported ones, but ensure 8 semesters exist
+          if (
+            Array.isArray(imported.semesters) &&
+            imported.semesters.length > 0
+          ) {
+            // Merge by semester number to avoid duplicates
+            const mergedSemesters = [...prev.semesters];
+            imported.semesters.forEach((importedSem) => {
+              const existingIndex = mergedSemesters.findIndex(
+                (s) => s.sem_no === importedSem.sem_no,
+              );
+              if (existingIndex >= 0) {
+                mergedSemesters[existingIndex] = {
+                  ...mergedSemesters[existingIndex],
+                  ...importedSem,
+                  courses: importedSem.courses.map((c) => ({
+                    code: c.code || "",
+                    title: c.title || "",
+                    credits: c.credits || 0,
+                    type: c.type || "Theory",
+                    category: c.category || "Core",
+                  })),
+                };
+              } else {
+                mergedSemesters.push({
+                  sem_no: importedSem.sem_no,
+                  courses: importedSem.courses.map((c) => ({
+                    code: c.code || "",
+                    title: c.title || "",
+                    credits: c.credits || 0,
+                    type: c.type || "Theory",
+                    category: c.category || "Core",
+                  })),
+                });
+              }
+            });
+            // Sort and ensure 8 semesters
+            mergedSemesters.sort((a, b) => a.sem_no - b.sem_no);
+            while (mergedSemesters.length < 8) {
+              mergedSemesters.push({
+                sem_no: mergedSemesters.length + 1,
+                courses: [],
+              });
+            }
+            newData.semesters = mergedSemesters;
+          }
+
+          // 10. Professional electives
+          if (Array.isArray(imported.prof_electives)) {
+            newData.prof_electives = imported.prof_electives.map((g) => ({
+              sem: g.sem || 1,
+              title:
+                g.title || `Professional Electives - Semester ${g.sem || 1}`,
+              courses: (g.courses || []).map((c) => ({
+                code: c.code || "",
+                title: c.title || "",
+                credits: c.credits || 3,
+              })),
+            }));
+          }
+
+          // 11. Open electives
+          if (Array.isArray(imported.open_electives)) {
+            newData.open_electives = imported.open_electives.map((g) => ({
+              sem: g.sem || 1,
+              title: g.title || `Open Electives - Semester ${g.sem || 1}`,
+              courses: (g.courses || []).map((c) => ({
+                code: c.code || "",
+                title: c.title || "",
+                credits: c.credits || 3,
+              })),
+            }));
+          }
+
+          return newData;
+        });
+
+        // Update metadata if program name exists
+        if (imported.details?.program_name) {
+          setMetaData((prev) => ({
+            ...prev,
+            programName: imported.details.program_name,
+          }));
+        }
+
+        // Mark all sections as dirty so they can be saved
+        setDirtySections(
+          new Set(["section1", "section2", "section3", "section4"]),
+        );
+        toast.success("Document imported successfully! Review the data below.");
+      } else {
+        toast.error(data.message || "Import failed");
+      }
+    } catch (error) {
+      console.error("Import Error:", error);
+      toast.error("Server error during import.");
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  // Make sure to keep the rest of the component unchanged
 
   const populateForm = (pd) => {
     const s1 = pd.section1_info;
@@ -407,7 +606,7 @@ const CreatePD = () => {
     setDirtySections(new Set());
   };
 
-  // --- FORM HANDLERS (with useCallback for performance) ---
+  // --- FORM HANDLERS ---
   const handleMetaChange = useCallback((e) => {
     const { name, value } = e.target;
     setMetaData((prev) => ({ ...prev, [name]: value }));
@@ -424,7 +623,6 @@ const CreatePD = () => {
     [markDirty],
   );
 
-  // Rich Text
   const handleOverviewChange = useCallback(
     (content) => {
       if (content !== pdData.overview) {
@@ -435,7 +633,6 @@ const CreatePD = () => {
     [pdData.overview, markDirty],
   );
 
-  // Generic array handlers (PEOs, PSOs, etc.)
   const handleArrayChange = useCallback(
     (key, index, content) => {
       markDirty("section2");
@@ -467,11 +664,8 @@ const CreatePD = () => {
     [markDirty],
   );
 
-  // ----- PO specific handlers -----
-  const addPO = useCallback(() => {
-    addArrayItem("pos", "");
-  }, [addArrayItem]);
-
+  // PO handlers
+  const addPO = useCallback(() => addArrayItem("pos", ""), [addArrayItem]);
   const removePO = useCallback(
     (index) => {
       if (pdData.pos.length <= 1) {
@@ -484,7 +678,6 @@ const CreatePD = () => {
     },
     [pdData.pos.length, removeArrayItem],
   );
-
   const resetPOs = useCallback(() => {
     if (
       window.confirm(
@@ -496,7 +689,7 @@ const CreatePD = () => {
     }
   }, [markDirty]);
 
-  // ----- Structure handlers -----
+  // Structure handlers
   const updateCreditDef = useCallback(
     (type, val) => {
       markDirty("section3");
@@ -507,7 +700,6 @@ const CreatePD = () => {
     },
     [markDirty],
   );
-
   const addStructureItem = useCallback(() => {
     markDirty("section3");
     setPdData((prev) => ({
@@ -518,7 +710,6 @@ const CreatePD = () => {
       ],
     }));
   }, [markDirty]);
-
   const removeStructureItem = useCallback(
     (index) => {
       markDirty("section3");
@@ -529,7 +720,6 @@ const CreatePD = () => {
     },
     [markDirty],
   );
-
   const updateStructureItem = useCallback(
     (index, field, value) => {
       markDirty("section3");
@@ -542,22 +732,16 @@ const CreatePD = () => {
     [markDirty],
   );
 
-  // ----- Semester handlers (dynamic) -----
+  // Semester handlers
   const addSemester = useCallback(() => {
     markDirty("section3");
     setPdData((prev) => {
       const maxSem = Math.max(...prev.semesters.map((s) => s.sem_no), 0);
-      const newSem = {
-        sem_no: maxSem + 1,
-        courses: [],
-      };
-      const updated = [...prev.semesters, newSem];
-      // sort by sem_no
+      const updated = [...prev.semesters, { sem_no: maxSem + 1, courses: [] }];
       updated.sort((a, b) => a.sem_no - b.sem_no);
       return { ...prev, semesters: updated };
     });
   }, [markDirty]);
-
   const removeSemester = useCallback(
     (semIndex) => {
       if (pdData.semesters.length <= 1) {
@@ -574,7 +758,6 @@ const CreatePD = () => {
     },
     [pdData.semesters.length, markDirty],
   );
-
   const addCourse = useCallback(
     (semIndex) => {
       markDirty("section3");
@@ -592,7 +775,6 @@ const CreatePD = () => {
     },
     [markDirty],
   );
-
   const removeCourse = useCallback(
     (semIndex, courseIndex) => {
       markDirty("section3");
@@ -606,7 +788,6 @@ const CreatePD = () => {
     },
     [markDirty],
   );
-
   const updateCourse = useCallback(
     (semIndex, courseIndex, field, value) => {
       markDirty("section3");
@@ -619,24 +800,25 @@ const CreatePD = () => {
     [markDirty],
   );
 
-  // ----- Elective handlers (fully flexible) -----
+  // Elective handlers
   const addElectiveGroup = useCallback(
     (type) => {
       markDirty("section4");
       const key = type === "prof" ? "prof_electives" : "open_electives";
-      setPdData((prev) => {
-        const defaultSem = 1; // always start at 1 – user can edit later
-        const newGroup = {
-          sem: defaultSem,
-          title: `${type === "prof" ? "Professional" : "Open"} Electives - Semester ${defaultSem}`,
-          courses: [],
-        };
-        return { ...prev, [key]: [...prev[key], newGroup] };
-      });
+      setPdData((prev) => ({
+        ...prev,
+        [key]: [
+          ...prev[key],
+          {
+            sem: 1,
+            title: `${type === "prof" ? "Professional" : "Open"} Electives - Semester 1`,
+            courses: [],
+          },
+        ],
+      }));
     },
     [markDirty],
   );
-
   const removeElectiveGroup = useCallback(
     (type, index) => {
       if (window.confirm("Remove this elective group?")) {
@@ -650,7 +832,6 @@ const CreatePD = () => {
     },
     [markDirty],
   );
-
   const updateElectiveGroupSemester = useCallback(
     (type, gIdx, value) => {
       markDirty("section4");
@@ -663,7 +844,6 @@ const CreatePD = () => {
     },
     [markDirty],
   );
-
   const updateElectiveGroupTitle = useCallback(
     (type, gIdx, value) => {
       markDirty("section4");
@@ -676,7 +856,6 @@ const CreatePD = () => {
     },
     [markDirty],
   );
-
   const addElectiveCourse = useCallback(
     (type, gIdx) => {
       markDirty("section4");
@@ -689,7 +868,6 @@ const CreatePD = () => {
     },
     [markDirty],
   );
-
   const removeElectiveCourse = useCallback(
     (type, gIdx, cIdx) => {
       markDirty("section4");
@@ -702,7 +880,6 @@ const CreatePD = () => {
     },
     [markDirty],
   );
-
   const updateElectiveCourse = useCallback(
     (type, gIdx, cIdx, field, value) => {
       markDirty("section4");
@@ -716,7 +893,6 @@ const CreatePD = () => {
     [markDirty],
   );
 
-  // Program selection
   const handleProgramSelect = useCallback(
     (program) => {
       setMetaData({
@@ -748,7 +924,6 @@ const CreatePD = () => {
     [metaData],
   );
 
-  // --- ACTIONS ---
   const handlePreview = useCallback(() => {
     if (!metaData.programId) {
       toast.error("Please select a program first");
@@ -757,15 +932,6 @@ const CreatePD = () => {
     navigate("/creator/preview", { state: { pdData, metaData } });
   }, [metaData, pdData, navigate]);
 
-  const generatePDF = useCallback(() => {
-    toast(
-      "Generating PDF... Please use the Print/Save function in the Preview page for best results.",
-    );
-    if (!previewRef.current) return;
-    html2pdf().from(previewRef.current).save(`PD_${metaData.programCode}.pdf`);
-  }, [metaData.programCode]);
-
-  // Intelligent Save Logic
   const handleSave = useCallback(
     async (status = "Draft") => {
       if (!metaData.programId) return toast.error("Select Program First");
@@ -872,7 +1038,7 @@ const CreatePD = () => {
   }, [handleSave]);
 
   // -------------------------------------------------------------
-  // RENDER HISTORY PANEL (placed in sidebar)
+  // RENDER HISTORY PANEL (Definition causing the error is FIXED here)
   // -------------------------------------------------------------
   const renderHistoryPanel = useCallback(() => {
     if (!metaData.programCode) return null;
@@ -926,6 +1092,46 @@ const CreatePD = () => {
   // -------------------------------------------------------------
   const renderStep1 = () => (
     <div className="space-y-6">
+      {/* --- IMPORT BOX --- */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg border border-blue-200 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <UploadCloud className="text-blue-600" size={24} />
+          <h3 className="text-lg font-semibold text-blue-900">
+            Import Existing Program Document
+          </h3>
+        </div>
+        <p className="text-sm text-blue-700 mb-4">
+          Upload an existing PDF (2024 Scheme format) to automatically populate
+          the fields below. This will overwrite current form data.
+        </p>
+        <div className="flex gap-4 items-center">
+          <input
+            type="file"
+            accept=".pdf"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            className="hidden"
+            id="pd-import-upload"
+          />
+          <label
+            htmlFor="pd-import-upload"
+            className={`flex items-center gap-2 px-4 py-2 bg-white text-blue-700 border border-blue-300 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors ${importing ? "opacity-50 pointer-events-none" : ""}`}
+          >
+            {importing ? (
+              <RefreshCw className="animate-spin" size={18} />
+            ) : (
+              <FileUp size={18} />
+            )}
+            {importing ? "Parsing PDF..." : "Select PDF File"}
+          </label>
+          {importing && (
+            <span className="text-xs text-blue-600 animate-pulse">
+              Processing document structure...
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Program Selection Card */}
       <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
@@ -1923,7 +2129,7 @@ const CreatePD = () => {
   );
 
   // -------------------------------------------------------------
-  // MAIN RENDER
+  // MAIN RENDER RETURN
   // -------------------------------------------------------------
   return (
     <CreatorLayout>

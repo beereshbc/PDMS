@@ -1,113 +1,143 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import {
-  ArrowLeft,
-  Printer,
-  Download,
-  RefreshCw,
-  ZoomIn,
-  ZoomOut,
-} from "lucide-react";
+import { ArrowLeft, Printer, ZoomIn, ZoomOut, RefreshCw } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
-import html2pdf from "html2pdf.js";
 import parse from "html-react-parser";
+import { toast } from "react-hot-toast";
 
 const Preview = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const params = useParams();
   const { axios, createrToken } = useAppContext();
+
   const componentRef = useRef(null);
   const scalingWrapperRef = useRef(null);
 
-  const [data, setData] = useState(location.state || null);
-  const [loading, setLoading] = useState(!location.state);
+  const [data, setData] = useState(
+    location.state?.pdData
+      ? {
+          pdData: location.state.pdData,
+          metaData: location.state.metaData,
+        }
+      : null,
+  );
+  const [loading, setLoading] = useState(!data && !!params.id);
   const [zoom, setZoom] = useState(1.0);
 
-  // --- Fetch data if URL accessed directly ---
+  // --- Fetch data if URL accessed directly with ID ---
   useEffect(() => {
-    const loadData = async () => {
-      if (!data && params.id) {
-        try {
-          const res = await axios.get(`/api/creater/pd/fetch/${params.id}`, {
-            headers: { createrToken },
-          });
-          if (res.data.success) {
-            const pd = res.data.pd;
-            const s1 = pd.section1_info;
-            const s2 = pd.section2_objectives;
-            const s3 = pd.section3_structure;
-            const s4 = pd.section4_electives;
+    const loadDocument = async () => {
+      if (data) return; // already have data from state
+      if (!params.id) {
+        toast.error("No document ID provided");
+        navigate("/creator/history");
+        return;
+      }
 
-            setData({
-              metaData: {
-                programName: s1.programName,
-                programCode: pd.programCode,
-                schemeYear: pd.schemeYear,
-                versionNo: pd.pdVersion,
-                effectiveAy: pd.effectiveAcademicYear,
+      try {
+        const res = await axios.get(`/api/creater/pd/fetch/${params.id}`, {
+          headers: { createrToken },
+        });
+        if (res.data.success) {
+          const pd = res.data.pd;
+          const s1 = pd.section1_info;
+          const s2 = pd.section2_objectives;
+          const s3 = pd.section3_structure;
+          const s4 = pd.section4_electives;
+
+          setData({
+            metaData: {
+              programName: s1.programName,
+              programCode: pd.programCode,
+              schemeYear: pd.schemeYear,
+              versionNo: pd.pdVersion,
+              effectiveAy: pd.effectiveAcademicYear,
+            },
+            pdData: {
+              details: {
+                university: "GM UNIVERSITY",
+                faculty: s1.faculty,
+                school: s1.school,
+                department: s1.department,
+                program_name: s1.programName,
+                director: s1.directorOfSchool,
+                hod: s1.headOfDepartment,
               },
-              pdData: {
-                details: {
-                  university: "GM UNIVERSITY",
-                  faculty: s1.faculty,
-                  school: s1.school,
-                  department: s1.department,
-                  program_name: s1.programName,
-                  director: s1.directorOfSchool,
-                  hod: s1.headOfDepartment,
-                },
-                award: {
-                  title: s1.awardTitle,
-                  mode: s1.modeOfStudy,
-                  awarding_body: s1.awardingInstitution,
-                  joint_award: s1.jointAward,
-                  teaching_institution: s1.teachingInstitution,
-                  date_program_specs: s1.dateOfProgramSpecs,
-                  date_approval: s1.dateOfCourseApproval,
-                  next_review: s1.nextReviewDate,
-                  approving_body: s1.approvingRegulatingBody,
-                  accredited_body: s1.accreditedBody,
-                  accreditation_grade: s1.gradeAwarded,
-                  accreditation_validity: s1.accreditationValidity,
-                  benchmark: s1.programBenchmark,
-                },
-                overview: s2.programOverview,
-                peos: s2.peos,
-                pos: s2.pos,
-                psos: s2.psos,
-                credit_def: {
-                  L: s3.creditDefinition.lecture,
-                  T: s3.creditDefinition.tutorial,
-                  P: s3.creditDefinition.practical,
-                },
-                structure_table: s3.structureTable,
-                semesters: s3.semesters.map((s) => ({
-                  sem_no: s.semNumber,
-                  courses: s.courses,
-                })),
-                prof_electives: s4.professionalElectives.map((g) => ({
-                  sem: g.semester,
-                  title: g.title,
-                  courses: g.courses,
-                })),
-                open_electives: s4.openElectives.map((g) => ({
-                  sem: g.semester,
-                  title: g.title,
-                  courses: g.courses,
-                })),
+              award: {
+                title: s1.awardTitle,
+                mode: s1.modeOfStudy,
+                awarding_body: s1.awardingInstitution,
+                joint_award: s1.jointAward,
+                teaching_institution: s1.teachingInstitution,
+                date_program_specs: s1.dateOfProgramSpecs,
+                date_approval: s1.dateOfCourseApproval,
+                next_review: s1.nextReviewDate,
+                approving_body: s1.approvingRegulatingBody,
+                accredited_body: s1.accreditedBody,
+                accreditation_grade: s1.gradeAwarded,
+                accreditation_validity: s1.accreditationValidity,
+                benchmark: s1.programBenchmark,
               },
-            });
-          }
-        } catch (error) {
-          console.error("Failed to load preview data");
-        } finally {
-          setLoading(false);
+              overview: s2.programOverview,
+              peos: s2.peos,
+              pos: s2.pos,
+              psos: s2.psos,
+              credit_def: {
+                L: s3.creditDefinition.lecture,
+                T: s3.creditDefinition.tutorial,
+                P: s3.creditDefinition.practical,
+              },
+              structure_table: s3.structureTable,
+              semesters: s3.semesters.map((s) => ({
+                sem_no: s.semNumber,
+                courses: s.courses,
+              })),
+              prof_electives: s4.professionalElectives.map((g) => ({
+                sem: g.semester,
+                title: g.title,
+                courses: g.courses,
+              })),
+              open_electives: s4.openElectives.map((g) => ({
+                sem: g.semester,
+                title: g.title,
+                courses: g.courses,
+              })),
+            },
+          });
+        } else {
+          toast.error(res.data.message || "Failed to load document");
+          navigate("/creator/history");
         }
+      } catch (error) {
+        console.error("Fetch error:", error);
+        toast.error("Error loading document");
+        navigate("/creator/history");
+      } finally {
+        setLoading(false);
       }
     };
-    loadData();
-  }, [params.id, data, axios, createrToken]);
+
+    if (!data && params.id) {
+      loadDocument();
+    } else if (!data && !params.id && !location.state) {
+      // No data and no ID – probably direct access without state
+      navigate("/creator/history");
+    } else {
+      setLoading(false);
+    }
+  }, [params.id, data, location.state, axios, createrToken, navigate]);
+
+  // --- Auto-print if flag is set ---
+  useEffect(() => {
+    if (!loading && data && location.state?.autoPrint) {
+      // Small delay to ensure rendering is complete
+      const timer = setTimeout(() => {
+        window.print();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, data, location.state?.autoPrint]);
 
   // --- Zoom controls ---
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.1, 2.0));
@@ -116,69 +146,42 @@ const Preview = () => {
   // --- Browser print ---
   const handlePrint = () => window.print();
 
-  // --- PDF generation (optimised) ---
-  const handleDownloadPDF = () => {
-    const element = componentRef.current;
-
-    // Disable zoom transform during capture
-    if (scalingWrapperRef.current) {
-      scalingWrapperRef.current.style.transform = "none";
-    }
-
-    const opt = {
-      margin: [15, 15, 15, 15],
-      filename: `PD_${data?.metaData?.programCode || "Doc"}_v${data?.metaData?.versionNo || "1.0"}.pdf`,
-      image: { type: "jpeg", quality: 0.95 },
-      html2canvas: {
-        scale: 3, // crisp text, moderate file size
-        useCORS: true,
-        letterRendering: true,
-        scrollY: 0,
-        backgroundColor: "#ffffff",
-      },
-      jsPDF: {
-        unit: "mm",
-        format: "a4",
-        orientation: "portrait",
-        compress: true,
-      },
-      pagebreak: { mode: ["css", "legacy"] },
-    };
-
-    html2pdf()
-      .set(opt)
-      .from(element)
-      .save()
-      .then(() => {
-        // Restore zoom
-        if (scalingWrapperRef.current) {
-          scalingWrapperRef.current.style.transform = `scale(${zoom})`;
-        }
-      })
-      .catch((err) => {
-        console.error("PDF Error", err);
-        if (scalingWrapperRef.current) {
-          scalingWrapperRef.current.style.transform = `scale(${zoom})`;
-        }
-      });
+  // --- Helper to split objective HTML into title and description ---
+  const splitObjective = (htmlString, defaultTitle = "") => {
+    if (!htmlString) return { title: defaultTitle, description: "" };
+    const titleMatch = htmlString.match(/<b>(.*?)<\/b>/);
+    const title = titleMatch ? titleMatch[1].trim() : defaultTitle;
+    let description = htmlString
+      .replace(/<b>.*?<\/b>/, "")
+      .replace(/^<br\/?>/, "")
+      .trim();
+    return { title, description };
   };
 
+  // --- Loading state ---
   if (loading)
     return (
       <div className="flex justify-center items-center h-screen bg-gray-100">
         <RefreshCw className="animate-spin text-gray-500" size={40} />
       </div>
     );
+
   if (!data)
     return (
       <div className="p-10 text-center text-red-500 font-bold">
-        Error: No Data Found
+        Error: No document data available.
       </div>
     );
 
   const { pdData, metaData } = data;
   const sumCredits = (courses) =>
     courses.reduce((acc, c) => acc + (parseFloat(c.credits) || 0), 0);
+
+  // --- Timestamp for the footer ---
+  const generatedTimestamp = new Date().toLocaleString("en-IN", {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
 
   // ========== STYLES – PURE BLACK & WHITE, GRAY HEADERS, NO UNDERLINES ==========
   const styles = `
@@ -195,7 +198,8 @@ const Preview = () => {
 
     .scaling-wrapper {
         transform-origin: top center;
-        transition: transform 0.2s ease;
+        transition: transform 0.15s ease;
+        will-change: transform;
         width: 100%;
         display: flex;
         justify-content: center;
@@ -233,10 +237,11 @@ const Preview = () => {
         vertical-align: top;
     }
     th {
-        background-color: #f0f0f0; /* light gray – matches reference */
+        background-color: #f0f0f0;
         font-weight: bold;
         text-align: center;
         -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
     td {
         background-color: white;
@@ -265,7 +270,7 @@ const Preview = () => {
         justify-content: center;
         align-items: center;
         text-align: center;
-        height: 257mm; /* full A4 minus padding */
+        height: 257mm;
         page-break-after: always;
     }
     .uni-name {
@@ -280,7 +285,6 @@ const Preview = () => {
         font-weight: bold;
         margin-bottom: 5px;
         text-transform: uppercase;
-        /* no underline */
     }
     .scheme-title {
         font-size: 20pt;
@@ -315,7 +319,6 @@ const Preview = () => {
         text-align: center;
         margin: 30px 0 15px;
         text-transform: uppercase;
-        /* no underline */
     }
     h3.sem-header {
         font-size: 12pt;
@@ -361,6 +364,7 @@ const Preview = () => {
           <button
             onClick={handleZoomOut}
             className="p-1 hover:bg-gray-200 rounded"
+            title="Zoom out"
           >
             <ZoomOut size={16} />
           </button>
@@ -370,6 +374,7 @@ const Preview = () => {
           <button
             onClick={handleZoomIn}
             className="p-1 hover:bg-gray-200 rounded"
+            title="Zoom in"
           >
             <ZoomIn size={16} />
           </button>
@@ -382,12 +387,6 @@ const Preview = () => {
           >
             <Printer size={16} /> Print
           </button>
-          <button
-            onClick={handleDownloadPDF}
-            className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 text-white rounded text-sm hover:bg-gray-900"
-          >
-            <Download size={16} /> PDF
-          </button>
         </div>
       </div>
 
@@ -397,7 +396,7 @@ const Preview = () => {
         className="scaling-wrapper"
         style={{ transform: `scale(${zoom})`, marginTop: "60px" }}
       >
-        {/* Document container – captured for PDF */}
+        {/* Document container – captured for print */}
         <div ref={componentRef} className="doc-container">
           {/* ---------- COVER PAGE ---------- */}
           <div className="cover-page">
@@ -552,7 +551,7 @@ const Preview = () => {
             </tbody>
           </table>
 
-          {/* 15. PEOs */}
+          {/* 15. PEOs – CORRECT FORMAT: PEO-1: Title (bold) + description */}
           <table>
             <tbody>
               <tr>
@@ -561,54 +560,60 @@ const Preview = () => {
                   <div className="font-bold mb-2">
                     PROGRAM EDUCATIONAL OBJECTIVES (PEOs)
                   </div>
-                  {pdData.peos.map((peo, i) =>
-                    peo ? (
-                      <div
-                        key={i}
-                        style={{
-                          marginBottom: "8px",
-                          display: "flex",
-                          gap: "5px",
-                        }}
-                      >
-                        <span className="font-bold">PEO-{i + 1}:</span>
-                        <span>{parse(peo)}</span>
+                  {pdData.peos.map((peo, i) => {
+                    if (!peo) return null;
+                    const { title, description } = splitObjective(
+                      peo,
+                      `PEO-${i + 1}`,
+                    );
+                    return (
+                      <div key={i} style={{ marginBottom: "12px" }}>
+                        <div
+                          className="font-bold"
+                          style={{ marginBottom: "2px" }}
+                        >
+                          PEO-{i + 1}: {title}
+                        </div>
+                        <div>{parse(description)}</div>
                       </div>
-                    ) : null,
-                  )}
+                    );
+                  })}
                 </td>
               </tr>
             </tbody>
           </table>
 
-          {/* 16. POs */}
+          {/* 16. POs – CORRECT FORMAT: PO-1: Title (bold) + description */}
           <table>
             <tbody>
               <tr>
                 <td className="w-40px font-bold">16.</td>
                 <td>
                   <div className="font-bold mb-2">PROGRAM OUTCOMES (POs)</div>
-                  {pdData.pos.map((po, i) =>
-                    po ? (
-                      <div
-                        key={i}
-                        style={{
-                          marginBottom: "8px",
-                          display: "flex",
-                          gap: "5px",
-                        }}
-                      >
-                        <span className="font-bold">PO-{i + 1}:</span>
-                        <span>{parse(po)}</span>
+                  {pdData.pos.map((po, i) => {
+                    if (!po) return null;
+                    const { title, description } = splitObjective(
+                      po,
+                      `PO-${i + 1}`,
+                    );
+                    return (
+                      <div key={i} style={{ marginBottom: "12px" }}>
+                        <div
+                          className="font-bold"
+                          style={{ marginBottom: "2px" }}
+                        >
+                          PO-{i + 1}: {title}
+                        </div>
+                        <div>{parse(description)}</div>
                       </div>
-                    ) : null,
-                  )}
+                    );
+                  })}
                 </td>
               </tr>
             </tbody>
           </table>
 
-          {/* 17. PSOs */}
+          {/* 17. PSOs – CORRECT FORMAT: PSO-1: Title (bold) + description */}
           <table>
             <tbody>
               <tr>
@@ -621,21 +626,24 @@ const Preview = () => {
                     Upon successful completion of the program, graduates will
                     possess the capability to:
                   </p>
-                  {pdData.psos.map((pso, i) =>
-                    pso ? (
-                      <div
-                        key={i}
-                        style={{
-                          marginBottom: "8px",
-                          display: "flex",
-                          gap: "5px",
-                        }}
-                      >
-                        <span className="font-bold">PSO-{i + 1}:</span>
-                        <span>{parse(pso)}</span>
+                  {pdData.psos.map((pso, i) => {
+                    if (!pso) return null;
+                    const { title, description } = splitObjective(
+                      pso,
+                      `PSO-${i + 1}`,
+                    );
+                    return (
+                      <div key={i} style={{ marginBottom: "12px" }}>
+                        <div
+                          className="font-bold"
+                          style={{ marginBottom: "2px" }}
+                        >
+                          PSO-{i + 1}: {title}
+                        </div>
+                        <div>{parse(description)}</div>
                       </div>
-                    ) : null,
-                  )}
+                    );
+                  })}
                 </td>
               </tr>
             </tbody>
@@ -878,7 +886,7 @@ const Preview = () => {
             </>
           )}
 
-          {/* FOOTER */}
+          {/* FOOTER with Program Name, Version, Timestamp */}
           <div
             style={{
               marginTop: "50px",
@@ -889,8 +897,8 @@ const Preview = () => {
               paddingTop: "10px",
             }}
           >
-            Generated by CDMS Program Document System •{" "}
-            {new Date().toLocaleDateString()}
+            {pdData.details.program_name} • Version {metaData.versionNo} •
+            Generated on: {generatedTimestamp}
           </div>
         </div>
       </div>

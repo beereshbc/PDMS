@@ -6,8 +6,12 @@ import {
   getRecentVersions,
   getPDById,
   getLatestPD,
+  uploadAndParsePD,
+  getDashboardStats,
+  getCreatorHistory,
 } from "../controllers/createrController.js";
 import authCreater from "../middlewares/createrAuth.js";
+import upload from "../middlewares/multer.js";
 
 const createrRouter = express.Router();
 
@@ -19,5 +23,13 @@ createrRouter.post("/pd/save", authCreater, createOrUpdatePD); // Intelligent sa
 createrRouter.get("/pd/versions/:programId", authCreater, getRecentVersions);
 createrRouter.get("/pd/fetch/:id", authCreater, getPDById);
 createrRouter.get("/pd/latest/:programId", authCreater, getLatestPD);
+createrRouter.post(
+  "/pd/import",
+  authCreater,
+  upload.single("pdFile"),
+  uploadAndParsePD,
+);
+createrRouter.get("/dashboard-stats", authCreater, getDashboardStats);
+createrRouter.get("/pd/history", authCreater, getCreatorHistory);
 
 export default createrRouter;

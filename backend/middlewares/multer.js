@@ -1,21 +1,30 @@
 import multer from "multer";
+import path from "path";
+import fs from "fs";
 
-const storage = multer.memoryStorage(); // Store in RAM for immediate parsing
+// 1. Ensure the upload directory exists
+const uploadDir = "uploads/";
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
-const upload = multer({
-  storage: storage,
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = [
-      "application/pdf",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only PDF and DOCX files are allowed"), false);
-    }
+// 2. Configure Disk Storage
+const storage = multer.diskStorage({
+  destination: function (req, file, callback) {
+    // Save files to the 'uploads' folder
+    callback(null, uploadDir);
   },
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  filename: function (req, file, callback) {
+    // 3. Generate a unique filename (timestamp + random number + extension)
+    // This prevents conflicts if multiple users upload files with the same name
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    callback(
+      null,
+      file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname),
+    );
+  },
 });
+
+const upload = multer({ storage });
 
 export default upload;

@@ -9,6 +9,16 @@ import Section2_Objectives from "../models/Section2_Objectives.js";
 import Section3_Structure from "../models/Section3_Structure.js";
 import Section4_Electives from "../models/Section4_Electives.js";
 
+// --- REQUIRED IMPORTS FOR FILE PARSING ---
+import { spawn } from "child_process";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+
+// Define __dirname for ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // --- AUTHENTICATION FUNCTIONS ---
 
 export const registerCreater = async (req, res) => {
@@ -106,6 +116,79 @@ export const loginCreater = async (req, res) => {
   }
 };
 
+// --- PARSING FUNCTION (FIXED) ---
+export const uploadAndParsePD = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No file uploaded" });
+    }
+
+    const filePath = req.file.path;
+
+    // Resolve path to the Python script
+    // __dirname is .../backend/controllers
+    // .. goes to .../backend
+    // scripts goes to .../backend/scripts
+    const scriptPath = path.join(__dirname, "..", "scripts", "pd_parser.py");
+
+    console.log(`Processing file: ${filePath}`);
+    console.log(`Using script: ${scriptPath}`);
+
+    const pythonProcess = spawn("python", [scriptPath, filePath]);
+
+    let dataString = "";
+    let errorString = "";
+
+    pythonProcess.stdout.on("data", (data) => {
+      dataString += data.toString();
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      errorString += data.toString();
+    });
+
+    pythonProcess.on("close", (code) => {
+      // Clean up uploaded file
+      fs.unlink(filePath, (err) => {
+        if (err) console.error("Error deleting temp file:", err);
+      });
+
+      if (code !== 0) {
+        console.error("Python Error:", errorString);
+        return res.status(500).json({
+          success: false,
+          message:
+            "Parsing failed. Ensure Python and pdfplumber are installed on the server.",
+          details: errorString,
+        });
+      }
+
+      try {
+        const parsedData = JSON.parse(dataString);
+
+        if (parsedData.error) {
+          return res
+            .status(400)
+            .json({ success: false, message: parsedData.error });
+        }
+
+        res.json({ success: true, parsedData });
+      } catch (e) {
+        console.error("JSON Parse Error:", e);
+        console.error("Raw Output:", dataString);
+        res
+          .status(500)
+          .json({ success: false, message: "Error processing parsed data" });
+      }
+    });
+  } catch (error) {
+    console.error("Upload controller error:", error);
+    res.status(500).json({ success: false, message: "Upload failed" });
+  }
+};
+
 // --- PROGRAM DOCUMENT (PD) FUNCTIONS ---
 
 // Helper to increment version string (e.g., "1.0.0" -> "1.0.1")
@@ -114,7 +197,6 @@ const incrementVersion = (version) => {
   const parts = version.split(".");
   if (parts.length < 3) return "1.0.0";
   // Simple increment of patch version.
-  // You can extend this logic for minor/major updates if needed.
   parts[2] = parseInt(parts[2]) + 1;
   return parts.join(".");
 };
@@ -335,5 +417,73 @@ export const getLatestPD = async (req, res) => {
     res.json({ success: true, pd });
   } catch (error) {
     res.json({ success: false, message: error.message });
+  }
+};
+
+export const getDashboardStats = async (req, res) => {
+  try {
+    const creatorId = req.id; // From auth middleware
+
+    // 1. Get Counts
+    const total = await ProgramDocument.countDocuments({
+      createdBy: creatorId,
+    });
+    const drafts = await ProgramDocument.countDocuments({
+      createdBy: creatorId,
+      status: "Draft",
+    });
+    const underReview = await ProgramDocument.countDocuments({
+      createdBy: creatorId,
+      status: "UnderReview",
+    });
+    const approved = await ProgramDocument.countDocuments({
+      createdBy: creatorId,
+      status: "Approved",
+    });
+
+    // 2. Get 5 Most Recent Documents
+    // Populate section1_info to get the Program Name
+    const recentDocs = await ProgramDocument.find({ createdBy: creatorId })
+      .sort({ updatedAt: -1 })
+      .limit(5)
+      .populate("section1_info", "programName");
+
+    res.json({
+      success: true,
+      stats: {
+        total,
+        drafts,
+        underReview,
+        approved,
+      },
+      recentDocs,
+    });
+  } catch (error) {
+    console.error("Dashboard Stats Error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch dashboard data" });
+  }
+};
+export const getCreatorHistory = async (req, res) => {
+  try {
+    const creatorId = req.id; // Extracted from auth middleware
+
+    // Fetch all PDs created by this user
+    // We strictly sort by updatedAt to show most recent work first
+    const pds = await ProgramDocument.find({ createdBy: creatorId })
+      .sort({ updatedAt: -1 })
+      .populate("section1_info", "programName department"); // Only fetch needed fields
+
+    res.json({
+      success: true,
+      count: pds.length,
+      pds,
+    });
+  } catch (error) {
+    console.error("Get History Error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch document history" });
   }
 };

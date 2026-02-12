@@ -25,11 +25,6 @@ const CreatorSidebar = () => {
       icon: FilePlus,
     },
     {
-      name: "Edit PD",
-      path: "/creator/edit-pd",
-      icon: FilePenLine,
-    },
-    {
       name: "PD History",
       path: "/creator/pd-history",
       icon: History,

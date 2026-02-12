@@ -7,6 +7,7 @@ import CreatorDashboard from "./pages/CreatorDashboard";
 import CreatePD from "./pages/CreatePD";
 import EditPD from "./pages/EditPD";
 import Preview from "./components/Preview";
+import HistoryPD from "./pages/HistoryPD";
 
 const App = () => {
   const { createrToken } = useAppContext();
@@ -21,7 +22,7 @@ const App = () => {
             <Route path="/" element={<CreatorDashboard />} />
             <Route path="/creator/create-pd" element={<CreatePD />} />
             <Route path="/creator/edit-pd" element={<EditPD />} />
-            <Route path="/creator/pd-history" element={<CreatorDashboard />} />
+            <Route path="/creator/pd-history" element={<HistoryPD />} />
             <Route path="/creator/preview" element={<Preview />} />
           </>
         ) : (

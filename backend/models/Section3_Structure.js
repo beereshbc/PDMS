@@ -8,15 +8,6 @@ const CourseSchema = new mongoose.Schema(
     credits: { type: Number, required: true },
     type: {
       type: String,
-      enum: [
-        "Theory",
-        "Lab",
-        "Theory + Lab",
-        "Project",
-        "Seminar",
-        "Practical",
-        "Internship",
-      ],
       default: "Theory",
     },
     category: { type: String, default: "Core" }, // Core, Competency, Life Skills, etc.
