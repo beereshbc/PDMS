@@ -28,7 +28,7 @@ const Preview = () => {
   // --- Fetch data if URL accessed directly with ID ---
   useEffect(() => {
     const loadDocument = async () => {
-      if (data) return; // already have data from state
+      if (data) return;
       if (!params.id) {
         toast.error("No document ID provided");
         navigate("/creator/history");
@@ -121,7 +121,6 @@ const Preview = () => {
     if (!data && params.id) {
       loadDocument();
     } else if (!data && !params.id && !location.state) {
-      // No data and no ID – probably direct access without state
       navigate("/creator/history");
     } else {
       setLoading(false);
@@ -131,7 +130,6 @@ const Preview = () => {
   // --- Auto-print if flag is set ---
   useEffect(() => {
     if (!loading && data && location.state?.autoPrint) {
-      // Small delay to ensure rendering is complete
       const timer = setTimeout(() => {
         window.print();
       }, 800);
@@ -143,9 +141,6 @@ const Preview = () => {
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.1, 2.0));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.1, 0.5));
 
-  // --- Browser print ---
-  const handlePrint = () => window.print();
-
   // --- Helper to split objective HTML into title and description ---
   const splitObjective = (htmlString, defaultTitle = "") => {
     if (!htmlString) return { title: defaultTitle, description: "" };
@@ -156,6 +151,51 @@ const Preview = () => {
       .replace(/^<br\/?>/, "")
       .trim();
     return { title, description };
+  };
+
+  // --- Generate filename for clipboard & toast ---
+  const generateFilename = () => {
+    if (!pdData || !metaData) return "Program_Document.pdf";
+
+    // Sanitize program name: replace spaces with underscores, remove invalid chars
+    const program = pdData.details.program_name || "Program";
+    const sanitizedProgram = program
+      .replace(/[^\w\s-]/g, "") // remove special characters
+      .replace(/\s+/g, "_") // spaces to underscores
+      .trim();
+
+    // Use department as "branch" if available, otherwise use program code
+    const branch = pdData.details.department || metaData.programCode || "CSE";
+    const sanitizedBranch = branch
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, "_")
+      .trim();
+
+    const version = metaData.versionNo?.replace(/\./g, "_") || "1_0_0";
+
+    // Current date-time: YYYY-MM-DD_HH-mm-ss
+    const now = new Date();
+    const date = now.toISOString().slice(0, 10); // YYYY-MM-DD
+    const time = `${String(now.getHours()).padStart(2, "0")}-${String(
+      now.getMinutes(),
+    ).padStart(2, "0")}-${String(now.getSeconds()).padStart(2, "0")}`;
+
+    return `${sanitizedProgram}_${sanitizedBranch}_v${version}_${date}_${time}.pdf`;
+  };
+
+  // --- Enhanced Print: copy filename, toast, then print ---
+  const handlePrint = async () => {
+    const filename = generateFilename();
+    alert("File Name Copied...Please Paste while Saving..");
+    try {
+      await navigator.clipboard.writeText(filename);
+      toast.success(`📋 Copied file name: ${filename}`);
+    } catch (err) {
+      console.error("Clipboard error:", err);
+      toast.error("Could not copy filename to clipboard");
+    }
+    // Trigger browser print dialog
+    window.print();
   };
 
   // --- Loading state ---
@@ -183,7 +223,7 @@ const Preview = () => {
     timeStyle: "short",
   });
 
-  // ========== STYLES – PURE BLACK & WHITE, GRAY HEADERS, NO UNDERLINES ==========
+  // ========== STYLES – PURE BLACK & WHITE, GRAY HEADERS ==========
   const styles = `
     /* Screen View */
     .pd-preview-wrapper {
@@ -205,7 +245,7 @@ const Preview = () => {
         justify-content: center;
     }
 
-    /* A4 Container – perfect centered box */
+    /* A4 Container */
     .doc-container {
         width: 210mm;
         min-height: 297mm;
@@ -219,7 +259,7 @@ const Preview = () => {
         margin: 0 auto;
     }
 
-    /* Table Styles – crisp black borders, gray headers */
+    /* Tables */
     table {
         width: 100%;
         border-collapse: collapse;
@@ -243,9 +283,7 @@ const Preview = () => {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    td {
-        background-color: white;
-    }
+    td { background-color: white; }
 
     /* Utilities */
     .text-center { text-align: center; }
@@ -263,7 +301,7 @@ const Preview = () => {
     .w-200px { width: 200px; font-weight: bold; }
     .w-300px { width: 300px; font-weight: bold; }
 
-    /* Cover page – no underline, pure black */
+    /* Cover page */
     .cover-page {
         display: flex;
         flex-direction: column;
@@ -305,7 +343,7 @@ const Preview = () => {
         text-transform: uppercase;
     }
 
-    /* Internal headers – centered, bold, no underline */
+    /* Internal headers */
     h1.internal-header {
         font-size: 18pt;
         font-weight: bold;
@@ -328,14 +366,14 @@ const Preview = () => {
         text-transform: uppercase;
     }
 
-    /* Page break control */
+    /* Page break */
     .page-break {
         page-break-after: always;
         display: block;
         height: 0;
     }
 
-    /* Print overrides – ensure gray headers print */
+    /* Print overrides */
     @media print {
         .no-print { display: none !important; }
         .pd-preview-wrapper { background-color: white; padding: 0; }
@@ -390,13 +428,13 @@ const Preview = () => {
         </div>
       </div>
 
-      {/* Scaling wrapper – zoom only affects preview */}
+      {/* Scaling wrapper */}
       <div
         ref={scalingWrapperRef}
         className="scaling-wrapper"
         style={{ transform: `scale(${zoom})`, marginTop: "60px" }}
       >
-        {/* Document container – captured for print */}
+        {/* Document container */}
         <div ref={componentRef} className="doc-container">
           {/* ---------- COVER PAGE ---------- */}
           <div className="cover-page">
@@ -433,6 +471,11 @@ const Preview = () => {
               `| Effective Academic Year: ${metaData.effectiveAy}`}
           </div>
 
+          {/* ... (all tables remain exactly as in your final code) ... */}
+          {/* For brevity I keep the same table sections – they are unchanged */}
+          {/* Full code includes all tables from 1 to 22 as before */}
+
+          {/* ---------- PROGRAM DETAILS TABLE ---------- */}
           <table>
             <tbody>
               <tr>
@@ -462,6 +505,7 @@ const Preview = () => {
             </tbody>
           </table>
 
+          {/* ---------- AWARD DETAILS TABLE ---------- */}
           <table>
             <tbody>
               {[
@@ -551,7 +595,7 @@ const Preview = () => {
             </tbody>
           </table>
 
-          {/* 15. PEOs – CORRECT FORMAT: PEO-1: Title (bold) + description */}
+          {/* 15. PEOs */}
           <table>
             <tbody>
               <tr>
@@ -583,7 +627,7 @@ const Preview = () => {
             </tbody>
           </table>
 
-          {/* 16. POs – CORRECT FORMAT: PO-1: Title (bold) + description */}
+          {/* 16. POs */}
           <table>
             <tbody>
               <tr>
@@ -613,7 +657,7 @@ const Preview = () => {
             </tbody>
           </table>
 
-          {/* 17. PSOs – CORRECT FORMAT: PSO-1: Title (bold) + description */}
+          {/* 17. PSOs */}
           <table>
             <tbody>
               <tr>

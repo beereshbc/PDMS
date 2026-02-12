@@ -1,22 +1,17 @@
 import multer from "multer";
 import path from "path";
-import fs from "fs";
+import os from "os"; // Import OS module
 
-// 1. Ensure the upload directory exists
-const uploadDir = "uploads/";
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// 1. Use the system's temporary directory (Allowed in Vercel)
+const uploadDir = os.tmpdir();
 
-// 2. Configure Disk Storage
 const storage = multer.diskStorage({
   destination: function (req, file, callback) {
-    // Save files to the 'uploads' folder
+    // Save files to the temporary directory
     callback(null, uploadDir);
   },
   filename: function (req, file, callback) {
-    // 3. Generate a unique filename (timestamp + random number + extension)
-    // This prevents conflicts if multiple users upload files with the same name
+    // Generate unique filename
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     callback(
       null,
