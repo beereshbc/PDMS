@@ -15,17 +15,8 @@ const allowedOrigins = [
 ];
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  origin: allowedOrigins,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true
 }));
 // --------------------------
@@ -42,5 +33,5 @@ app.use("/api/dev", devRouter);
 app.use("/api/creater", createrRouter);
 
 app.listen(PORT, () => {
-  console.log(`Server is flying on port ${PORT}`);
+  console.log(`Server is flying on p0rt ${PORT}`);
 });
