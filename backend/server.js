@@ -8,32 +8,41 @@ import createrRouter from "./routes/createrRouter.js";
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// 1. Robust CORS to prevent pre-flight blocks
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://pdms-creater.vercel.app",
+];
+
 app.use(
   cors({
-    origin: "*",
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "creatertoken"], // Fixes your specific error
     credentials: true,
   }),
 );
 
-// 2. High-limit Parsers for JSON/URL-encoded data
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Connect to Database
 await connectDB();
 
 app.get("/", (req, res) => {
   res.send("CDMS Server is active and flying.");
 });
 
-// Routes
 app.use("/api/dev", devRouter);
 app.use("/api/creater", createrRouter);
 
-// Start Server
 app.listen(PORT, () => {
   console.log(`Server is flying on port ${PORT}`);
 });

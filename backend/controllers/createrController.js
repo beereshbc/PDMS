@@ -115,7 +115,6 @@ export const loginCreater = async (req, res) => {
   }
 };
 
-// --- PARSING FUNCTION (FIXED) ---
 export const uploadAndParsePD = async (req, res) => {
   try {
     if (!req.file) {
@@ -125,16 +124,13 @@ export const uploadAndParsePD = async (req, res) => {
     }
 
     const filePath = req.file.path;
-
-    // Resolve path to the Python script
-    // __dirname is .../backend/controllers
-    // .. goes to .../backend
-    // scripts goes to .../backend/scripts
+    // Adjust this path based on your folder structure
     const scriptPath = path.join(__dirname, "..", "scripts", "pd_parser.py");
 
-    console.log(`Processing file: ${filePath}`);
-    console.log(`Using script: ${scriptPath}`);
+    console.log(`Processing: ${req.file.originalname}`);
 
+    // Call Python script
+    // NOTE: Use "python3" if "python" doesn't work on your server
     const pythonProcess = spawn("python", [scriptPath, filePath]);
 
     let dataString = "";
@@ -149,42 +145,36 @@ export const uploadAndParsePD = async (req, res) => {
     });
 
     pythonProcess.on("close", (code) => {
-      // Clean up uploaded file
-      fs.unlink(filePath, (err) => {
-        if (err) console.error("Error deleting temp file:", err);
-      });
+      // ALWAYS delete the file after processing to keep the server clean
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
 
       if (code !== 0) {
         console.error("Python Error:", errorString);
         return res.status(500).json({
           success: false,
-          message:
-            "Parsing failed. Ensure Python and pdfplumber are installed on the server.",
+          message: "Parsing failed in Python script.",
           details: errorString,
         });
       }
 
       try {
         const parsedData = JSON.parse(dataString);
-
-        if (parsedData.error) {
-          return res
-            .status(400)
-            .json({ success: false, message: parsedData.error });
-        }
-
         res.json({ success: true, parsedData });
       } catch (e) {
-        console.error("JSON Parse Error:", e);
-        console.error("Raw Output:", dataString);
-        res
-          .status(500)
-          .json({ success: false, message: "Error processing parsed data" });
+        res.status(500).json({
+          success: false,
+          message: "Invalid JSON returned from Python",
+          raw: dataString,
+        });
       }
     });
   } catch (error) {
-    console.error("Upload controller error:", error);
-    res.status(500).json({ success: false, message: "Upload failed" });
+    console.error("Controller error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error during upload" });
   }
 };
 
