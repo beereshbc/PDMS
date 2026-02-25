@@ -116,25 +116,49 @@ export const loginCreater = async (req, res) => {
 };
 
 export const uploadAndParsePD = async (req, res) => {
+  // 1. Guard against missing files immediately
+  if (!req.file) {
+    return res
+      .status(400)
+      .json({ success: false, message: "No file uploaded" });
+  }
+
+  const filePath = req.file.path;
+  let responseSent = false; // Guard against "Headers already sent" crashes
+
+  // 2. Safe cleanup helper function
+  const cleanupFile = () => {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (err) {
+      console.error(`Failed to safely delete temp file ${filePath}:`, err);
+    }
+  };
+
   try {
-    if (!req.file) {
+    const scriptPath = path.join(__dirname, "..", "scripts", "pd_parser.py");
+    console.log(`Processing file: ${filePath}`);
+
+    // 3. Verify script exists before attempting to spawn
+    if (!fs.existsSync(scriptPath)) {
+      cleanupFile();
       return res
-        .status(400)
-        .json({ success: false, message: "No file uploaded" });
+        .status(500)
+        .json({ success: false, message: "Parser script missing on server." });
     }
 
-    const filePath = req.file.path;
-    // Adjust this path based on your folder structure
-    const scriptPath = path.join(__dirname, "..", "scripts", "pd_parser.py");
-
-    console.log(`Processing: ${req.file.originalname}`);
-
-    // Call Python script
-    // NOTE: Use "python3" if "python" doesn't work on your server
     const pythonProcess = spawn("python", [scriptPath, filePath]);
 
     let dataString = "";
     let errorString = "";
+
+    // 4. Implement a strict Timeout (25 seconds) to prevent infinite hanging
+    const timeoutId = setTimeout(() => {
+      pythonProcess.kill("SIGKILL");
+      errorString += "\nProcess forcibly killed: Timed out after 25 seconds.";
+    }, 25000);
 
     pythonProcess.stdout.on("data", (data) => {
       dataString += data.toString();
@@ -144,37 +168,74 @@ export const uploadAndParsePD = async (req, res) => {
       errorString += data.toString();
     });
 
-    pythonProcess.on("close", (code) => {
-      // ALWAYS delete the file after processing to keep the server clean
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+    // 5. Catch spawn errors (e.g., Python not installed)
+    pythonProcess.on("error", (error) => {
+      clearTimeout(timeoutId);
+      cleanupFile();
+      if (!responseSent) {
+        responseSent = true;
+        console.error("Failed to start Python process:", error);
+        res.status(500).json({
+          success: false,
+          message: "Failed to start Python parser. Ensure Python is installed.",
+        });
       }
+    });
+
+    pythonProcess.on("close", (code) => {
+      clearTimeout(timeoutId);
+      cleanupFile();
+
+      if (responseSent) return;
+      responseSent = true;
 
       if (code !== 0) {
-        console.error("Python Error:", errorString);
+        console.error(`Python Error (Code ${code}):`, errorString);
         return res.status(500).json({
           success: false,
-          message: "Parsing failed in Python script.",
+          message: "Parsing failed during Python execution.",
           details: errorString,
         });
       }
 
       try {
-        const parsedData = JSON.parse(dataString);
-        res.json({ success: true, parsedData });
+        // 6. Robust JSON Extraction (ignores random Python warnings/logs)
+        const jsonStartIndex = dataString.indexOf("{");
+        const jsonEndIndex = dataString.lastIndexOf("}") + 1;
+
+        if (jsonStartIndex === -1) {
+          throw new Error("No JSON object found in Python output");
+        }
+
+        const cleanJsonString = dataString.slice(jsonStartIndex, jsonEndIndex);
+        const parsedData = JSON.parse(cleanJsonString);
+
+        if (parsedData.error) {
+          return res
+            .status(400)
+            .json({ success: false, message: parsedData.error });
+        }
+
+        return res.json({ success: true, parsedData });
       } catch (e) {
-        res.status(500).json({
+        console.error("JSON Parse Error:", e.message);
+        console.error("Raw Output:", dataString);
+        return res.status(500).json({
           success: false,
-          message: "Invalid JSON returned from Python",
-          raw: dataString,
+          message: "Invalid data format returned from Python.",
+          raw: dataString, // Helpful for debugging
         });
       }
     });
   } catch (error) {
-    console.error("Controller error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Server error during upload" });
+    cleanupFile();
+    if (!responseSent) {
+      console.error("Unexpected controller error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Unexpected server error during upload",
+      });
+    }
   }
 };
 

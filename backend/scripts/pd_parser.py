@@ -208,7 +208,7 @@ def parse_metadata(text, data):
 
 def parse_overview(text, data):
     """Extract Program Overview (section 14)."""
-    m = re.search(r'14\.\s*Program Overview*?\n(.+?)(?=15\.|Program Educational)',
+    m = re.search(r'14\.\s*Program Overview.*?\n(.+?)(?=15\.|Program Educational)',
                   text, re.IGNORECASE | re.DOTALL)
     if m:
         data["overview"] = clean_text(m.group(1))

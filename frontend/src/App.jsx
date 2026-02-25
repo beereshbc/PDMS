@@ -26,7 +26,7 @@ const App = () => {
             <Route path="/creator/preview" element={<Preview />} />
           </>
         ) : (
-          <Route path="/" element={<Login />} />
+          <Route path="*" element={<Login />} />
         )}
       </Routes>
     </div>

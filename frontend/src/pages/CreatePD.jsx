@@ -138,6 +138,39 @@ const PREPOPULATED_DATA = {
   open_electives: [],
 };
 
+// --- OPTIMIZED INPUT TO PREVENT UI FREEZING ---
+const OptimizedInput = ({ value, onChange, debounceTime = 400, ...props }) => {
+  const [localValue, setLocalValue] = useState(value);
+
+  // Sync if parent state changes (like when loading from API/Import)
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  useEffect(() => {
+    // Wait for the user to stop typing before sending to the massive parent state
+    const handler = setTimeout(() => {
+      if (localValue !== value) {
+        onChange(localValue);
+      }
+    }, debounceTime);
+
+    return () => clearTimeout(handler);
+  }, [localValue, value, onChange, debounceTime]);
+
+  return (
+    <input
+      {...props}
+      value={localValue}
+      onChange={(e) => setLocalValue(e.target.value)}
+      onBlur={(e) => {
+        // Guarantee save if they click out of the box quickly
+        if (localValue !== value) onChange(e.target.value);
+      }}
+    />
+  );
+};
+
 // -------------------------------------------------------------
 // PROGRESS SUMMARY (Memoized)
 // -------------------------------------------------------------
@@ -292,8 +325,6 @@ const CreatePD = () => {
     // Check if we navigated here with a 'loadId' (from History or Dashboard)
     if (location.state && location.state.loadId) {
       const idToLoad = location.state.loadId;
-      // Clear the state to prevent reloading on simple refreshes if desired,
-      // but keeping it is fine for now.
       fetchFullPD(idToLoad);
     }
   }, [location.state]);
@@ -351,8 +382,6 @@ const CreatePD = () => {
       setLoading(false);
     }
   };
-  // --- FILE IMPORT HANDLER ---
-  // ... inside CreatePD component
 
   // --- FILE IMPORT HANDLER (ENHANCED) ---
   const handleFileUpload = async (e) => {
@@ -533,8 +562,6 @@ const CreatePD = () => {
     }
   };
 
-  // Make sure to keep the rest of the component unchanged
-
   const populateForm = (pd) => {
     const s1 = pd.section1_info;
     const s2 = pd.section2_objectives;
@@ -607,9 +634,8 @@ const CreatePD = () => {
   };
 
   // --- FORM HANDLERS ---
-  const handleMetaChange = useCallback((e) => {
-    const { name, value } = e.target;
-    setMetaData((prev) => ({ ...prev, [name]: value }));
+  const handleMetaChange = useCallback((field, value) => {
+    setMetaData((prev) => ({ ...prev, [field]: value }));
   }, []);
 
   const handleNestedChange = useCallback(
@@ -1038,7 +1064,7 @@ const CreatePD = () => {
   }, [handleSave]);
 
   // -------------------------------------------------------------
-  // RENDER HISTORY PANEL (Definition causing the error is FIXED here)
+  // RENDER HISTORY PANEL
   // -------------------------------------------------------------
   const renderHistoryPanel = useCallback(() => {
     if (!metaData.programCode) return null;
@@ -1105,6 +1131,7 @@ const CreatePD = () => {
           the fields below. This will overwrite current form data.
         </p>
         <div className="flex gap-4 items-center">
+          {/* FIXED: Reverted to standard input for File Type */}
           <input
             type="file"
             accept=".pdf"
@@ -1145,6 +1172,7 @@ const CreatePD = () => {
             Select Program *
           </label>
           <div className="relative">
+            {/* Keeping standard input for search to avoid lag on dropdown show */}
             <input
               type="text"
               value={searchProgram}
@@ -1224,11 +1252,11 @@ const CreatePD = () => {
                 <Calendar size={14} /> Scheme Year
               </div>
             </label>
-            <input
+            <OptimizedInput
               type="text"
               name="schemeYear"
               value={metaData.schemeYear}
-              onChange={handleMetaChange}
+              onChange={(val) => handleMetaChange("schemeYear", val)}
               className="w-full px-3 py-2 border rounded-lg"
               placeholder="e.g. 2024"
             />
@@ -1253,11 +1281,11 @@ const CreatePD = () => {
                 <Clock size={14} /> Effective A.Y.
               </div>
             </label>
-            <input
+            <OptimizedInput
               type="text"
               name="effectiveAy"
               value={metaData.effectiveAy}
-              onChange={handleMetaChange}
+              onChange={(val) => handleMetaChange("effectiveAy", val)}
               className="w-full px-3 py-2 border rounded-lg"
               placeholder="2024-25"
             />
@@ -1268,11 +1296,13 @@ const CreatePD = () => {
                 <CreditCard size={14} /> Total Credits
               </div>
             </label>
-            <input
+            <OptimizedInput
               type="number"
               name="totalCredits"
               value={metaData.totalCredits}
-              onChange={handleMetaChange}
+              onChange={(val) =>
+                handleMetaChange("totalCredits", parseInt(val) || 0)
+              }
               className="w-full px-3 py-2 border rounded-lg"
             />
           </div>
@@ -1293,12 +1323,10 @@ const CreatePD = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
                 {key.replace(/_/g, " ")}
               </label>
-              <input
+              <OptimizedInput
                 type="text"
                 value={value}
-                onChange={(e) =>
-                  handleNestedChange("details", key, e.target.value)
-                }
+                onChange={(val) => handleNestedChange("details", key, val)}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
@@ -1318,12 +1346,10 @@ const CreatePD = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
                 {key.replace(/_/g, " ")}
               </label>
-              <input
+              <OptimizedInput
                 type="text"
                 value={value}
-                onChange={(e) =>
-                  handleNestedChange("award", key, e.target.value)
-                }
+                onChange={(val) => handleNestedChange("award", key, val)}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
@@ -1523,10 +1549,10 @@ const CreatePD = () => {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               1 Hr. Lecture (L) per week
             </label>
-            <input
+            <OptimizedInput
               type="number"
               value={pdData.credit_def.L}
-              onChange={(e) => updateCreditDef("L", e.target.value)}
+              onChange={(val) => updateCreditDef("L", val)}
               className="w-full px-3 py-2 border rounded-lg"
             />
           </div>
@@ -1534,10 +1560,10 @@ const CreatePD = () => {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               2 Hr. Tutorial (T) per week
             </label>
-            <input
+            <OptimizedInput
               type="number"
               value={pdData.credit_def.T}
-              onChange={(e) => updateCreditDef("T", e.target.value)}
+              onChange={(val) => updateCreditDef("T", val)}
               className="w-full px-3 py-2 border rounded-lg"
             />
           </div>
@@ -1545,10 +1571,10 @@ const CreatePD = () => {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               2 Hr. Practical (P) per week
             </label>
-            <input
+            <OptimizedInput
               type="number"
               value={pdData.credit_def.P}
-              onChange={(e) => updateCreditDef("P", e.target.value)}
+              onChange={(val) => updateCreditDef("P", val)}
               className="w-full px-3 py-2 border rounded-lg"
             />
           </div>
@@ -1599,36 +1625,30 @@ const CreatePD = () => {
                     {i + 1}
                   </td>
                   <td className="border border-gray-300 px-4 py-3">
-                    <input
+                    <OptimizedInput
                       type="text"
                       value={row.category}
-                      onChange={(e) =>
-                        updateStructureItem(i, "category", e.target.value)
+                      onChange={(val) =>
+                        updateStructureItem(i, "category", val)
                       }
                       className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
                     />
                   </td>
                   <td className="border border-gray-300 px-4 py-3">
-                    <input
+                    <OptimizedInput
                       type="text"
                       value={row.code}
-                      onChange={(e) =>
-                        updateStructureItem(i, "code", e.target.value)
-                      }
+                      onChange={(val) => updateStructureItem(i, "code", val)}
                       className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none uppercase"
                     />
                   </td>
                   <td className="border border-gray-300 px-4 py-3">
-                    <input
+                    <OptimizedInput
                       type="number"
                       min="0"
                       value={row.credits}
-                      onChange={(e) =>
-                        updateStructureItem(
-                          i,
-                          "credits",
-                          parseInt(e.target.value) || 0,
-                        )
+                      onChange={(val) =>
+                        updateStructureItem(i, "credits", parseInt(val) || 0)
                       }
                       className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
                     />
@@ -1736,36 +1756,36 @@ const CreatePD = () => {
                         {ci + 1}
                       </td>
                       <td className="border border-gray-300 px-3 py-2">
-                        <input
+                        <OptimizedInput
                           type="text"
                           value={c.code}
-                          onChange={(e) =>
-                            updateCourse(semIndex, ci, "code", e.target.value)
+                          onChange={(val) =>
+                            updateCourse(semIndex, ci, "code", val)
                           }
                           className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none uppercase"
                         />
                       </td>
                       <td className="border border-gray-300 px-3 py-2">
-                        <input
+                        <OptimizedInput
                           type="text"
                           value={c.title}
-                          onChange={(e) =>
-                            updateCourse(semIndex, ci, "title", e.target.value)
+                          onChange={(val) =>
+                            updateCourse(semIndex, ci, "title", val)
                           }
                           className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
                         />
                       </td>
                       <td className="border border-gray-300 px-3 py-2 w-16">
-                        <input
+                        <OptimizedInput
                           type="number"
                           min="0"
                           value={c.credits}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             updateCourse(
                               semIndex,
                               ci,
                               "credits",
-                              e.target.value,
+                              parseInt(val) || 0,
                             )
                           }
                           className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
@@ -1861,23 +1881,21 @@ const CreatePD = () => {
                 {/* Editable Semester */}
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">Sem</span>
-                  <input
+                  <OptimizedInput
                     type="number"
                     min="1"
                     value={grp.sem}
-                    onChange={(e) =>
-                      updateElectiveGroupSemester("prof", gi, e.target.value)
+                    onChange={(val) =>
+                      updateElectiveGroupSemester("prof", gi, val)
                     }
                     className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
                   />
                 </div>
                 {/* Editable Title */}
-                <input
+                <OptimizedInput
                   type="text"
                   value={grp.title}
-                  onChange={(e) =>
-                    updateElectiveGroupTitle("prof", gi, e.target.value)
-                  }
+                  onChange={(val) => updateElectiveGroupTitle("prof", gi, val)}
                   className="flex-1 min-w-[200px] px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
                   placeholder="Group title"
                 />
@@ -1917,49 +1935,37 @@ const CreatePD = () => {
                   {grp.courses.map((c, ci) => (
                     <tr key={ci}>
                       <td className="border border-gray-300 px-3 py-2">
-                        <input
+                        <OptimizedInput
                           type="text"
                           value={c.code}
-                          onChange={(e) =>
-                            updateElectiveCourse(
-                              "prof",
-                              gi,
-                              ci,
-                              "code",
-                              e.target.value,
-                            )
+                          onChange={(val) =>
+                            updateElectiveCourse("prof", gi, ci, "code", val)
                           }
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm uppercase"
                         />
                       </td>
                       <td className="border border-gray-300 px-3 py-2">
-                        <input
+                        <OptimizedInput
                           type="text"
                           value={c.title}
-                          onChange={(e) =>
-                            updateElectiveCourse(
-                              "prof",
-                              gi,
-                              ci,
-                              "title",
-                              e.target.value,
-                            )
+                          onChange={(val) =>
+                            updateElectiveCourse("prof", gi, ci, "title", val)
                           }
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                         />
                       </td>
                       <td className="border border-gray-300 px-3 py-2">
-                        <input
+                        <OptimizedInput
                           type="number"
                           min="0"
                           value={c.credits}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             updateElectiveCourse(
                               "prof",
                               gi,
                               ci,
                               "credits",
-                              parseInt(e.target.value) || 0,
+                              parseInt(val) || 0,
                             )
                           }
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
@@ -2005,23 +2011,21 @@ const CreatePD = () => {
                 {/* Editable Semester */}
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">Sem</span>
-                  <input
+                  <OptimizedInput
                     type="number"
                     min="1"
                     value={grp.sem}
-                    onChange={(e) =>
-                      updateElectiveGroupSemester("open", gi, e.target.value)
+                    onChange={(val) =>
+                      updateElectiveGroupSemester("open", gi, val)
                     }
                     className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
                   />
                 </div>
                 {/* Editable Title */}
-                <input
+                <OptimizedInput
                   type="text"
                   value={grp.title}
-                  onChange={(e) =>
-                    updateElectiveGroupTitle("open", gi, e.target.value)
-                  }
+                  onChange={(val) => updateElectiveGroupTitle("open", gi, val)}
                   className="flex-1 min-w-[200px] px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
                   placeholder="Group title"
                 />
@@ -2061,49 +2065,37 @@ const CreatePD = () => {
                   {grp.courses.map((c, ci) => (
                     <tr key={ci}>
                       <td className="border border-gray-300 px-3 py-2">
-                        <input
+                        <OptimizedInput
                           type="text"
                           value={c.code}
-                          onChange={(e) =>
-                            updateElectiveCourse(
-                              "open",
-                              gi,
-                              ci,
-                              "code",
-                              e.target.value,
-                            )
+                          onChange={(val) =>
+                            updateElectiveCourse("open", gi, ci, "code", val)
                           }
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm uppercase"
                         />
                       </td>
                       <td className="border border-gray-300 px-3 py-2">
-                        <input
+                        <OptimizedInput
                           type="text"
                           value={c.title}
-                          onChange={(e) =>
-                            updateElectiveCourse(
-                              "open",
-                              gi,
-                              ci,
-                              "title",
-                              e.target.value,
-                            )
+                          onChange={(val) =>
+                            updateElectiveCourse("open", gi, ci, "title", val)
                           }
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                         />
                       </td>
                       <td className="border border-gray-300 px-3 py-2">
-                        <input
+                        <OptimizedInput
                           type="number"
                           min="0"
                           value={c.credits}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             updateElectiveCourse(
                               "open",
                               gi,
                               ci,
                               "credits",
-                              parseInt(e.target.value) || 0,
+                              parseInt(val) || 0,
                             )
                           }
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
