@@ -1,25 +1,22 @@
 import multer from "multer";
-import path from "path";
-import os from "os"; // Import OS module
 
-// 1. Use the system's temporary directory (Allowed in Vercel)
-const uploadDir = os.tmpdir();
+// 1. Switch to Memory Storage (No local files created)
+const storage = multer.memoryStorage();
 
-const storage = multer.diskStorage({
-  destination: function (req, file, callback) {
-    // Save files to the temporary directory
-    callback(null, uploadDir);
+const upload = multer({
+  storage: storage,
+  limits: {
+    // 50MB limit for the buffer
+    fileSize: 50 * 1024 * 1024,
   },
-  filename: function (req, file, callback) {
-    // Generate unique filename
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    callback(
-      null,
-      file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname),
-    );
+  fileFilter: (req, file, cb) => {
+    // Only allow PDFs
+    if (file.mimetype === "application/pdf") {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF documents are allowed!"), false);
+    }
   },
 });
-
-const upload = multer({ storage });
 
 export default upload;
