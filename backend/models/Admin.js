@@ -1,14 +1,13 @@
 // models/Creater.js
 import mongoose from "mongoose";
 
-const createrSchema = new mongoose.Schema(
+const adminSchema = new mongoose.Schema(
   {
     email: {
       type: String,
       unique: true,
       lowercase: true,
       trim: true,
-      required: true,
     },
     password: {
       type: String,
@@ -42,14 +41,13 @@ const createrSchema = new mongoose.Schema(
     assigned_cd: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "CourseDocument", // Links to your CD model
+        ref: "CourseDocument", // This will link to your upcoming CD model
       },
     ],
 
-    // Strictly locked to 'creator' only
     role: {
       type: String,
-      enum: ["creator"],
+      enum: ["creator", "reviewer", "admin"],
       default: "creator",
     },
 
@@ -80,5 +78,5 @@ const createrSchema = new mongoose.Schema(
   },
 );
 
-const Creater = mongoose.model("Creater", createrSchema);
-export default Creater;
+const Admin = mongoose.model("Admin", adminSchema);
+export default Admin;

@@ -3,11 +3,11 @@ import bcrypt from "bcryptjs";
 import Creater from "../models/Creater.js";
 
 // Import Section Models
-import ProgramDocument from "../models/ProgramDocument.js";
-import Section1_Info from "../models/Section1_Info.js";
-import Section2_Objectives from "../models/Section2_Objectives.js";
-import Section3_Structure from "../models/Section3_Structure.js";
-import Section4_Electives from "../models/Section4_Electives.js";
+import ProgramDocument from "../models/pd/ProgramDocument.js";
+import Section1_Info from "../models/pd/Section1_Info.js";
+import Section2_Objectives from "../models/pd/Section2_Objectives.js";
+import Section3_Structure from "../models/pd/Section3_Structure.js";
+import Section4_Electives from "../models/pd/Section4_Electives.js";
 
 // --- REQUIRED IMPORTS FOR FILE PARSING ---
 import { spawn } from "child_process";
@@ -535,5 +535,45 @@ export const getCreatorHistory = async (req, res) => {
     res
       .status(500)
       .json({ success: false, message: "Failed to fetch document history" });
+  }
+};
+export const searchCreaters = async (req, res) => {
+  try {
+    const { search } = req.query;
+
+    // Default query: only active creators
+    let query = { status: "active" };
+
+    // If there is a search term, search across name, email, or discipline
+    if (search) {
+      const searchRegex = new RegExp(search, "i"); // Case-insensitive
+      query.$or = [
+        { name: searchRegex },
+        { email: searchRegex },
+        { discipline: searchRegex },
+      ];
+    }
+
+    const creaters = await Creater.find(query)
+      .select("name email discipline _id")
+      .limit(20); // Limit results to prevent massive payloads
+
+    // Format the data to match what the frontend expects
+    const formattedCreaters = creaters.map((c) => ({
+      id: c._id,
+      name: c.name || "Unknown Name",
+      email: c.email || "No Email",
+      dept: c.discipline || "No Dept",
+    }));
+
+    res.status(200).json({ success: true, creaters: formattedCreaters });
+  } catch (error) {
+    console.error("Search Creators Error:", error);
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Server error while searching creators",
+      });
   }
 };

@@ -9,6 +9,7 @@ import {
   uploadAndParsePD,
   getDashboardStats,
   getCreatorHistory,
+  searchCreaters,
 } from "../controllers/createrController.js";
 import authCreater from "../middlewares/createrAuth.js";
 import upload from "../middlewares/multer.js";
@@ -31,5 +32,6 @@ createrRouter.post(
 );
 createrRouter.get("/dashboard-stats", authCreater, getDashboardStats);
 createrRouter.get("/pd/history", authCreater, getCreatorHistory);
+createrRouter.get("/search", searchCreaters);
 
 export default createrRouter;

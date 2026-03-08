@@ -11,6 +11,13 @@ const CourseSchema = new mongoose.Schema(
       default: "Theory",
     },
     category: { type: String, default: "Core" }, // Core, Competency, Life Skills, etc.
+
+    // --- NEW: Assigned Creator for the CD ---
+    assignedCreater: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Creater",
+      default: null,
+    },
   },
   { _id: false },
 );

@@ -1,14 +1,23 @@
 import mongoose from "mongoose";
 
+// Sub-schema for individual elective courses
 const ElectiveCourseSchema = new mongoose.Schema(
   {
     code: { type: String, required: true },
     title: { type: String, required: true },
     credits: { type: Number, required: true },
+
+    // --- NEW: Assigned Creator for the CD ---
+    assignedCreater: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Creater",
+      default: null,
+    },
   },
   { _id: false },
 );
 
+// Sub-schema for Elective Groups (e.g., Professional Elective - 1)
 const ElectiveGroupSchema = new mongoose.Schema(
   {
     semester: { type: Number, required: true },

@@ -3,14 +3,14 @@ import CreatorSidebar from "./CreatorSidebar";
 
 const CreatorLayout = ({ children }) => {
   return (
-    <div className="flex h-screen bg-stone-50 font-sans">
-      {/* Fixed Sidebar */}
-      <div className="flex-shrink-0">
-        <CreatorSidebar />
-      </div>
+    // Added overflow-hidden to prevent the whole page from scrolling
+    <div className="flex h-screen bg-stone-50 font-sans overflow-hidden">
+      {/* Sidebar - Now part of standard Flex flow */}
+      <CreatorSidebar />
 
       {/* Main Scrollable Content */}
-      <main className="flex-1 overflow-y-auto ml-64 p-8">
+      {/* Removed ml-64. flex-1 will automatically fill the remaining space */}
+      <main className="flex-1 overflow-y-auto p-6 md:p-8 transition-all duration-300">
         <div className="max-w-7xl mx-auto">{children}</div>
       </main>
     </div>

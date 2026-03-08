@@ -5,9 +5,9 @@
 @tailwind utilities;
 
 
-* {
-  font-family: Outfit;
-}
+/* * {
+    font-family: Outfit;
+  } */
 
 select {
   appearance: none;

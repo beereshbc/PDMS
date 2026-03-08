@@ -41,10 +41,14 @@ import {
   RotateCcw,
   UploadCloud,
   FileUp,
+  UserPlus,
+  UserCheck,
+  Menu, // Added for dropdown button
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useLocation, useNavigate } from "react-router-dom";
 import html2pdf from "html2pdf.js";
+import SearchCreator from "../components/SearchCreator";
 
 // --- REACT 19 COMPATIBLE EDITOR ---
 import JoditEditor from "jodit-react";
@@ -224,13 +228,13 @@ const ProgressSummary = React.memo(({ metaData, pdData, activeStep }) => {
           <div key={step.id} className="flex flex-col items-center">
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
-                ${
-                  step.completed
-                    ? "bg-green-100 text-green-600"
-                    : activeStep === step.id
-                      ? "bg-blue-100 text-blue-600"
-                      : "bg-gray-100 text-gray-400"
-                }`}
+                  ${
+                    step.completed
+                      ? "bg-green-100 text-green-600"
+                      : activeStep === step.id
+                        ? "bg-blue-100 text-blue-600"
+                        : "bg-gray-100 text-gray-400"
+                  }`}
             >
               {step.completed ? <CheckCircle size={16} /> : step.id}
             </div>
@@ -257,9 +261,27 @@ const CreatePD = () => {
   const [searchProgram, setSearchProgram] = useState("");
   const [showProgramDropdown, setShowProgramDropdown] = useState(false);
   const [recentVersions, setRecentVersions] = useState([]);
+  // Dropdown state for sidebar
+  const [showSidebarDropdown, setShowSidebarDropdown] = useState(false);
+  const dropdownRef = useRef(null); // Ref for click outside
+
+  // Modal State for Assigning Creators
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [currentAssignContext, setCurrentAssignContext] = useState(null); // { semIndex, courseIndex, code }
   const previewRef = useRef(null);
   const editorRef = useRef(null);
   const fileInputRef = useRef(null); // Ref for file input
+
+  // Click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowSidebarDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Dirty State Tracking
   const [dirtySections, setDirtySections] = useState(new Set());
@@ -826,6 +848,58 @@ const CreatePD = () => {
     [markDirty],
   );
 
+  const handleAssignCreator = useCallback(
+    (semIndex, courseIndex, creator) => {
+      markDirty("section3");
+      setPdData((prev) => {
+        const newSems = [...prev.semesters];
+        // Save the creator's ID and name to the course object
+        newSems[semIndex].courses[courseIndex].assigneeId = creator.id;
+        newSems[semIndex].courses[courseIndex].assigneeName = creator.name;
+        return { ...prev, semesters: newSems };
+      });
+    },
+    [markDirty],
+  );
+
+  const openAssignModal = (semIndex, courseIndex, course) => {
+    setCurrentAssignContext({
+      semIndex,
+      courseIndex,
+      code: course.code || "New Course",
+      currentAssigneeId: course.assigneeId,
+    });
+    setIsAssignModalOpen(true);
+  };
+
+  // --- NEW HANDLERS FOR ELECTIVES ---
+  const handleAssignElectiveCreator = useCallback(
+    (type, groupIndex, courseIndex, creator) => {
+      markDirty("section4");
+      const key = type === "prof" ? "prof_electives" : "open_electives";
+      setPdData((prev) => {
+        const arr = [...prev[key]];
+        arr[groupIndex].courses[courseIndex].assigneeId = creator.id;
+        arr[groupIndex].courses[courseIndex].assigneeName = creator.name;
+        return { ...prev, [key]: arr };
+      });
+    },
+    [markDirty],
+  );
+
+  const openElectiveAssignModal = (type, groupIndex, courseIndex, course) => {
+    setCurrentAssignContext({
+      isElective: true,
+      electiveType: type, // 'prof' or 'open'
+      groupIndex,
+      courseIndex,
+      code: course.code || "New Elective",
+      currentAssigneeId: course.assigneeId,
+    });
+    setIsAssignModalOpen(true);
+  };
+  // ----------------------------------
+
   // Elective handlers
   const addElectiveGroup = useCallback(
     (type) => {
@@ -1114,7 +1188,7 @@ const CreatePD = () => {
   }, [metaData.programCode, recentVersions, fetchFullPD]);
 
   // -------------------------------------------------------------
-  // STEP RENDERERS
+  // STEP RENDERERS (unchanged)
   // -------------------------------------------------------------
   const renderStep1 = () => (
     <div className="space-y-6">
@@ -1744,6 +1818,10 @@ const CreatePD = () => {
                     <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold text-gray-600">
                       Category
                     </th>
+                    {/* NEW COLUMN FOR ASSIGNEE */}
+                    <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold text-gray-600 w-32">
+                      Assignee
+                    </th>
                     <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold text-gray-600">
                       Actions
                     </th>
@@ -1837,6 +1915,35 @@ const CreatePD = () => {
                           <option>Internship</option>
                         </select>
                       </td>
+                      {/* NEW DATA CELL FOR ASSIGNEE BUTTON */}
+                      <td className="border border-gray-300 px-3 py-2 text-center">
+                        <button
+                          onClick={() => openAssignModal(semIndex, ci, c)}
+                          className={`flex items-center gap-1 justify-center w-full px-2 py-1 rounded text-xs border transition-colors ${
+                            c.assigneeId
+                              ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                              : "bg-gray-50 border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600"
+                          }`}
+                        >
+                          {c.assigneeId ? (
+                            <>
+                              <UserCheck size={14} />
+                              <span
+                                className="truncate max-w-[80px]"
+                                title={c.assigneeName}
+                              >
+                                {c.assigneeName.split(" ")[0]}{" "}
+                                {/* Show first name to save space */}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus size={14} />
+                              Assign
+                            </>
+                          )}
+                        </button>
+                      </td>
                       <td className="border border-gray-300 px-3 py-2 text-center">
                         <button
                           onClick={() => removeCourse(semIndex, ci)}
@@ -1928,6 +2035,10 @@ const CreatePD = () => {
                     <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold w-16">
                       Cr
                     </th>
+                    {/* NEW COLUMN FOR ASSIGNEE */}
+                    <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold w-32">
+                      Assignee
+                    </th>
                     <th className="border border-gray-300 px-3 py-2 w-12"></th>
                   </tr>
                 </thead>
@@ -1970,6 +2081,36 @@ const CreatePD = () => {
                           }
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                         />
+                      </td>
+                      {/* NEW DATA CELL FOR ASSIGNEE BUTTON */}
+                      <td className="border border-gray-300 px-3 py-2 text-center">
+                        <button
+                          onClick={() =>
+                            openElectiveAssignModal("prof", gi, ci, c)
+                          }
+                          className={`flex items-center gap-1 justify-center w-full px-2 py-1 rounded text-xs border transition-colors ${
+                            c.assigneeId
+                              ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                              : "bg-gray-50 border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600"
+                          }`}
+                        >
+                          {c.assigneeId ? (
+                            <>
+                              <UserCheck size={14} />
+                              <span
+                                className="truncate max-w-[80px]"
+                                title={c.assigneeName}
+                              >
+                                {c.assigneeName.split(" ")[0]}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus size={14} />
+                              Assign
+                            </>
+                          )}
+                        </button>
                       </td>
                       <td className="border border-gray-300 px-3 py-2 text-center">
                         <button
@@ -2058,6 +2199,10 @@ const CreatePD = () => {
                     <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold w-16">
                       Cr
                     </th>
+                    {/* NEW COLUMN FOR ASSIGNEE */}
+                    <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold w-32">
+                      Assignee
+                    </th>
                     <th className="border border-gray-300 px-3 py-2 w-12"></th>
                   </tr>
                 </thead>
@@ -2101,6 +2246,36 @@ const CreatePD = () => {
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                         />
                       </td>
+                      {/* NEW DATA CELL FOR ASSIGNEE BUTTON */}
+                      <td className="border border-gray-300 px-3 py-2 text-center">
+                        <button
+                          onClick={() =>
+                            openElectiveAssignModal("open", gi, ci, c)
+                          }
+                          className={`flex items-center gap-1 justify-center w-full px-2 py-1 rounded text-xs border transition-colors ${
+                            c.assigneeId
+                              ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                              : "bg-gray-50 border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600"
+                          }`}
+                        >
+                          {c.assigneeId ? (
+                            <>
+                              <UserCheck size={14} />
+                              <span
+                                className="truncate max-w-[80px]"
+                                title={c.assigneeName}
+                              >
+                                {c.assigneeName.split(" ")[0]}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus size={14} />
+                              Assign
+                            </>
+                          )}
+                        </button>
+                      </td>
                       <td className="border border-gray-300 px-3 py-2 text-center">
                         <button
                           onClick={() => removeElectiveCourse("open", gi, ci)}
@@ -2121,7 +2296,7 @@ const CreatePD = () => {
   );
 
   // -------------------------------------------------------------
-  // MAIN RENDER RETURN
+  // MAIN RENDER RETURN (with dropdown)
   // -------------------------------------------------------------
   return (
     <CreatorLayout>
@@ -2142,6 +2317,107 @@ const CreatePD = () => {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {/* Dropdown button for sidebar */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setShowSidebarDropdown(!showSidebarDropdown)}
+              className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 border border-gray-300"
+            >
+              <Menu size={16} />
+              <span className="hidden sm:inline">Menu</span>
+            </button>
+            {showSidebarDropdown && (
+              <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-4 max-h-[80vh] overflow-y-auto">
+                <ProgressSummary
+                  metaData={metaData}
+                  pdData={pdData}
+                  activeStep={activeStep}
+                />
+                <div className="mt-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                  <nav className="space-y-1 p-2">
+                    {[
+                      {
+                        id: 1,
+                        label: "Program Information",
+                        icon: BookOpen,
+                        description: "Basic program details",
+                      },
+                      {
+                        id: 2,
+                        label: "Objectives & Outcomes",
+                        icon: List,
+                        description: "PEOs, POs, PSOs",
+                      },
+                      {
+                        id: 3,
+                        label: "Structure & Curriculum",
+                        icon: Layers,
+                        description: "Courses & credits",
+                      },
+                      {
+                        id: 4,
+                        label: "Electives",
+                        icon: Table,
+                        description: "Professional & open electives",
+                      },
+                    ].map((step) => (
+                      <button
+                        key={step.id}
+                        onClick={() => {
+                          setActiveStep(step.id);
+                          setShowSidebarDropdown(false);
+                        }}
+                        className={`w-full flex items-start gap-3 p-3 text-left rounded-lg transition-colors ${
+                          activeStep === step.id
+                            ? "bg-blue-50 border border-blue-200"
+                            : "hover:bg-gray-50"
+                        }`}
+                      >
+                        <div
+                          className={`p-2 rounded ${
+                            activeStep === step.id
+                              ? "bg-blue-100 text-blue-600"
+                              : "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          <step.icon size={18} />
+                        </div>
+                        <div className="flex-1">
+                          <div
+                            className={`font-medium ${
+                              activeStep === step.id
+                                ? "text-blue-700"
+                                : "text-gray-700"
+                            }`}
+                          >
+                            {step.label}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {step.description}
+                          </div>
+                        </div>
+                        {activeStep === step.id && (
+                          <ChevronRight className="text-blue-600" size={18} />
+                        )}
+                      </button>
+                    ))}
+                  </nav>
+                </div>
+                {/* Dirty state indicator */}
+                {dirtySections.size > 0 && (
+                  <div className="mt-4 bg-yellow-50 p-3 rounded border border-yellow-200 text-xs text-yellow-700">
+                    Unsaved changes in:{" "}
+                    {Array.from(dirtySections)
+                      .map((s) => s.replace("section", "Sec "))
+                      .join(", ")}
+                  </div>
+                )}
+                {/* History Panel */}
+                {renderHistoryPanel()}
+              </div>
+            )}
+          </div>
+
           <button
             onClick={fetchLatestPD}
             disabled={!metaData.programCode || loading}
@@ -2173,134 +2449,75 @@ const CreatePD = () => {
         </div>
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar */}
-        <div className="lg:col-span-1 space-y-4">
-          <ProgressSummary
-            metaData={metaData}
-            pdData={pdData}
-            activeStep={activeStep}
-          />
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-            <nav className="space-y-1 p-2">
-              {[
-                {
-                  id: 1,
-                  label: "Program Information",
-                  icon: BookOpen,
-                  description: "Basic program details",
-                },
-                {
-                  id: 2,
-                  label: "Objectives & Outcomes",
-                  icon: List,
-                  description: "PEOs, POs, PSOs",
-                },
-                {
-                  id: 3,
-                  label: "Structure & Curriculum",
-                  icon: Layers,
-                  description: "Courses & credits",
-                },
-                {
-                  id: 4,
-                  label: "Electives",
-                  icon: Table,
-                  description: "Professional & open electives",
-                },
-              ].map((step) => (
-                <button
-                  key={step.id}
-                  onClick={() => setActiveStep(step.id)}
-                  className={`w-full flex items-start gap-3 p-3 text-left rounded-lg transition-colors ${
-                    activeStep === step.id
-                      ? "bg-blue-50 border border-blue-200"
-                      : "hover:bg-gray-50"
-                  }`}
-                >
-                  <div
-                    className={`p-2 rounded ${
-                      activeStep === step.id
-                        ? "bg-blue-100 text-blue-600"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    <step.icon size={18} />
-                  </div>
-                  <div className="flex-1">
-                    <div
-                      className={`font-medium ${
-                        activeStep === step.id
-                          ? "text-blue-700"
-                          : "text-gray-700"
-                      }`}
-                    >
-                      {step.label}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {step.description}
-                    </div>
-                  </div>
-                  {activeStep === step.id && (
-                    <ChevronRight className="text-blue-600" size={18} />
-                  )}
-                </button>
-              ))}
-            </nav>
-          </div>
-          {/* Dirty state indicator */}
-          {dirtySections.size > 0 && (
-            <div className="bg-yellow-50 p-3 rounded border border-yellow-200 text-xs text-yellow-700">
-              Unsaved changes in:{" "}
-              {Array.from(dirtySections)
-                .map((s) => s.replace("section", "Sec "))
-                .join(", ")}
-            </div>
-          )}
-          {/* History Panel now inside sidebar */}
-          {renderHistoryPanel()}
+      {/* Main Form Area - Full width now */}
+      <div className="w-full">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+          {activeStep === 1 && renderStep1()}
+          {activeStep === 2 && renderStep2()}
+          {activeStep === 3 && renderStep3()}
+          {activeStep === 4 && renderStep4()}
         </div>
 
-        {/* Main Form Area */}
-        <div className="lg:col-span-3">
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            {activeStep === 1 && renderStep1()}
-            {activeStep === 2 && renderStep2()}
-            {activeStep === 3 && renderStep3()}
-            {activeStep === 4 && renderStep4()}
-          </div>
-
-          {/* Footer Navigation */}
-          <div className="mt-6 flex justify-between">
+        {/* Footer Navigation */}
+        <div className="mt-6 flex justify-between">
+          <button
+            onClick={() => setActiveStep((p) => Math.max(1, p - 1))}
+            disabled={activeStep === 1}
+            className="flex items-center gap-2 px-5 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          >
+            <ArrowLeft size={18} /> Previous
+          </button>
+          <div className="flex items-center gap-3">
             <button
-              onClick={() => setActiveStep((p) => Math.max(1, p - 1))}
-              disabled={activeStep === 1}
-              className="flex items-center gap-2 px-5 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+              onClick={handleSaveAndNext}
+              disabled={loading}
+              className="px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
             >
-              <ArrowLeft size={18} /> Previous
+              Save & Next
             </button>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleSaveAndNext}
-                disabled={loading}
-                className="px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-              >
-                Save & Next
-              </button>
-              <button
-                onClick={() => setActiveStep((p) => Math.min(4, p + 1))}
-                disabled={activeStep === 4}
-                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                Next <ArrowRight size={18} />
-              </button>
-            </div>
+            <button
+              onClick={() => setActiveStep((p) => Math.min(4, p + 1))}
+              disabled={activeStep === 4}
+              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              Next <ArrowRight size={18} />
+            </button>
           </div>
         </div>
       </div>
 
       {/* Hidden preview ref for PDF generation (if used) */}
+      <div ref={previewRef} style={{ display: "none" }} />
+
+      {/* --- NEW MODAL COMPONENT --- */}
+      <SearchCreator
+        isOpen={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        courseCode={currentAssignContext?.code}
+        currentAssigneeId={currentAssignContext?.currentAssigneeId}
+        onSelect={(creator) => {
+          if (currentAssignContext) {
+            if (currentAssignContext.isElective) {
+              // It's an Elective (Step 4)
+              handleAssignElectiveCreator(
+                currentAssignContext.electiveType,
+                currentAssignContext.groupIndex,
+                currentAssignContext.courseIndex,
+                creator,
+              );
+            } else {
+              // It's a Regular Core Course (Step 3)
+              handleAssignCreator(
+                currentAssignContext.semIndex,
+                currentAssignContext.courseIndex,
+                creator,
+              );
+            }
+          }
+        }}
+      />
+
+      {/* Note: Remember to keep only ONE hidden previewRef div down here! */}
       <div ref={previewRef} style={{ display: "none" }} />
     </CreatorLayout>
   );

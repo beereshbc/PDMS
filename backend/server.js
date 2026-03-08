@@ -4,12 +4,14 @@ import cors from "cors";
 import connectDB from "./config/mongoDB.js";
 import devRouter from "./routes/devRouter.js";
 import createrRouter from "./routes/createrRouter.js";
+import cdCreaterRouter from "./routes/cdCreaterRouter.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 const allowedOrigins = [
   "http://localhost:5173",
+  "http://localhost:5174",
   "https://pdms-creater.vercel.app",
 ];
 
@@ -41,6 +43,7 @@ app.get("/", (req, res) => {
 
 app.use("/api/dev", devRouter);
 app.use("/api/creater", createrRouter);
+app.use("/api/creater/cd", cdCreaterRouter);
 
 app.listen(PORT, () => {
   console.log(`Server is flying on port ${PORT}`);
