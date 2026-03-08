@@ -1,8 +1,6 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import Creater from "../models/Creater.js";
-
-// Import Section Models
 import ProgramDocument from "../models/pd/ProgramDocument.js";
 import Section1_Info from "../models/pd/Section1_Info.js";
 import Section2_Objectives from "../models/pd/Section2_Objectives.js";
@@ -15,25 +13,47 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
-// Define __dirname for ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- AUTHENTICATION FUNCTIONS ---
-
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: PUBLIC INSTITUTIONAL DROPDOWN ENDPOINTS
+// ─────────────────────────────────────────────────────────────────────────────
 export const registerCreater = async (req, res) => {
   try {
-    const { email, password, name, role, status, ...otherDetails } = req.body;
+    const {
+      email,
+      password,
+      name,
+      mobile_no,
+      aadhar,
+      designation,
+      category,
+      college,
+      faculty,
+      school,
+      department,
+      programme,
+      discipline,
+      course,
+      programId,
+      programName,
+    } = req.body;
 
     if (!email || !password || !name) {
       return res.status(400).json({
+        success: false,
         message: "Email, password and name are required",
       });
     }
 
-    const existing = await Creater.findOne({ email });
+    const existing = await Creater.findOne({
+      email: email.toLowerCase().trim(),
+    });
     if (existing) {
-      return res.status(409).json({ message: "Email already registered" });
+      return res
+        .status(409)
+        .json({ success: false, message: "Email already registered" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -41,10 +61,22 @@ export const registerCreater = async (req, res) => {
     await Creater.create({
       email: email.toLowerCase().trim(),
       password: hashedPassword,
-      name,
-      role: role || "creator",
-      status: status || "inactive",
-      ...otherDetails,
+      name: name.trim(),
+      mobile_no,
+      aadhar,
+      designation,
+      category,
+      college: college || "GM University",
+      faculty,
+      school,
+      department,
+      programme,
+      discipline,
+      course: course || discipline || department,
+      programId,
+      programName,
+      role: "creator",
+      status: "inactive",
     });
 
     res.status(201).json({
@@ -52,7 +84,7 @@ export const registerCreater = async (req, res) => {
       message: "Registration submitted. Await admin approval.",
     });
   } catch (error) {
-    console.error("Creater register error:", error);
+    console.error("registerCreater error:", error);
     res.status(500).json({ success: false, message: "Registration failed" });
   }
 };
@@ -112,6 +144,55 @@ export const loginCreater = async (req, res) => {
   } catch (error) {
     console.error("Creater login error:", error);
     res.status(500).json({ success: false, message: "Login failed" });
+  }
+};
+
+export const getCreaterProfile = async (req, res) => {
+  try {
+    const creater = await Creater.findById(req.id).select(
+      "name email mobile_no college faculty school department programme discipline course programId programName designation category",
+    );
+    if (!creater)
+      return res.status(404).json({ success: false, message: "Not found" });
+    res.json({ success: true, profile: creater });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// [ ... Keep your existing createOrUpdatePD, uploadAndParsePD, getDashboardStats etc ... ]
+
+export const searchCreaters = async (req, res) => {
+  try {
+    const { search } = req.query;
+    let query = { status: "active" };
+
+    if (search) {
+      const searchRegex = new RegExp(search, "i");
+      query.$or = [
+        { name: searchRegex },
+        { email: searchRegex },
+        { discipline: searchRegex },
+      ];
+    }
+
+    const creaters = await Creater.find(query)
+      .select("name email discipline _id")
+      .limit(20);
+
+    const formattedCreaters = creaters.map((c) => ({
+      id: c._id,
+      name: c.name || "Unknown Name",
+      email: c.email || "No Email",
+      dept: c.discipline || "No Dept",
+    }));
+
+    res.status(200).json({ success: true, creaters: formattedCreaters });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server error while searching creators",
+    });
   }
 };
 
@@ -239,39 +320,34 @@ export const uploadAndParsePD = async (req, res) => {
   }
 };
 
-// --- PROGRAM DOCUMENT (PD) FUNCTIONS ---
-
 // Helper to increment version string (e.g., "1.0.0" -> "1.0.1")
 const incrementVersion = (version) => {
   if (!version) return "1.0.0";
   const parts = version.split(".");
   if (parts.length < 3) return "1.0.0";
-  // Simple increment of patch version.
   parts[2] = parseInt(parts[2]) + 1;
   return parts.join(".");
 };
 
 /**
- * INTELLIGENT VERSION CONTROL LOGIC:
- * 1. Checks if it's a new program -> Creates everything v1.0.0
- * 2. If update ->
- * a. Fetches previous PD to get current Section IDs.
- * b. Checks 'sectionsToUpdate' array from frontend.
- * c. REUSES existing section IDs for sections NOT in the list.
- * d. CREATES new versions ONLY for sections in the list.
- * e. Creates new Master PD v1.0.X linking the mix of old and new sections.
+ * INTELLIGENT PD VERSION CONTROL LOGIC:
+ * 1. New Program -> Creates v1.0.0
+ * 2. Workflow Update -> Updates Assignments/Status in-place (No Version Bump)
+ * 3. Draft Update -> Updates content in-place without bumping version.
+ * 4. Content Update on Approved/UnderReview -> Creates new sections and bumps version.
  */
 export const createOrUpdatePD = async (req, res) => {
   try {
     const {
-      programId, // Identifier (e.g. 'BTECH-CSE')
-      metaData, // { schemeYear, versionNo, effectiveAy, status }
+      programId,
+      metaData,
       section1Data,
       section2Data,
       section3Data,
       section4Data,
       isNewProgram,
-      sectionsToUpdate = [], // ['section2', 'section3'] or ['all']
+      sectionsToUpdate = [],
+      isWorkflowUpdate = false, // FLAG: Set true if ONLY assigning users or changing status
     } = req.body;
 
     const creatorId = req.id || "Admin"; // From auth middleware
@@ -279,11 +355,52 @@ export const createOrUpdatePD = async (req, res) => {
     let s1_Id, s2_Id, s3_Id, s4_Id;
     let newPdVersion = metaData.versionNo || "1.0.0";
 
-    // --- SCENARIO 1: NEW PROGRAM ---
+    const updateAll = sectionsToUpdate.includes("all");
+
+    // --- DATA MAPPING HELPER ---
+    const mapCourses = (courses = []) => {
+      return courses.map((c) => ({
+        code: c.code,
+        title: c.title,
+        credits: c.credits,
+        type: c.type,
+        category: c.category,
+        assignedCreater: c.assigneeId || null,
+      }));
+    };
+
+    const mapElectiveGroups = (groups = []) => {
+      return groups.map((g) => ({
+        semester: g.semester,
+        title: g.title,
+        courses: mapCourses(g.courses),
+      }));
+    };
+
+    const mappedSection3Data = section3Data
+      ? {
+          ...section3Data,
+          semesters: section3Data.semesters?.map((sem) => ({
+            semNumber: sem.semNumber,
+            courses: mapCourses(sem.courses),
+          })),
+        }
+      : {};
+
+    const mappedSection4Data = section4Data
+      ? {
+          ...section4Data,
+          professionalElectives: mapElectiveGroups(
+            section4Data.professionalElectives,
+          ),
+          openElectives: mapElectiveGroups(section4Data.openElectives),
+        }
+      : {};
+
+    // --- SCENARIO 1: NEW PROGRAM DOCUMENT ---
     if (isNewProgram) {
       console.log(`Creating New Program Document: ${programId}`);
 
-      // Create all sections fresh
       const s1 = await Section1_Info.create({
         ...section1Data,
         programId,
@@ -297,101 +414,182 @@ export const createOrUpdatePD = async (req, res) => {
         createdBy: creatorId,
       });
       const s3 = await Section3_Structure.create({
-        ...section3Data,
+        ...mappedSection3Data,
         programId,
         version: "1.0.0",
         createdBy: creatorId,
       });
       const s4 = await Section4_Electives.create({
-        ...section4Data,
+        ...mappedSection4Data,
         programId,
         version: "1.0.0",
         createdBy: creatorId,
       });
 
-      s1_Id = s1._id;
-      s2_Id = s2._id;
-      s3_Id = s3._id;
-      s4_Id = s4._id;
-      newPdVersion = "1.0.0";
-    } else {
-      // --- SCENARIO 2: UPDATE EXISTING ---
+      const masterPD = await ProgramDocument.create({
+        programCode: programId,
+        schemeYear: metaData.schemeYear,
+        pdVersion: "1.0.0",
+        effectiveAcademicYear: metaData.effectiveAy,
+        section1_info: s1._id,
+        section2_objectives: s2._id,
+        section3_structure: s3._id,
+        section4_electives: s4._id,
+        status: metaData.status || "Draft",
+        createdBy: creatorId,
+      });
+
+      return res.json({
+        success: true,
+        message: "Program Created Successfully",
+        version: "1.0.0",
+        data: masterPD,
+      });
+    }
+
+    // --- SCENARIO 2: UPDATE EXISTING PROGRAM ---
+    console.log(`Updating ${programId}. Changed Sections: ${sectionsToUpdate}`);
+
+    const previousPD = await ProgramDocument.findOne({
+      programCode: programId,
+    }).sort({ createdAt: -1 });
+
+    if (!previousPD) {
+      // Fallback: If DB record doesn't exist somehow, create as new
+      return createOrUpdatePD(
+        { ...req, body: { ...req.body, isNewProgram: true } },
+        res,
+      );
+    }
+
+    // --- 2A: WORKFLOW/ASSIGNMENT UPDATE ONLY (NO VERSION BUMP) ---
+    if (isWorkflowUpdate) {
       console.log(
-        `Updating ${programId}. Changed Sections: ${sectionsToUpdate}`,
+        `Workflow update detected. Updating assignments in-place for v${previousPD.pdVersion}`,
       );
 
-      // 1. Get the Previous PD to find existing links
-      const previousPD = await ProgramDocument.findOne({
-        programCode: programId,
-      }).sort({ createdAt: -1 });
-
-      if (!previousPD) {
-        // Fallback: If logic says update but no DB record exists, treat as new
-        return createOrUpdatePD(
-          { ...req, body: { ...req.body, isNewProgram: true } },
-          res,
+      if (updateAll || sectionsToUpdate.includes("section3")) {
+        await Section3_Structure.findByIdAndUpdate(
+          previousPD.section3_structure,
+          { ...mappedSection3Data },
+        );
+      }
+      if (updateAll || sectionsToUpdate.includes("section4")) {
+        await Section4_Electives.findByIdAndUpdate(
+          previousPD.section4_electives,
+          { ...mappedSection4Data },
         );
       }
 
-      // 2. Increment Version
-      newPdVersion = incrementVersion(previousPD.pdVersion);
-
-      // 3. Initialize IDs with the OLD ones (Default to reusing)
-      s1_Id = previousPD.section1_info;
-      s2_Id = previousPD.section2_objectives;
-      s3_Id = previousPD.section3_structure;
-      s4_Id = previousPD.section4_electives;
-
-      const updateAll = sectionsToUpdate.includes("all");
-
-      // 4. Create NEW versions ONLY for dirty sections
-
-      // Section 1
-      if (updateAll || sectionsToUpdate.includes("section1")) {
-        const s1 = await Section1_Info.create({
-          ...section1Data,
-          programId,
-          version: newPdVersion,
-          createdBy: creatorId,
-        });
-        s1_Id = s1._id; // Link to new
+      if (metaData.status && metaData.status !== previousPD.status) {
+        previousPD.status = metaData.status;
+        await previousPD.save();
       }
 
-      // Section 2
-      if (updateAll || sectionsToUpdate.includes("section2")) {
-        const s2 = await Section2_Objectives.create({
-          ...section2Data,
-          programId,
-          version: newPdVersion,
-          createdBy: creatorId,
-        });
-        s2_Id = s2._id; // Link to new
-      }
-
-      // Section 3
-      if (updateAll || sectionsToUpdate.includes("section3")) {
-        const s3 = await Section3_Structure.create({
-          ...section3Data,
-          programId,
-          version: newPdVersion,
-          createdBy: creatorId,
-        });
-        s3_Id = s3._id; // Link to new
-      }
-
-      // Section 4
-      if (updateAll || sectionsToUpdate.includes("section4")) {
-        const s4 = await Section4_Electives.create({
-          ...section4Data,
-          programId,
-          version: newPdVersion,
-          createdBy: creatorId,
-        });
-        s4_Id = s4._id; // Link to new
-      }
+      return res.json({
+        success: true,
+        message: `Assignments updated for v${previousPD.pdVersion}`,
+        version: previousPD.pdVersion,
+        data: previousPD,
+      });
     }
 
-    // --- FINAL STEP: CREATE MASTER SNAPSHOT ---
+    // --- 2B: DRAFT IN-PLACE UPDATE (NO VERSION BUMP) ---
+    if (previousPD.status === "Draft") {
+      console.log(
+        `Updating existing Draft in-place for v${previousPD.pdVersion}`,
+      );
+
+      if (updateAll || sectionsToUpdate.includes("section1")) {
+        await Section1_Info.findByIdAndUpdate(previousPD.section1_info, {
+          ...section1Data,
+        });
+      }
+      if (updateAll || sectionsToUpdate.includes("section2")) {
+        await Section2_Objectives.findByIdAndUpdate(
+          previousPD.section2_objectives,
+          { ...section2Data },
+        );
+      }
+      if (updateAll || sectionsToUpdate.includes("section3")) {
+        await Section3_Structure.findByIdAndUpdate(
+          previousPD.section3_structure,
+          { ...mappedSection3Data },
+        );
+      }
+      if (updateAll || sectionsToUpdate.includes("section4")) {
+        await Section4_Electives.findByIdAndUpdate(
+          previousPD.section4_electives,
+          { ...mappedSection4Data },
+        );
+      }
+
+      previousPD.schemeYear = metaData.schemeYear;
+      previousPD.effectiveAcademicYear = metaData.effectiveAy;
+      if (metaData.status) previousPD.status = metaData.status;
+
+      await previousPD.save();
+
+      return res.json({
+        success: true,
+        message:
+          metaData.status === "UnderReview"
+            ? `Program Submitted for Review (v${previousPD.pdVersion})`
+            : `Draft Updated Successfully (v${previousPD.pdVersion})`,
+        version: previousPD.pdVersion,
+        data: previousPD,
+      });
+    }
+
+    // --- 2C: CONTENT UPDATE ON APPROVED/UNDER REVIEW (INCREMENT VERSION) ---
+    newPdVersion = incrementVersion(previousPD.pdVersion);
+
+    // FIXED: Removed the 'let' keywords here so we just assign to the variables declared at the top of the function
+    s1_Id = previousPD.section1_info;
+    s2_Id = previousPD.section2_objectives;
+    s3_Id = previousPD.section3_structure;
+    s4_Id = previousPD.section4_electives;
+
+    if (updateAll || sectionsToUpdate.includes("section1")) {
+      const s1 = await Section1_Info.create({
+        ...section1Data,
+        programId,
+        version: newPdVersion,
+        createdBy: creatorId,
+      });
+      s1_Id = s1._id;
+    }
+
+    if (updateAll || sectionsToUpdate.includes("section2")) {
+      const s2 = await Section2_Objectives.create({
+        ...section2Data,
+        programId,
+        version: newPdVersion,
+        createdBy: creatorId,
+      });
+      s2_Id = s2._id;
+    }
+
+    if (updateAll || sectionsToUpdate.includes("section3")) {
+      const s3 = await Section3_Structure.create({
+        ...mappedSection3Data,
+        programId,
+        version: newPdVersion,
+        createdBy: creatorId,
+      });
+      s3_Id = s3._id;
+    }
+
+    if (updateAll || sectionsToUpdate.includes("section4")) {
+      const s4 = await Section4_Electives.create({
+        ...mappedSection4Data,
+        programId,
+        version: newPdVersion,
+        createdBy: creatorId,
+      });
+      s4_Id = s4._id;
+    }
+
     const masterPD = await ProgramDocument.create({
       programCode: programId,
       schemeYear: metaData.schemeYear,
@@ -407,17 +605,60 @@ export const createOrUpdatePD = async (req, res) => {
 
     res.json({
       success: true,
-      message: isNewProgram
-        ? "Program Created Successfully"
-        : `Program Updated to v${newPdVersion}`,
+      message: `Program Updated to v${newPdVersion}`,
       version: newPdVersion,
       data: masterPD,
     });
   } catch (error) {
     console.error("PD Save Error:", error);
-    res.json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
+// --- HELPER: Format Populated Data for Frontend ---
+// Maps the populated 'assignedCreater' object back into 'assigneeId' and 'assigneeName' for the React UI.
+const formatPopulatedPD = (pd) => {
+  const pdObj = pd.toObject ? pd.toObject() : pd;
+
+  const mapCourses = (courses) => {
+    return courses.map((c) => {
+      if (c.assignedCreater) {
+        c.assigneeId = c.assignedCreater._id;
+        c.assigneeName = c.assignedCreater.name;
+        delete c.assignedCreater; // Clean up payload
+      }
+      return c;
+    });
+  };
+
+  if (pdObj.section3_structure?.semesters) {
+    pdObj.section3_structure.semesters = pdObj.section3_structure.semesters.map(
+      (sem) => ({
+        ...sem,
+        courses: mapCourses(sem.courses),
+      }),
+    );
+  }
+
+  if (pdObj.section4_electives?.professionalElectives) {
+    pdObj.section4_electives.professionalElectives =
+      pdObj.section4_electives.professionalElectives.map((grp) => ({
+        ...grp,
+        courses: mapCourses(grp.courses),
+      }));
+  }
+
+  if (pdObj.section4_electives?.openElectives) {
+    pdObj.section4_electives.openElectives =
+      pdObj.section4_electives.openElectives.map((grp) => ({
+        ...grp,
+        courses: mapCourses(grp.courses),
+      }));
+  }
+
+  return pdObj;
+};
+
+// --- CONTROLLERS ---
 
 // Fetch the 5 most recent versions of a specific program for History Sidebar
 export const getRecentVersions = async (req, res) => {
@@ -440,12 +681,35 @@ export const getPDById = async (req, res) => {
     const pd = await ProgramDocument.findById(id)
       .populate("section1_info")
       .populate("section2_objectives")
-      .populate("section3_structure")
-      .populate("section4_electives");
+      // Deep populate for Section 3 Courses
+      .populate({
+        path: "section3_structure",
+        populate: {
+          path: "semesters.courses.assignedCreater",
+          select: "name email _id",
+        },
+      })
+      // Deep populate for Section 4 Electives
+      .populate({
+        path: "section4_electives",
+        populate: [
+          {
+            path: "professionalElectives.courses.assignedCreater",
+            select: "name email _id",
+          },
+          {
+            path: "openElectives.courses.assignedCreater",
+            select: "name email _id",
+          },
+        ],
+      });
 
     if (!pd) return res.json({ success: false, message: "Document not found" });
 
-    res.json({ success: true, pd });
+    // Format to inject assigneeName/assigneeId for frontend UI
+    const formattedPD = formatPopulatedPD(pd);
+
+    res.json({ success: true, pd: formattedPD });
   } catch (error) {
     res.json({ success: false, message: error.message });
   }
@@ -459,17 +723,41 @@ export const getLatestPD = async (req, res) => {
       .sort({ createdAt: -1 })
       .populate("section1_info")
       .populate("section2_objectives")
-      .populate("section3_structure")
-      .populate("section4_electives");
+      // Deep populate for Section 3 Courses
+      .populate({
+        path: "section3_structure",
+        populate: {
+          path: "semesters.courses.assignedCreater",
+          select: "name email _id",
+        },
+      })
+      // Deep populate for Section 4 Electives
+      .populate({
+        path: "section4_electives",
+        populate: [
+          {
+            path: "professionalElectives.courses.assignedCreater",
+            select: "name email _id",
+          },
+          {
+            path: "openElectives.courses.assignedCreater",
+            select: "name email _id",
+          },
+        ],
+      });
 
     if (!pd) return res.json({ success: false, message: "No history found" });
 
-    res.json({ success: true, pd });
+    // Format to inject assigneeName/assigneeId for frontend UI
+    const formattedPD = formatPopulatedPD(pd);
+
+    res.json({ success: true, pd: formattedPD });
   } catch (error) {
     res.json({ success: false, message: error.message });
   }
 };
 
+// Dashboard Stats for PD
 export const getDashboardStats = async (req, res) => {
   try {
     const creatorId = req.id; // From auth middleware
@@ -515,6 +803,8 @@ export const getDashboardStats = async (req, res) => {
       .json({ success: false, message: "Failed to fetch dashboard data" });
   }
 };
+
+// Full Creator History for PDs
 export const getCreatorHistory = async (req, res) => {
   try {
     const creatorId = req.id; // Extracted from auth middleware
@@ -535,45 +825,5 @@ export const getCreatorHistory = async (req, res) => {
     res
       .status(500)
       .json({ success: false, message: "Failed to fetch document history" });
-  }
-};
-export const searchCreaters = async (req, res) => {
-  try {
-    const { search } = req.query;
-
-    // Default query: only active creators
-    let query = { status: "active" };
-
-    // If there is a search term, search across name, email, or discipline
-    if (search) {
-      const searchRegex = new RegExp(search, "i"); // Case-insensitive
-      query.$or = [
-        { name: searchRegex },
-        { email: searchRegex },
-        { discipline: searchRegex },
-      ];
-    }
-
-    const creaters = await Creater.find(query)
-      .select("name email discipline _id")
-      .limit(20); // Limit results to prevent massive payloads
-
-    // Format the data to match what the frontend expects
-    const formattedCreaters = creaters.map((c) => ({
-      id: c._id,
-      name: c.name || "Unknown Name",
-      email: c.email || "No Email",
-      dept: c.discipline || "No Dept",
-    }));
-
-    res.status(200).json({ success: true, creaters: formattedCreaters });
-  } catch (error) {
-    console.error("Search Creators Error:", error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Server error while searching creators",
-      });
   }
 };

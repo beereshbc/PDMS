@@ -1,82 +1,59 @@
-// models/Creater.js
 import mongoose from "mongoose";
 
 const adminSchema = new mongoose.Schema(
   {
+    // --- AUTHENTICATION ---
     email: {
       type: String,
       unique: true,
       lowercase: true,
       trim: true,
+      required: true,
     },
     password: {
       type: String,
       required: true,
     },
-
-    // Profile fields
-    name: String,
-    mobile_no: String,
-    college: String,
-    faculty: String,
-    school: String,
-    programme: String,
-    course: String,
-    discipline: String,
-    category: String,
-    designation: String,
-    aadhar: { type: String, select: false },
-
-    /**
-     * ASSIGNED DOCUMENTS
-     * These store the ObjectIds of the documents this person is allowed to manage.
-     */
-    assigned_pd: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "ProgramDocument", // Links to your main ProgramDocument model
-      },
-    ],
-
-    assigned_cd: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "CourseDocument", // This will link to your upcoming CD model
-      },
-    ],
-
-    role: {
+    name: {
       type: String,
-      enum: ["creator", "reviewer", "admin"],
-      default: "creator",
+      trim: true,
+      required: true,
     },
 
+    // --- INSTITUTIONAL AFFILIATION ---
+    college: { type: String, trim: true, default: "GM University" },
+    faculty: { type: String, trim: true },
+    school: { type: String, trim: true },
+    department: { type: String, trim: true },
+
+    // --- PROGRAMME DETAILS ---
+    programme: { type: String, trim: true },
+    discipline: { type: String, trim: true },
+    programId: { type: String, trim: true },
+    programName: { type: String, trim: true },
+
+    // --- ROLE & ACCESS ---
+    role: {
+      type: String,
+      enum: ["admin"],
+      default: "admin",
+    },
     status: {
       type: String,
       enum: ["active", "inactive"],
-      default: "active",
+      default: "inactive", // CHANGED: Admins are now inactive by default pending approval
     },
-
     blocked: {
       type: Boolean,
-      default: false,
+      default: false, // Added to track security blocks
     },
-    blocked_reason: String,
-    blocked_at: Date,
-    blocked_by: String,
-
-    last_updated: {
+    last_login: {
       type: Date,
-      default: Date.now,
     },
   },
   {
-    timestamps: {
-      createdAt: "created_at",
-      updatedAt: "last_updated",
-    },
+    timestamps: true,
   },
 );
 
-const Admin = mongoose.model("Admin", adminSchema);
-export default Admin;
+export default mongoose.model("Admin", adminSchema);

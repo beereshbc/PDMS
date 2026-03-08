@@ -22,8 +22,9 @@ const DevLogin = () => {
     setLoading(true);
     try {
       const { data } = await axios.post("/api/dev/login", formData);
+
       if (data?.token) {
-        localStorage.setItem("devToken", data.token);
+        // AppDevContext's useEffect will automatically handle the localStorage save
         setDevToken(data.token);
         toast.success("Login successful!");
         navigate("/dev/dashboard");
@@ -47,7 +48,7 @@ const DevLogin = () => {
         animate={{ opacity: 1, y: 0 }}
         className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100 w-full max-w-md transition-all duration-500"
       >
-        {/* Top Header Bar - Matching Creator Theme */}
+        {/* Top Header Bar */}
         <div className="bg-[#BF1A1A] p-6 text-white text-center">
           <motion.div
             initial={{ scale: 0.8 }}

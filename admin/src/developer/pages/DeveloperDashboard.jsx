@@ -1,25 +1,67 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
-import { ShieldCheck, PenTool, Users } from "lucide-react";
+import { ShieldCheck, PenTool, RefreshCw } from "lucide-react";
+import { useAppDevContext } from "../context/AppContext";
+import { toast } from "react-hot-toast";
 
 const DeveloperDashboard = () => {
-  // Mock Data (In a real app, fetch this from your API)
-  const stats = {
-    totalAdmins: 8,
-    totalCreators: 42,
+  const { axios, devToken } = useAppDevContext();
+
+  const [stats, setStats] = useState({
+    totalAdmins: 0,
+    totalCreators: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch stats from backend
+  const fetchDashboardStats = async () => {
+    setIsLoading(true);
+    try {
+      // Explicitly passing 'devtoken' to match the authDev middleware expectations
+      const { data } = await axios.get("/api/dev/dashboard-stats", {
+        headers: { devtoken: devToken },
+      });
+
+      if (data.success) {
+        setStats(data.stats);
+      }
+    } catch (error) {
+      console.error("Error fetching stats:", error);
+      toast.error("Failed to load dashboard statistics");
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  useEffect(() => {
+    if (devToken) {
+      fetchDashboardStats();
+    }
+  }, [devToken]);
 
   return (
     <Layout>
       <div className="flex flex-col h-full space-y-8">
         {/* 1. Welcome & Header Section */}
-        <div className="mt-4">
-          <h1 className="text-4xl font-bold text-[#BF1A1A] mb-2">
-            Welcome, Developer
-          </h1>
-          <p className="text-xl text-gray-600 font-light">
-            Control Center for CDMS Administration
-          </p>
+        <div className="mt-4 flex justify-between items-end">
+          <div>
+            <h1 className="text-4xl font-bold text-[#BF1A1A] mb-2">
+              Welcome, Developer
+            </h1>
+            <p className="text-xl text-gray-600 font-light">
+              Control Center for CDMS Administration
+            </p>
+          </div>
+
+          {/* Refresh Button */}
+          <button
+            onClick={fetchDashboardStats}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 shadow-sm transition-all"
+          >
+            <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} />
+            Refresh Stats
+          </button>
         </div>
 
         {/* 2. Platform Overview Section */}
@@ -43,7 +85,7 @@ const DeveloperDashboard = () => {
           </ul>
         </div>
 
-        {/* 3. Simple Stats Cards (Bottom) */}
+        {/* 3. Stats Cards (Bottom) */}
         <div className="mt-auto pt-4">
           <h3 className="text-lg font-semibold text-gray-500 mb-4 uppercase tracking-wider">
             Current User Statistics
@@ -57,7 +99,7 @@ const DeveloperDashboard = () => {
                   Total Administrators
                 </p>
                 <p className="text-5xl font-bold text-[#BF1A1A] mt-2">
-                  {stats.totalAdmins}
+                  {isLoading ? "..." : stats.totalAdmins}
                 </p>
                 <p className="text-xs text-gray-400 mt-2">Full System Access</p>
               </div>
@@ -73,7 +115,7 @@ const DeveloperDashboard = () => {
                   Total Creators
                 </p>
                 <p className="text-5xl font-bold text-orange-600 mt-2">
-                  {stats.totalCreators}
+                  {isLoading ? "..." : stats.totalCreators}
                 </p>
                 <p className="text-xs text-gray-400 mt-2">Faculty & Staff</p>
               </div>

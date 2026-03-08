@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
+import { toast } from "react-hot-toast";
 import {
   Search,
   Trash2,
@@ -7,73 +8,37 @@ import {
   ShieldCheck,
   Mail,
   RefreshCw,
-  Power, // Added for Active/Inactive toggle
-  Ban, // Alternative icon for inactive
+  Power,
+  Ban,
 } from "lucide-react";
-
-// --- MOCK API SERVICE ---
-const getAdminList = async () => {
-  await new Promise((resolve) => setTimeout(resolve, 800));
-
-  return [
-    {
-      id: 1,
-      user_name: "admin_anjali",
-      name: "Dr. Anjali Gupta",
-      email: "anjali.g@gmit.edu",
-      mobile_no: "9876543210",
-      college: "GMIT",
-      faculty: "CSE",
-      role: "admin",
-      status: "active",
-      blocked: 0,
-      last_updated: "2024-03-10T10:30:00Z",
-    },
-    {
-      id: 2,
-      user_name: "admin_raj",
-      name: "Prof. Raj Kumar",
-      email: "raj.k@gmit.edu",
-      mobile_no: "9123456780",
-      college: "GMIT",
-      faculty: "ECE",
-      role: "admin",
-      status: "active",
-      blocked: 1,
-      last_updated: "2024-03-09T14:15:00Z",
-    },
-    {
-      id: 3,
-      user_name: "admin_priya",
-      name: "Dr. Priya Sharma",
-      email: "priya.s@gmit.edu",
-      mobile_no: "9988776655",
-      college: "GMIT",
-      faculty: "ME",
-      role: "admin",
-      status: "inactive",
-      blocked: 0,
-      last_updated: "2024-02-28T09:00:00Z",
-    },
-  ];
-};
+import { useAppDevContext } from "../context/AppContext";
 
 const AdminList = () => {
   const [admins, setAdmins] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
+  const { axios, devToken } = useAppDevContext();
+
   useEffect(() => {
-    fetchAdmins();
-  }, []);
+    if (devToken) {
+      fetchAdmins();
+    }
+  }, [devToken]);
 
   const fetchAdmins = async () => {
     setIsLoading(true);
     try {
-      const data = await getAdminList();
-      setAdmins(data);
+      // Explicitly passing 'devtoken' to match backend middleware
+      const { data } = await axios.get("/api/dev/admins", {
+        headers: { devtoken: devToken },
+      });
+      if (data.success) {
+        setAdmins(data.admins);
+      }
     } catch (error) {
       console.error("Failed to fetch admins:", error);
+      toast.error("Failed to load admin list");
     } finally {
       setIsLoading(false);
     }
@@ -82,17 +47,27 @@ const AdminList = () => {
   // --- ACTIONS ---
 
   // 1. Handle Block/Unblock (Security Lock)
-  const toggleBlockStatus = async (id, currentStatus) => {
-    const action = currentStatus === 1 ? "Unblock" : "Block";
+  const toggleBlockStatus = async (id, currentBlockedState) => {
+    const action = currentBlockedState ? "Unblock" : "Block";
     if (window.confirm(`Are you sure you want to ${action} this admin?`)) {
-      setAdmins((prev) =>
-        prev.map((admin) =>
-          admin.id === id
-            ? { ...admin, blocked: currentStatus === 1 ? 0 : 1 }
-            : admin,
-        ),
-      );
-      // API call would go here
+      try {
+        const newBlockedStatus = !currentBlockedState;
+
+        await axios.put(
+          `/api/dev/admins/${id}`,
+          { blocked: newBlockedStatus },
+          { headers: { devtoken: devToken } },
+        );
+
+        setAdmins((prev) =>
+          prev.map((admin) =>
+            admin._id === id ? { ...admin, blocked: newBlockedStatus } : admin,
+          ),
+        );
+        toast.success(`Admin ${action}ed successfully`);
+      } catch (error) {
+        toast.error(`Failed to ${action} admin`);
+      }
     }
   };
 
@@ -102,12 +77,22 @@ const AdminList = () => {
     const action = currentStatus === "active" ? "Deactivate" : "Activate";
 
     if (window.confirm(`Are you sure you want to ${action} this account?`)) {
-      setAdmins((prev) =>
-        prev.map((admin) =>
-          admin.id === id ? { ...admin, status: newStatus } : admin,
-        ),
-      );
-      // API call would go here
+      try {
+        await axios.put(
+          `/api/dev/admins/${id}`,
+          { status: newStatus },
+          { headers: { devtoken: devToken } },
+        );
+
+        setAdmins((prev) =>
+          prev.map((admin) =>
+            admin._id === id ? { ...admin, status: newStatus } : admin,
+          ),
+        );
+        toast.success(`Admin ${action}d successfully`);
+      } catch (error) {
+        toast.error(`Failed to ${action} admin`);
+      }
     }
   };
 
@@ -118,16 +103,23 @@ const AdminList = () => {
         "CRITICAL: Are you sure you want to delete this admin permanently? This action cannot be undone.",
       )
     ) {
-      setAdmins((prev) => prev.filter((admin) => admin.id !== id));
-      // API call would go here
+      try {
+        await axios.delete(`/api/dev/admins/${id}`, {
+          headers: { devtoken: devToken },
+        });
+        setAdmins((prev) => prev.filter((admin) => admin._id !== id));
+        toast.success("Admin deleted permanently");
+      } catch (error) {
+        toast.error("Failed to delete admin");
+      }
     }
   };
 
   const filteredAdmins = admins.filter(
     (admin) =>
-      admin.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      admin.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      admin.faculty.toLowerCase().includes(searchTerm.toLowerCase()),
+      admin.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      admin.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      admin.faculty?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   return (
@@ -205,14 +197,14 @@ const AdminList = () => {
                 ) : (
                   filteredAdmins.map((admin) => (
                     <tr
-                      key={admin.id}
+                      key={admin._id}
                       className="hover:bg-red-50/30 transition-colors group"
                     >
                       {/* 1. Profile Column */}
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-[#BF1A1A]/10 text-[#BF1A1A] flex items-center justify-center font-bold text-lg">
-                            {admin.name.charAt(0)}
+                            {admin.name?.charAt(0) || "A"}
                           </div>
                           <div>
                             <div className="font-semibold text-gray-900">
@@ -230,10 +222,10 @@ const AdminList = () => {
                         <div className="text-sm text-gray-700">
                           <span className="font-medium">{admin.college}</span>
                           <span className="text-gray-400 mx-1">|</span>
-                          {admin.faculty}
+                          {admin.faculty || "No Faculty"}
                         </div>
                         <div className="text-xs text-gray-400 mt-0.5">
-                          ID: {admin.user_name}
+                          ID: ...{admin._id.slice(-6)}
                         </div>
                       </td>
 
@@ -268,7 +260,7 @@ const AdminList = () => {
                       <td className="px-6 py-4 text-center">
                         <button
                           onClick={() =>
-                            toggleBlockStatus(admin.id, admin.blocked)
+                            toggleBlockStatus(admin._id, admin.blocked)
                           }
                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
                             admin.blocked ? "bg-red-500" : "bg-gray-300"
@@ -289,7 +281,7 @@ const AdminList = () => {
                           {/* Active/Inactive Toggle Button */}
                           <button
                             onClick={() =>
-                              toggleActiveStatus(admin.id, admin.status)
+                              toggleActiveStatus(admin._id, admin.status)
                             }
                             className={`p-2 rounded-lg transition-all opacity-80 hover:opacity-100 ${
                               admin.status === "active"
@@ -307,7 +299,7 @@ const AdminList = () => {
 
                           {/* Delete Button */}
                           <button
-                            onClick={() => handleDelete(admin.id)}
+                            onClick={() => handleDelete(admin._id)}
                             className="p-2 text-gray-400 hover:text-[#BF1A1A] hover:bg-red-50 rounded-lg transition-all"
                             title="Delete Admin"
                           >

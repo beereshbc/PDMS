@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import axios from "axios";
+import toast from "react-hot-toast";
 
 const AppDevContext = createContext();
 
@@ -41,10 +42,11 @@ export const AppDevProvider = ({ children }) => {
   const logout = () => {
     setDevToken("");
     localStorage.removeItem("devToken");
+    toast.success("Developer session terminated");
   };
 
   const value = {
-    axios: devInstance, // Use the instance with the interceptor
+    axios: devInstance,
     devToken,
     setDevToken,
     logout,

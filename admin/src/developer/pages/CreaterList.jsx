@@ -13,29 +13,37 @@ import {
   Ban,
   Power,
 } from "lucide-react";
-import { useAppContext } from "../../admin/context/AppContext";
+// Import the DEV context
+import { useAppDevContext } from "../context/AppContext"; // Adjust path if needed
 
 const CreaterList = () => {
   const [creators, setCreators] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const { axios } = useAppContext(); // Get axios from context
+  // Get axios and devToken from the Developer context
+  const { axios, devToken } = useAppDevContext();
 
   useEffect(() => {
-    fetchCreators();
-  }, []);
+    if (devToken) {
+      fetchCreators();
+    }
+  }, [devToken]);
 
   // --- API CALLS ---
 
   const fetchCreators = async () => {
     setIsLoading(true);
     try {
-      const { data } = await axios.get("/api/dev/list");
+      // Explicitly passing 'devtoken' header
+      const { data } = await axios.get("/api/dev/list", {
+        headers: { devtoken: devToken },
+      });
       if (data.success) {
         setCreators(data.creators);
       }
     } catch (error) {
+      console.error(error);
       toast.error("Failed to load creators");
     } finally {
       setIsLoading(false);
@@ -48,9 +56,12 @@ const CreaterList = () => {
       return;
 
     try {
-      const { data } = await axios.put(`/api/dev/update/${id}`, {
-        blocked: !currentBlocked,
-      });
+      const { data } = await axios.put(
+        `/api/dev/update/${id}`,
+        { blocked: !currentBlocked },
+        { headers: { devtoken: devToken } },
+      );
+
       if (data.success) {
         toast.success(`Creator ${action}ed`);
         setCreators((prev) =>
@@ -65,9 +76,12 @@ const CreaterList = () => {
   const toggleActiveStatus = async (id, currentStatus) => {
     const newStatus = currentStatus === "active" ? "inactive" : "active";
     try {
-      const { data } = await axios.put(`/api/dev/update/${id}`, {
-        status: newStatus,
-      });
+      const { data } = await axios.put(
+        `/api/dev/update/${id}`,
+        { status: newStatus },
+        { headers: { devtoken: devToken } },
+      );
+
       if (data.success) {
         toast.success(`Creator set to ${newStatus}`);
         setCreators((prev) =>
@@ -86,7 +100,10 @@ const CreaterList = () => {
       return;
 
     try {
-      const { data } = await axios.delete(`/api/dev/delete/${id}`);
+      const { data } = await axios.delete(`/api/dev/delete/${id}`, {
+        headers: { devtoken: devToken },
+      });
+
       if (data.success) {
         toast.success("Creator removed");
         setCreators((prev) => prev.filter((c) => c._id !== id));
@@ -107,7 +124,7 @@ const CreaterList = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        {/* Header (Same as your UI) */}
+        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h2 className="text-3xl font-bold text-[#BF1A1A]">Creator List</h2>
@@ -142,7 +159,7 @@ const CreaterList = () => {
           </div>
         </div>
 
-        {/* Table (Updated keys to match MongoDB _id) */}
+        {/* Table */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -158,8 +175,20 @@ const CreaterList = () => {
               <tbody className="divide-y divide-gray-50">
                 {isLoading ? (
                   <tr>
-                    <td colSpan="5" className="px-6 py-8 text-center">
+                    <td
+                      colSpan="5"
+                      className="px-6 py-8 text-center text-gray-500"
+                    >
                       Loading...
+                    </td>
+                  </tr>
+                ) : filteredCreators.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan="5"
+                      className="px-6 py-8 text-center text-gray-500"
+                    >
+                      No creators found.
                     </td>
                   </tr>
                 ) : (
@@ -214,13 +243,19 @@ const CreaterList = () => {
                           onClick={() =>
                             toggleActiveStatus(creator._id, creator.status)
                           }
-                          className={`p-2 rounded-lg ${creator.status === "active" ? "text-green-600" : "text-gray-400"}`}
+                          className={`p-2 rounded-lg transition-all ${creator.status === "active" ? "text-green-600 hover:bg-green-50" : "text-gray-400 hover:bg-gray-100"}`}
+                          title={
+                            creator.status === "active"
+                              ? "Deactivate"
+                              : "Activate"
+                          }
                         >
                           <Power size={18} />
                         </button>
                         <button
                           onClick={() => handleDelete(creator._id)}
-                          className="p-2 text-gray-400 hover:text-red-600"
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                          title="Delete"
                         >
                           <Trash2 size={18} />
                         </button>
@@ -230,6 +265,25 @@ const CreaterList = () => {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Footer */}
+          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-between items-center text-xs text-gray-500">
+            <span>Showing {filteredCreators.length} creators</span>
+            <div className="flex gap-2">
+              <button
+                className="px-3 py-1 border rounded bg-white hover:bg-gray-100"
+                disabled
+              >
+                Previous
+              </button>
+              <button
+                className="px-3 py-1 border rounded bg-white hover:bg-gray-100"
+                disabled
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
       </div>
