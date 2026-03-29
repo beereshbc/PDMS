@@ -197,6 +197,7 @@ export const searchCreaters = async (req, res) => {
 };
 
 export const uploadAndParsePD = async (req, res) => {
+  // 1. Guard against missing files
   if (!req.file) {
     return res
       .status(400)
@@ -207,26 +208,28 @@ export const uploadAndParsePD = async (req, res) => {
   let responseSent = false;
 
   const cleanupFile = () => {
-    if (fs.existsSync(filePath)) {
-      try {
+    try {
+      if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
-      } catch (e) {
-        console.error("Cleanup error", e);
       }
+    } catch (err) {
+      console.error(`Failed to delete temp file ${filePath}:`, err);
     }
   };
 
   try {
+    // Resolve absolute path to the python script
     const scriptPath = path.join(__dirname, "..", "scripts", "pd_parser.py");
+
+    // Render/Linux environments use 'python3'
     const pythonCommand =
       process.env.NODE_ENV === "production" ? "python3" : "python";
 
-    // Check script exists
     if (!fs.existsSync(scriptPath)) {
       cleanupFile();
       return res
         .status(500)
-        .json({ success: false, message: "Parser script missing." });
+        .json({ success: false, message: "Parser script missing on server." });
     }
 
     const pythonProcess = spawn(pythonCommand, [scriptPath, filePath]);
@@ -234,7 +237,7 @@ export const uploadAndParsePD = async (req, res) => {
     let dataString = "";
     let errorString = "";
 
-    // INCREASE TIMEOUT TO 60 SECONDS for large files
+    // Timeout: 60 seconds for large PDFs
     const timeoutId = setTimeout(() => {
       if (!responseSent) {
         pythonProcess.kill("SIGKILL");
@@ -242,11 +245,7 @@ export const uploadAndParsePD = async (req, res) => {
         cleanupFile();
         res
           .status(504)
-          .json({
-            success: false,
-            message:
-              "Parsing timed out. The PDF is too large for the current server limits.",
-          });
+          .json({ success: false, message: "Parsing timed out (60s)." });
       }
     }, 60000);
 
@@ -266,7 +265,7 @@ export const uploadAndParsePD = async (req, res) => {
           .status(500)
           .json({
             success: false,
-            message: "Python failed to start",
+            message: "Failed to start Python",
             details: error.message,
           });
       }
@@ -284,7 +283,7 @@ export const uploadAndParsePD = async (req, res) => {
           .status(500)
           .json({
             success: false,
-            message: "Parsing failed",
+            message: "Python script failed",
             details: errorString,
           });
       }
@@ -297,13 +296,13 @@ export const uploadAndParsePD = async (req, res) => {
         const parsedData = JSON.parse(
           dataString.slice(jsonStartIndex, jsonEndIndex),
         );
-        res.json({ success: true, parsedData });
+        return res.json({ success: true, parsedData });
       } catch (e) {
-        res
+        return res
           .status(500)
           .json({
             success: false,
-            message: "Invalid data format from parser",
+            message: "Invalid parser output",
             raw: dataString,
           });
       }
@@ -311,7 +310,9 @@ export const uploadAndParsePD = async (req, res) => {
   } catch (error) {
     cleanupFile();
     if (!responseSent)
-      res.status(500).json({ success: false, message: "Server Error" });
+      res
+        .status(500)
+        .json({ success: false, message: "Unexpected Server Error" });
   }
 };
 

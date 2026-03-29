@@ -1183,12 +1183,13 @@ const EditCD = () => {
     const formData = new FormData();
     formData.append("cdFile", file);
     try {
+      // In EditCD.jsx -> handleFileUpload
       const { data } = await axios.post("/api/creater/cd/import", formData, {
-        // FIX: Reverted to your custom createrToken header
         headers: {
           "Content-Type": "multipart/form-data",
           createrToken: createrToken,
         },
+        timeout: 120000, // Wait up to 2 minutes for very large PDF files
       });
       if (data.success) {
         const arr = Array.isArray(data.parsedData)

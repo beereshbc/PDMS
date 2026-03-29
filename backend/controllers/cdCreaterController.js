@@ -86,6 +86,7 @@ const buildFormattedCD = (cd) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const uploadAndParseCD = async (req, res) => {
+  // 1. Guard against missing files
   if (!req.file) {
     return res
       .status(400)
@@ -95,97 +96,126 @@ export const uploadAndParseCD = async (req, res) => {
   const filePath = req.file.path;
   let responseSent = false;
 
+  // 2. Guaranteed Cleanup Helper
   const cleanupFile = () => {
     try {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    } catch (_) {}
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (err) {
+      console.error(`Failed to delete temp file ${filePath}:`, err);
+    }
   };
 
   try {
+    // 3. Absolute path resolution
     const scriptPath = path.join(__dirname, "..", "scripts", "cd_parser.py");
+
+    // 4. Production Environment Check (Render uses python3)
+    const pythonCommand =
+      process.env.NODE_ENV === "production" ? "python3" : "python";
 
     if (!fs.existsSync(scriptPath)) {
       cleanupFile();
       return res.status(500).json({
         success: false,
-        message: `Parser script not found at: ${scriptPath}`,
+        message: "Parser script not found on server.",
       });
     }
 
-    const pythonProcess = spawn("python", [scriptPath, filePath]);
+    const pythonProcess = spawn(pythonCommand, [scriptPath, filePath]);
+
     let dataString = "";
     let errorString = "";
 
+    // 5. Increased Timeout for heavy PDF parsing (60 seconds)
     const timeoutId = setTimeout(() => {
-      pythonProcess.kill("SIGKILL");
-      errorString += "\nKilled: exceeded 25s timeout.";
-    }, 25_000);
+      if (!responseSent) {
+        pythonProcess.kill("SIGKILL");
+        responseSent = true;
+        cleanupFile();
+        res.status(504).json({
+          success: false,
+          message:
+            "Parsing timed out. The PDF may be too large for current server resources.",
+        });
+      }
+    }, 60000);
 
-    pythonProcess.stdout.on("data", (d) => (dataString += d.toString()));
-    pythonProcess.stderr.on("data", (d) => (errorString += d.toString()));
+    pythonProcess.stdout.on("data", (data) => {
+      dataString += data.toString();
+    });
+    pythonProcess.stderr.on("data", (data) => {
+      errorString += data.toString();
+    });
 
-    pythonProcess.on("error", (err) => {
+    pythonProcess.on("error", (error) => {
       clearTimeout(timeoutId);
       cleanupFile();
       if (!responseSent) {
         responseSent = true;
-        res
-          .status(500)
-          .json({ success: false, message: "Could not start Python parser." });
+        console.error("Spawn Error:", error);
+        res.status(500).json({
+          success: false,
+          message: "Failed to start Python parser.",
+          details: error.message,
+        });
       }
     });
 
     pythonProcess.on("close", (code) => {
       clearTimeout(timeoutId);
-      cleanupFile();
+      cleanupFile(); // Cleanup uploaded PDF immediately after script finishes
+
       if (responseSent) return;
       responseSent = true;
 
       if (code !== 0) {
-        console.error(`Python exited ${code}:`, errorString);
-        return res
-          .status(500)
-          .json({
-            success: false,
-            message: "Parsing failed.",
-            details: errorString,
-          });
+        console.error(`Python Error (Code ${code}):`, errorString);
+        return res.status(500).json({
+          success: false,
+          message: "Parsing failed during script execution.",
+          details: errorString,
+        });
       }
 
       try {
-        const start = dataString.indexOf("{");
-        const end = dataString.lastIndexOf("}") + 1;
-        if (start === -1) throw new Error("No JSON in Python output");
+        // 6. Extract JSON block (handles any random print logs in the script)
+        const jsonStartIndex = dataString.indexOf("{");
+        const jsonEndIndex = dataString.lastIndexOf("}") + 1;
 
-        const parsed = JSON.parse(dataString.slice(start, end));
-        if (!parsed.success && parsed.message)
+        if (jsonStartIndex === -1) throw new Error("No JSON found");
+
+        const parsed = JSON.parse(
+          dataString.slice(jsonStartIndex, jsonEndIndex),
+        );
+
+        if (!parsed.success) {
           return res
             .status(400)
             .json({ success: false, message: parsed.message });
+        }
 
         return res.json({ success: true, parsedData: parsed.parsedData });
       } catch (e) {
-        console.error("JSON parse error:", e.message, "\nRaw:", dataString);
-        return res
-          .status(500)
-          .json({
-            success: false,
-            message: "Invalid data from parser.",
-            raw: dataString,
-          });
+        console.error("JSON Parsing Error:", e.message);
+        return res.status(500).json({
+          success: false,
+          message: "Invalid response format from parser.",
+          raw: dataString,
+        });
       }
     });
   } catch (error) {
     cleanupFile();
     if (!responseSent) {
-      console.error("uploadAndParseCD unexpected error:", error);
+      console.error("Controller Error:", error);
       res
         .status(500)
         .json({ success: false, message: "Unexpected server error." });
     }
   }
 };
-
 // ─────────────────────────────────────────────────────────────────────────────
 // SAVE / UPDATE
 // ─────────────────────────────────────────────────────────────────────────────
