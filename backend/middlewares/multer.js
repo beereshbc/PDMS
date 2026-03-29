@@ -4,8 +4,7 @@ import os from "os";
 
 const storage = multer.diskStorage({
   destination: function (req, file, callback) {
-    // os.tmpdir() is the gold standard for temporary cloud storage
-    callback(null, os.tmpdir());
+    callback(null, os.tmpdir()); // Required for Vercel
   },
   filename: function (req, file, callback) {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
@@ -18,17 +17,13 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // Set to 50MB
   fileFilter: (req, file, cb) => {
-    const allowedTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
+    const allowedTypes = ["application/pdf"];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only PDF and Word docs are allowed!"), false);
+      cb(new Error("Only PDF documents are allowed!"), false);
     }
   },
 });

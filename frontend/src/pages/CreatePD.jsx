@@ -552,9 +552,8 @@ const CreatePD = () => {
     try {
       const { data } = await axios.post("/api/creater/pd/import", formData, {
         headers: { createrToken, "Content-Type": "multipart/form-data" },
-        timeout: 35000,
+        timeout: 90000, // Increase frontend timeout to 90 seconds
       });
-
       if (data.success) {
         const imp = data.parsedData;
         setPdData((prev) => {

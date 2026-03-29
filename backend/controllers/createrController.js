@@ -197,7 +197,6 @@ export const searchCreaters = async (req, res) => {
 };
 
 export const uploadAndParsePD = async (req, res) => {
-  // 1. Guard against missing files
   if (!req.file) {
     return res
       .status(400)
@@ -208,31 +207,26 @@ export const uploadAndParsePD = async (req, res) => {
   let responseSent = false;
 
   const cleanupFile = () => {
-    try {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    } catch (err) {
-      console.error(`Cleanup failed for ${filePath}:`, err);
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (e) {
+        console.error("Cleanup error", e);
+      }
     }
   };
 
   try {
-    // Path to your script
     const scriptPath = path.join(__dirname, "..", "scripts", "pd_parser.py");
-
-    // In Vercel/Production, the command is usually 'python3'
     const pythonCommand =
       process.env.NODE_ENV === "production" ? "python3" : "python";
 
-    console.log(`Environment: ${process.env.NODE_ENV}`);
-    console.log(`Using Command: ${pythonCommand}`);
-    console.log(`Script Path: ${scriptPath}`);
-
+    // Check script exists
     if (!fs.existsSync(scriptPath)) {
       cleanupFile();
-      return res.status(500).json({
-        success: false,
-        message: "Parser script not found on server path.",
-      });
+      return res
+        .status(500)
+        .json({ success: false, message: "Parser script missing." });
     }
 
     const pythonProcess = spawn(pythonCommand, [scriptPath, filePath]);
@@ -240,18 +234,27 @@ export const uploadAndParsePD = async (req, res) => {
     let dataString = "";
     let errorString = "";
 
+    // INCREASE TIMEOUT TO 60 SECONDS for large files
     const timeoutId = setTimeout(() => {
-      pythonProcess.kill("SIGKILL");
-      errorString += "\nProcess timed out (25s).";
-    }, 25000);
+      if (!responseSent) {
+        pythonProcess.kill("SIGKILL");
+        responseSent = true;
+        cleanupFile();
+        res
+          .status(504)
+          .json({
+            success: false,
+            message:
+              "Parsing timed out. The PDF is too large for the current server limits.",
+          });
+      }
+    }, 60000);
 
     pythonProcess.stdout.on("data", (data) => {
       dataString += data.toString();
     });
-
     pythonProcess.stderr.on("data", (data) => {
       errorString += data.toString();
-      console.error(`Python Stderr: ${data.toString()}`);
     });
 
     pythonProcess.on("error", (error) => {
@@ -259,11 +262,13 @@ export const uploadAndParsePD = async (req, res) => {
       cleanupFile();
       if (!responseSent) {
         responseSent = true;
-        res.status(500).json({
-          success: false,
-          message: `Failed to start Python (${pythonCommand}).`,
-          error: error.message,
-        });
+        res
+          .status(500)
+          .json({
+            success: false,
+            message: "Python failed to start",
+            details: error.message,
+          });
       }
     });
 
@@ -275,36 +280,38 @@ export const uploadAndParsePD = async (req, res) => {
       responseSent = true;
 
       if (code !== 0) {
-        return res.status(500).json({
-          success: false,
-          message: "Parsing failed during execution.",
-          details: errorString,
-        });
+        return res
+          .status(500)
+          .json({
+            success: false,
+            message: "Parsing failed",
+            details: errorString,
+          });
       }
 
       try {
         const jsonStartIndex = dataString.indexOf("{");
         const jsonEndIndex = dataString.lastIndexOf("}") + 1;
-
         if (jsonStartIndex === -1) throw new Error("No JSON found");
 
-        const cleanJsonString = dataString.slice(jsonStartIndex, jsonEndIndex);
-        const parsedData = JSON.parse(cleanJsonString);
-
-        return res.json({ success: true, parsedData });
+        const parsedData = JSON.parse(
+          dataString.slice(jsonStartIndex, jsonEndIndex),
+        );
+        res.json({ success: true, parsedData });
       } catch (e) {
-        return res.status(500).json({
-          success: false,
-          message: "Invalid JSON from Python script.",
-          raw: dataString,
-        });
+        res
+          .status(500)
+          .json({
+            success: false,
+            message: "Invalid data format from parser",
+            raw: dataString,
+          });
       }
     });
   } catch (error) {
     cleanupFile();
-    if (!responseSent) {
+    if (!responseSent)
       res.status(500).json({ success: false, message: "Server Error" });
-    }
   }
 };
 
