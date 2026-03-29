@@ -14,6 +14,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://pdms-creater.vercel.app",
+  "https://pdms-admin.vercel.app",
 ];
 
 app.use(
