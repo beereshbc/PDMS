@@ -39,6 +39,15 @@ import {
   Clipboard,
   Calculator,
   FolderOpen,
+  ChevronDown,
+  Sparkles,
+  GraduationCap,
+  BarChart3,
+  BookMarked,
+  FlaskConical,
+  Target,
+  TrendingUp,
+  Shield,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -153,17 +162,15 @@ const buildAssessmentWeightHtml = (data) => {
   if (!data || data.length === 0) data = DEFAULT_ASSESSMENT_WEIGHT();
   const bodyRows = data
     .map(
-      (row) =>
-        `<tr>
-      <td style="${S.tdh}">${cleanText(row.co)}</td>
-      <td style="${S.td}">${row.q1 || ""}</td><td style="${S.td}">${row.q2 || ""}</td><td style="${S.td}">${row.q3 || ""}</td>
-      <td style="${S.td}">${row.t1 || ""}</td><td style="${S.td}">${row.t2 || ""}</td><td style="${S.td}">${row.t3 || ""}</td>
-      <td style="${S.td}">${row.a1 || ""}</td><td style="${S.td}">${row.a2 || ""}</td>
-      <td style="${S.tdh}">${row.cie || ""}</td><td style="${S.td}">${row.see || ""}</td>
-    </tr>`,
+      (row) => `<tr>
+    <td style="${S.tdh}">${cleanText(row.co)}</td>
+    <td style="${S.td}">${row.q1 || ""}</td><td style="${S.td}">${row.q2 || ""}</td><td style="${S.td}">${row.q3 || ""}</td>
+    <td style="${S.td}">${row.t1 || ""}</td><td style="${S.td}">${row.t2 || ""}</td><td style="${S.td}">${row.t3 || ""}</td>
+    <td style="${S.td}">${row.a1 || ""}</td><td style="${S.td}">${row.a2 || ""}</td>
+    <td style="${S.tdh}">${row.cie || ""}</td><td style="${S.td}">${row.see || ""}</td>
+  </tr>`,
     )
     .join("");
-
   const sumOf = (key) => data.reduce((s, r) => s + (r[key] || 0), 0);
   const [sQ1, sQ2, sQ3, sT1, sT2, sT3, sA1, sA2, sCIE, sSEE] = [
     "q1",
@@ -177,34 +184,8 @@ const buildAssessmentWeightHtml = (data) => {
     "cie",
     "see",
   ].map((k) => sumOf(k) || 0);
-
-  const footerRow = `<tr>
-      <td style="${S.tdh}"></td>
-      <td style="${S.tdh}">${sQ1 || 5}</td><td style="${S.tdh}">${sQ2 || 4}</td><td style="${S.tdh}">${sQ3 || 6}</td>
-      <td style="${S.tdh}">${sT1 || 7}</td><td style="${S.tdh}">${sT2 || 8}</td><td style="${S.tdh}">${sT3 || 10}</td>
-      <td style="${S.tdh}">${sA1 || 10}</td><td style="${S.tdh}">${sA2 || 10}</td>
-      <td style="${S.tdh}">${sCIE || 60}</td><td style="${S.tdh}">${sSEE || 40}</td>
-    </tr>`;
-
-  return `<table style="${S.tbl}">
-  <thead>
-    <tr>
-      <th rowspan="2" style="${S.th}vertical-align:middle;">Cos with<br/>weightage</th>
-      <th colspan="3" style="${S.th}">Quiz = 15 Marks</th>
-      <th colspan="3" style="${S.th}">Test = 25 Marks</th>
-      <th colspan="2" style="${S.th}">Assignment = 20 Marks</th>
-      <th rowspan="2" style="${S.th}vertical-align:middle;">CIE<br/>=60</th>
-      <th rowspan="2" style="${S.th}vertical-align:middle;">SEE<br/>=40</th>
-    </tr>
-    <tr>
-      <th style="${S.th2}">Q1<br/>=5</th><th style="${S.th2}">Q2<br/>=4</th><th style="${S.th2}">Q3<br/>=6</th>
-      <th style="${S.th2}">T1<br/>=7</th><th style="${S.th2}">T2<br/>=8</th><th style="${S.th2}">T3<br/>=10</th>
-      <th style="${S.th2}">A1 = 10</th><th style="${S.th2}">A2 = 10</th>
-    </tr>
-  </thead>
-  <tbody>${bodyRows}</tbody>
-  <tfoot>${footerRow}</tfoot>
-</table>`;
+  const footerRow = `<tr><td style="${S.tdh}"></td><td style="${S.tdh}">${sQ1 || 5}</td><td style="${S.tdh}">${sQ2 || 4}</td><td style="${S.tdh}">${sQ3 || 6}</td><td style="${S.tdh}">${sT1 || 7}</td><td style="${S.tdh}">${sT2 || 8}</td><td style="${S.tdh}">${sT3 || 10}</td><td style="${S.tdh}">${sA1 || 10}</td><td style="${S.tdh}">${sA2 || 10}</td><td style="${S.tdh}">${sCIE || 60}</td><td style="${S.tdh}">${sSEE || 40}</td></tr>`;
+  return `<table style="${S.tbl}"><thead><tr><th rowspan="2" style="${S.th}vertical-align:middle;">Cos with<br/>weightage</th><th colspan="3" style="${S.th}">Quiz = 15 Marks</th><th colspan="3" style="${S.th}">Test = 25 Marks</th><th colspan="2" style="${S.th}">Assignment = 20 Marks</th><th rowspan="2" style="${S.th}vertical-align:middle;">CIE<br/>=60</th><th rowspan="2" style="${S.th}vertical-align:middle;">SEE<br/>=40</th></tr><tr><th style="${S.th2}">Q1<br/>=5</th><th style="${S.th2}">Q2<br/>=4</th><th style="${S.th2}">Q3<br/>=6</th><th style="${S.th2}">T1<br/>=7</th><th style="${S.th2}">T2<br/>=8</th><th style="${S.th2}">T3<br/>=10</th><th style="${S.th2}">A1 = 10</th><th style="${S.th2}">A2 = 10</th></tr></thead><tbody>${bodyRows}</tbody><tfoot>${footerRow}</tfoot></table>`;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -224,7 +205,6 @@ const sanitizeCDData = (raw = {}) => {
       ]),
     ];
   }
-
   const rawAW = Array.isArray(raw.assessmentWeight) ? raw.assessmentWeight : [];
   const assessmentWeight = DEFAULT_ASSESSMENT_WEIGHT().map((def) => {
     const found = rawAW.find((r) => r?.co?.toUpperCase() === def.co);
@@ -253,13 +233,11 @@ const sanitizeCDData = (raw = {}) => {
       total: found.total ?? 0,
     };
   });
-
   const courseOutcomes = Array.isArray(raw.courseOutcomes)
     ? raw.courseOutcomes
     : Array.isArray(raw.cos)
       ? raw.cos
       : [];
-
   const courseOutcomesHtml = raw.courseOutcomesHtml
     ? cleanText(raw.courseOutcomesHtml)
     : buildCourseOutcomesHtml(courseOutcomes);
@@ -269,7 +247,6 @@ const sanitizeCDData = (raw = {}) => {
   const assessmentWeightHtml = raw.assessmentWeightHtml
     ? cleanText(raw.assessmentWeightHtml)
     : buildAssessmentWeightHtml(assessmentWeight);
-
   return {
     courseCode: cleanText(raw.courseCode) || "",
     courseTitle: cleanText(raw.courseTitle) || "",
@@ -286,16 +263,13 @@ const sanitizeCDData = (raw = {}) => {
     semesterDuration: cleanText(raw.semesterDuration) || "",
     totalHours: raw.totalHours || 0,
     credits: { L: 0, T: 0, P: 0, total: 0, ...(raw.credits || {}) },
-
     aimsSummary: cleanText(raw.aimsSummary || raw.overview),
     objectives: cleanText(raw.objectives),
     courseContent: cleanText(raw.courseContent || raw.modules),
     gradingCriterion: cleanText(raw.gradingCriterion),
-
     courseOutcomesHtml,
     outcomeMapHtml,
     assessmentWeightHtml,
-
     courseOutcomes,
     outcomeMap: { matrix, raw: cleanText(raw.outcomeMap?.raw) },
     resources: {
@@ -356,14 +330,77 @@ const transformForSave = (cdData) => ({
 
 const transformFetchedToFrontend = (fetched = {}) => {
   const d = fetched.data || fetched;
-  return sanitizeCDData({
-    ...d,
-    ...d.identity,
-  });
+  return sanitizeCDData({ ...d, ...d.identity });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OPTIMIZED INPUT (debounced)
+// DESIGN TOKENS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STEP_CONFIG = [
+  {
+    id: 1,
+    label: "Course Info",
+    shortLabel: "Info",
+    icon: Briefcase,
+    color: "blue",
+    bg: "from-blue-500 to-blue-600",
+  },
+  {
+    id: 2,
+    label: "Course Details",
+    shortLabel: "Details",
+    icon: BookMarked,
+    color: "violet",
+    bg: "from-violet-500 to-violet-600",
+  },
+  {
+    id: 3,
+    label: "Teaching & Assess",
+    shortLabel: "Assess",
+    icon: BarChart3,
+    color: "emerald",
+    bg: "from-emerald-500 to-emerald-600",
+  },
+  {
+    id: 4,
+    label: "Other Details",
+    shortLabel: "Other",
+    icon: Shield,
+    color: "amber",
+    bg: "from-amber-500 to-amber-600",
+  },
+];
+
+const COLOR_MAP = {
+  blue: {
+    ring: "ring-blue-500",
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    icon: "bg-blue-50 text-blue-600",
+    btn: "bg-blue-600 hover:bg-blue-700 text-white",
+  },
+  violet: {
+    ring: "ring-violet-500",
+    badge: "bg-violet-50 text-violet-700 border-violet-200",
+    icon: "bg-violet-50 text-violet-600",
+    btn: "bg-violet-600 hover:bg-violet-700 text-white",
+  },
+  emerald: {
+    ring: "ring-emerald-500",
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    icon: "bg-emerald-50 text-emerald-600",
+    btn: "bg-emerald-600 hover:bg-emerald-700 text-white",
+  },
+  amber: {
+    ring: "ring-amber-500",
+    badge: "bg-amber-50 text-amber-700 border-amber-200",
+    icon: "bg-amber-50 text-amber-600",
+    btn: "bg-amber-600 hover:bg-amber-700 text-white",
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OPTIMIZED INPUT
 // ─────────────────────────────────────────────────────────────────────────────
 
 const OptimizedInput = ({
@@ -392,7 +429,10 @@ const OptimizedInput = ({
         if (local !== value) onChange(e.target.value);
       }}
       className={[
-        `px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none text-sm w-full`,
+        "w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg",
+        "text-sm text-gray-800 placeholder-gray-400",
+        "focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400",
+        "transition-all duration-150",
         className,
       ].join(" ")}
     />
@@ -403,7 +443,7 @@ const OptimizedInput = ({
 // RICH TEXT EDITOR WRAPPER
 // ─────────────────────────────────────────────────────────────────────────────
 
-const RichTextEditor = ({ value, onChange, placeholder, height = 200 }) => {
+const RichTextEditor = ({ value, onChange, placeholder, height = 220 }) => {
   const config = useMemo(
     () => ({
       readonly: false,
@@ -435,87 +475,266 @@ const RichTextEditor = ({ value, onChange, placeholder, height = 200 }) => {
       ],
       height,
       statusbar: false,
-      style: { background: "#fafafa" },
+      style: {
+        background: "#ffffff",
+        fontFamily: "'DM Sans', sans-serif",
+        fontSize: "14px",
+      },
+      toolbarAdaptive: true,
     }),
     [placeholder, height],
   );
-
   return (
-    <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm transition-all focus-within:ring-2 focus-within:ring-blue-500">
+    <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/30 focus-within:border-blue-400 transition-all">
       <JoditEditor value={value || ""} config={config} onBlur={onChange} />
     </div>
   );
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROGRESS SUMMARY SIDEBAR WIDGET
+// STEP PROGRESS BAR
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ProgressSummary = React.memo(({ metaData, activeStep }) => {
-  const steps = [
-    { id: 1, label: "Course Info", done: !!metaData.courseCode },
-    { id: 2, label: "Course Details", done: activeStep > 2 },
-    { id: 3, label: "Teaching & Assess", done: activeStep > 3 },
-    {
-      id: 4,
-      label: "Other Details",
-      done: activeStep === 4 && !!metaData.courseCode,
-    },
-  ];
-  const pct = (steps.filter((s) => s.done).length / steps.length) * 100;
-  return (
-    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-md">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-          Progress
-        </span>
-        <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-          {steps.filter((s) => s.done).length}/{steps.length}
-        </span>
-      </div>
-      <div className="w-full bg-gray-100 rounded-full h-2.5 mb-4 overflow-hidden">
-        <div
-          className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-500"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <div className="flex justify-between">
-        {steps.map((s) => (
-          <div key={s.id} className="flex flex-col items-center">
-            <div
-              className={[
-                "w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shadow-sm transition-all duration-200",
-                s.done
-                  ? "bg-emerald-500 text-white"
-                  : activeStep === s.id
-                    ? "bg-indigo-600 text-white ring-4 ring-indigo-100 scale-110"
-                    : "bg-white border-2 border-gray-200 text-gray-400",
-              ].join(" ")}
-            >
-              {s.done ? <CheckCircle size={16} strokeWidth={3} /> : s.id}
-            </div>
+const StepProgressBar = React.memo(({ activeStep, onStepClick }) => (
+  <div className="w-full">
+    {/* Mobile: compact pill tabs */}
+    <div className="flex sm:hidden gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+      {STEP_CONFIG.map((step) => (
+        <button
+          key={step.id}
+          onClick={() => onStepClick(step.id)}
+          className={[
+            "flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all",
+            activeStep === step.id
+              ? "bg-gray-900 text-white shadow-sm"
+              : "bg-white border border-gray-200 text-gray-500 hover:border-gray-300",
+          ].join(" ")}
+        >
+          <step.icon size={12} />
+          {step.shortLabel}
+        </button>
+      ))}
+    </div>
+
+    {/* Tablet+: full step indicator */}
+    <div className="hidden sm:flex items-center gap-0 bg-white border border-gray-200 rounded-xl p-1.5 shadow-sm">
+      {STEP_CONFIG.map((step, idx) => (
+        <React.Fragment key={step.id}>
+          <button
+            onClick={() => onStepClick(step.id)}
+            className={[
+              "flex-1 flex items-center gap-2.5 px-4 py-2.5 rounded-lg transition-all text-sm font-medium",
+              activeStep === step.id
+                ? "bg-gray-900 text-white shadow-sm"
+                : activeStep > step.id
+                  ? "text-emerald-600 hover:bg-emerald-50"
+                  : "text-gray-400 hover:bg-gray-50 hover:text-gray-600",
+            ].join(" ")}
+          >
             <span
               className={[
-                "text-[9px] mt-1.5 text-center font-semibold w-14 leading-tight",
-                activeStep === s.id ? "text-indigo-700" : "text-gray-400",
+                "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all",
+                activeStep === step.id
+                  ? "bg-white/20 text-white"
+                  : activeStep > step.id
+                    ? "bg-emerald-100 text-emerald-600"
+                    : "bg-gray-100 text-gray-400",
               ].join(" ")}
             >
-              {s.label}
+              {activeStep > step.id ? (
+                <CheckCircle size={13} strokeWidth={2.5} />
+              ) : (
+                step.id
+              )}
             </span>
-          </div>
-        ))}
+            <span className="hidden md:block truncate">{step.label}</span>
+            <span className="block md:hidden">{step.shortLabel}</span>
+          </button>
+          {idx < STEP_CONFIG.length - 1 && (
+            <ChevronRight
+              size={14}
+              className="text-gray-300 flex-shrink-0 mx-0.5"
+            />
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  </div>
+));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION CARD WRAPPER
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SectionCard = ({ children, className = "" }) => (
+  <div
+    className={`bg-white rounded-2xl border border-gray-100 shadow-sm ${className}`}
+  >
+    {children}
+  </div>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION HEADER
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SectionHeader = ({ icon, iconBg, title, subtitle, action, compact }) => (
+  <div
+    className={`flex items-start justify-between gap-3 ${compact ? "mb-4" : "mb-5 pb-4 border-b border-gray-100"}`}
+  >
+    <div className="flex items-start gap-3 min-w-0">
+      <div
+        className={`p-2 rounded-lg flex-shrink-0 ${iconBg || "bg-gray-100"}`}
+      >
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <h3 className="text-sm font-semibold text-gray-800 leading-snug">
+          {title}
+        </h3>
+        {subtitle && (
+          <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">
+            {subtitle}
+          </p>
+        )}
+      </div>
+    </div>
+    {action && <div className="flex-shrink-0">{action}</div>}
+  </div>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIELD LABEL
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FieldLabel = ({ children, required }) => (
+  <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">
+    {children}
+    {required && <span className="text-rose-400 ml-0.5">*</span>}
+  </label>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RESOURCE LIST
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ResourceList = ({
+  label,
+  accentClass,
+  items,
+  onChange,
+  className = "",
+}) => (
+  <div className={`space-y-2 ${className}`}>
+    <div className="flex items-center justify-between">
+      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+        {label}
+      </span>
+      <button
+        onClick={() => onChange([...items, ""])}
+        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded-md hover:bg-gray-100 font-medium transition-colors"
+      >
+        <Plus size={11} strokeWidth={2.5} /> Add
+      </button>
+    </div>
+    <div className="space-y-1.5">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center gap-2 group">
+          <span className="text-xs text-gray-300 font-mono w-5 text-right flex-shrink-0">
+            {i + 1}
+          </span>
+          <input
+            type="text"
+            value={item}
+            onChange={(e) => {
+              const arr = [...items];
+              arr[i] = e.target.value;
+              onChange(arr);
+            }}
+            className="flex-1 px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all placeholder-gray-300"
+            placeholder="Enter resource details…"
+          />
+          <button
+            onClick={() => onChange(items.filter((_, j) => j !== i))}
+            className="text-gray-300 hover:text-rose-400 p-1 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      ))}
+      {items.length === 0 && (
+        <div className="text-xs text-gray-300 italic px-7 py-2">
+          No entries yet. Click Add.
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PASTE MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PasteModal = ({
+  title,
+  description,
+  placeholder,
+  onClose,
+  onConfirm,
+  accentColor = "indigo",
+}) => {
+  const [raw, setRaw] = useState("");
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-800">{title}</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5">
+          {description && (
+            <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 mb-4">
+              {description}
+            </p>
+          )}
+          <textarea
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+            rows={8}
+            className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg font-mono text-xs text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:bg-white resize-none transition-all"
+            placeholder={placeholder}
+          />
+        </div>
+        <div className="flex justify-end gap-2 px-5 pb-5">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(raw)}
+            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors shadow-sm"
+          >
+            Parse & Insert
+          </button>
+        </div>
       </div>
     </div>
   );
-});
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OUTCOME MAP TABLE EDITOR
+// OUTCOME MAP EDITOR
 // ─────────────────────────────────────────────────────────────────────────────
 
 const OutcomeMapEditor = ({ matrix, onChange }) => {
   const [showPaste, setShowPaste] = useState(false);
-  const [pasteRaw, setPasteRaw] = useState("");
 
   const setCell = (r, c, v) =>
     onChange(
@@ -523,7 +742,6 @@ const OutcomeMapEditor = ({ matrix, onChange }) => {
         ri === r ? row.map((cell, ci) => (ci === c ? v : cell)) : row,
       ),
     );
-
   const addRow = () => {
     if (!matrix.length) return;
     const newRow = Array(matrix[0].length).fill("");
@@ -538,9 +756,9 @@ const OutcomeMapEditor = ({ matrix, onChange }) => {
     if (ci !== 0) onChange(matrix.map((row) => row.filter((_, i) => i !== ci)));
   };
 
-  const handlePaste = () => {
-    if (!pasteRaw.trim()) return;
-    const lines = pasteRaw.trim().split(/\r?\n/);
+  const handlePaste = (raw) => {
+    if (!raw.trim()) return;
+    const lines = raw.trim().split(/\r?\n/);
     const newMatrix = lines.map((line) => {
       const cols = line.includes("\t")
         ? line.split("\t")
@@ -563,15 +781,15 @@ const OutcomeMapEditor = ({ matrix, onChange }) => {
       newMatrix.map((r) => [...r, ...Array(maxLen - r.length).fill("")]),
     );
     setShowPaste(false);
-    setPasteRaw("");
     toast.success("Outcome map imported!");
   };
 
-  if (!matrix.length) {
+  if (!matrix.length)
     return (
-      <div className="text-center p-8 bg-gray-50 border border-dashed border-gray-300 rounded-2xl">
-        <p className="text-gray-500 mb-4 font-medium">
-          No outcome map defined.
+      <div className="text-center py-10 bg-gray-50 border border-dashed border-gray-200 rounded-xl">
+        <GraduationCap size={28} className="text-gray-300 mx-auto mb-3" />
+        <p className="text-sm text-gray-400 mb-4">
+          No outcome map defined yet.
         </p>
         <button
           onClick={() =>
@@ -583,81 +801,80 @@ const OutcomeMapEditor = ({ matrix, onChange }) => {
               ]),
             ])
           }
-          className="px-5 py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-semibold shadow"
+          className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 font-medium shadow-sm transition-colors"
         >
           Initialize default grid
         </button>
       </div>
     );
-  }
 
   return (
-    <div className="space-y-4">
-      <div className="overflow-x-auto pb-2 rounded-xl border border-gray-200 shadow-sm">
-        <table className="min-w-full border-collapse text-sm bg-white">
-          <thead className="bg-slate-50 border-b border-gray-200">
+    <div className="space-y-3">
+      <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+        <table className="min-w-full border-collapse text-xs bg-white">
+          <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               {matrix[0].map((h, ci) => (
                 <th
                   key={ci}
-                  className="px-2 py-3 font-bold text-slate-700 text-center border-r border-gray-200 whitespace-nowrap"
+                  className="px-2 py-2.5 font-semibold text-gray-600 text-center border-r border-gray-200 last:border-r-0 whitespace-nowrap"
                 >
                   {ci === 0 ? (
-                    <span className="text-xs">{h}</span>
+                    <span className="text-xs text-gray-500">{h}</span>
                   ) : (
                     <div className="flex items-center gap-1 justify-center">
                       <OptimizedInput
                         value={h}
                         onChange={(v) => setCell(0, ci, v)}
-                        className="!w-14 !px-1 !py-1 !text-center !text-xs font-bold"
+                        className="!w-14 !px-1 !py-1 !text-center !text-xs !font-semibold"
                       />
                       <button
                         onClick={() => delCol(ci)}
-                        className="text-rose-400 hover:text-rose-600 p-0.5 rounded hover:bg-rose-50"
+                        className="text-gray-300 hover:text-rose-400 transition-colors"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={11} />
                       </button>
                     </div>
                   )}
                 </th>
               ))}
-              <th className="px-2 py-3 bg-slate-50 w-10">
+              <th className="px-2 py-2.5">
                 <button
                   onClick={addCol}
-                  className="text-indigo-600 hover:text-indigo-800 p-1 rounded hover:bg-indigo-50"
+                  className="text-blue-400 hover:text-blue-600 transition-colors"
                 >
-                  <Plus size={16} />
+                  <Plus size={14} />
                 </button>
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-50">
             {matrix.slice(1).map((row, ri) => (
-              <tr key={ri} className="hover:bg-slate-50/40">
+              <tr key={ri} className="hover:bg-gray-50/60 transition-colors">
                 {row.map((cell, ci) => (
                   <td
                     key={ci}
-                    className="px-1.5 py-1.5 border-r border-gray-100"
+                    className="px-1.5 py-1.5 border-r border-gray-100 last:border-r-0"
                   >
                     {ci === 0 ? (
                       <div className="flex items-center gap-1">
                         <OptimizedInput
                           value={cell}
                           onChange={(v) => setCell(ri + 1, ci, v)}
-                          className="!w-14 !px-1.5 !py-1 !text-center !font-bold !bg-slate-50"
+                          className="!w-14 !px-1.5 !py-1 !text-center !font-semibold !bg-gray-50"
                         />
                         <button
                           onClick={() => delRow(ri + 1)}
-                          className="text-rose-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50"
+                          className="text-gray-300 hover:text-rose-400 transition-colors"
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={11} />
                         </button>
                       </div>
                     ) : (
                       <OptimizedInput
                         value={cell}
                         onChange={(v) => setCell(ri + 1, ci, v)}
-                        className="!w-12 !px-1 !py-1 !text-center"
+                        className="!w-11 !px-1 !py-1 !text-center"
                       />
                     )}
                   </td>
@@ -668,69 +885,39 @@ const OutcomeMapEditor = ({ matrix, onChange }) => {
           </tbody>
         </table>
       </div>
-      <div className="flex flex-wrap gap-3 items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-2">
           <button
             onClick={addRow}
-            className="px-3 py-2 text-sm bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 shadow-sm flex items-center gap-1.5 font-medium"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
           >
-            <Plus size={15} className="text-indigo-600" /> Row
+            <Plus size={12} className="text-blue-500" /> Row
           </button>
           <button
             onClick={addCol}
-            className="px-3 py-2 text-sm bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 shadow-sm flex items-center gap-1.5 font-medium"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
           >
-            <Plus size={15} className="text-indigo-600" /> Column
+            <Plus size={12} className="text-blue-500" /> Column
           </button>
         </div>
         <button
           onClick={() => setShowPaste(true)}
-          className="px-5 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md flex items-center gap-2 font-semibold"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
         >
-          <Clipboard size={15} /> Paste from Word / Excel
+          <Clipboard size={12} className="text-violet-500" /> Paste from Word /
+          Excel
         </button>
       </div>
 
       {showPaste && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-2xl w-full shadow-2xl">
-            <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
-              <h3 className="text-xl font-bold text-gray-800">
-                Paste Outcome Matrix
-              </h3>
-              <button
-                onClick={() => setShowPaste(false)}
-                className="text-gray-400 hover:text-rose-500 p-1 rounded-full hover:bg-rose-50"
-              >
-                <X size={22} />
-              </button>
-            </div>
-            <p className="text-sm text-blue-700 bg-blue-50 p-3 rounded-lg border border-blue-100 mb-4">
-              Copy the table from MS Word, Excel, or PDF and paste below.
-            </p>
-            <textarea
-              value={pasteRaw}
-              onChange={(e) => setPasteRaw(e.target.value)}
-              rows={8}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
-              placeholder={"COs\tPO1\tPO2\t...\nCO1\t1\t2\t..."}
-            />
-            <div className="flex justify-end gap-3 mt-5">
-              <button
-                onClick={() => setShowPaste(false)}
-                className="px-5 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handlePaste}
-                className="px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow"
-              >
-                Parse & Insert
-              </button>
-            </div>
-          </div>
-        </div>
+        <PasteModal
+          title="Paste Outcome Matrix"
+          description="Copy the table from MS Word, Excel, or PDF and paste below. Columns separated by tabs or double spaces."
+          placeholder={"COs\tPO1\tPO2\t...\nCO1\t1\t2\t..."}
+          onClose={() => setShowPaste(false)}
+          onConfirm={handlePaste}
+        />
       )}
     </div>
   );
@@ -742,7 +929,6 @@ const OutcomeMapEditor = ({ matrix, onChange }) => {
 
 const AssessmentWeightEditor = ({ data, onChange, markDirty }) => {
   const [showPaste, setShowPaste] = useState(false);
-  const [pasteRaw, setPasteRaw] = useState("");
 
   const recalc = (row) => {
     const cie =
@@ -759,17 +945,17 @@ const AssessmentWeightEditor = ({ data, onChange, markDirty }) => {
 
   const setCellVal = (idx, field, rawVal) => {
     markDirty("assessmentWeight");
-    const newRows = data.map((r, i) =>
-      i === idx ? recalc({ ...r, [field]: parseInt(rawVal) || 0 }) : r,
+    onChange(
+      data.map((r, i) =>
+        i === idx ? recalc({ ...r, [field]: parseInt(rawVal) || 0 }) : r,
+      ),
     );
-    onChange(newRows);
   };
 
-  const handlePaste = () => {
-    if (!pasteRaw.trim()) return;
-    const lines = pasteRaw.trim().split(/\r?\n/);
+  const handlePaste = (raw) => {
+    if (!raw.trim()) return;
+    const lines = raw.trim().split(/\r?\n/);
     const newRows = data.map((r) => ({ ...r }));
-
     for (const line of lines) {
       const trimmed = line.trim();
       if (
@@ -777,7 +963,6 @@ const AssessmentWeightEditor = ({ data, onChange, markDirty }) => {
         (/quiz|test|assign/i.test(trimmed) && !/^CO/i.test(trimmed))
       )
         continue;
-
       const cells = trimmed.includes("\t")
         ? trimmed.split("\t")
         : trimmed.split(/\s+/);
@@ -786,14 +971,11 @@ const AssessmentWeightEditor = ({ data, onChange, markDirty }) => {
         .trim()
         .match(/CO(\d+)/);
       if (!coMatch) continue;
-
       const idx = parseInt(coMatch[1]) - 1;
       if (idx < 0 || idx > 5) continue;
-
       const nums = cells.slice(1).map((c) => parseInt(c) || 0);
       const cur = { ...newRows[idx] };
-
-      if (nums.length >= 11) {
+      if (nums.length >= 11)
         [
           cur.q1,
           cur.q2,
@@ -807,15 +989,14 @@ const AssessmentWeightEditor = ({ data, onChange, markDirty }) => {
           cur.cie,
           cur.total,
         ] = nums;
-      } else if (nums.length >= 4) {
+      else if (nums.length >= 4) {
         cur.q1 = nums[0];
         cur.t1 = nums[1];
         cur.a1 = nums[2];
         cur.see = nums.length >= 5 ? nums[3] : 0;
-        const provided_total = nums[nums.length - 1];
+        const pt = nums[nums.length - 1];
         cur.cie = cur.q1 + cur.t1 + cur.a1;
-        cur.total =
-          provided_total > cur.cie ? provided_total : cur.cie + cur.see;
+        cur.total = pt > cur.cie ? pt : cur.cie + cur.see;
       } else if (nums.length === 3) {
         cur.q1 = nums[0];
         cur.t1 = nums[1];
@@ -829,117 +1010,116 @@ const AssessmentWeightEditor = ({ data, onChange, markDirty }) => {
     markDirty("assessmentWeight");
     onChange(newRows);
     setShowPaste(false);
-    setPasteRaw("");
     toast.success("Assessment weights imported!");
   };
 
-  const numInput = (idx, field, colorClass = "") => (
+  const numInput = (idx, field) => (
     <OptimizedInput
       type="number"
       min={0}
       value={data[idx]?.[field] ?? 0}
       onChange={(v) => setCellVal(idx, field, v)}
-      className={`!w-12 !px-1 !py-1.5 !text-center !text-xs ${colorClass}`}
+      className="!w-11 !px-1 !py-1.5 !text-center !text-xs"
     />
   );
 
   return (
-    <div className="space-y-4">
-      <div className="overflow-x-auto pb-2 rounded-xl border border-gray-200 shadow-sm">
+    <div className="space-y-3">
+      <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
         <table className="min-w-full border-collapse text-xs text-center bg-white">
-          <thead className="bg-slate-50 border-b border-gray-200">
-            <tr>
+          <thead className="border-b border-gray-200">
+            <tr className="bg-gray-50">
               <th
                 rowSpan={2}
-                className="px-3 py-3 border-r border-gray-200 font-bold text-slate-700 uppercase"
+                className="px-3 py-2.5 border-r border-gray-200 font-semibold text-gray-600 uppercase tracking-wider text-[10px] align-middle"
               >
                 CO
               </th>
               <th
                 colSpan={3}
-                className="px-2 py-2 border-r border-gray-200 font-bold text-blue-700 bg-blue-50/40"
+                className="px-2 py-2 border-r border-gray-200 font-semibold text-blue-600 bg-blue-50/50 text-[10px]"
               >
                 Quiz (15)
               </th>
               <th
                 colSpan={3}
-                className="px-2 py-2 border-r border-gray-200 font-bold text-indigo-700 bg-indigo-50/40"
+                className="px-2 py-2 border-r border-gray-200 font-semibold text-violet-600 bg-violet-50/50 text-[10px]"
               >
                 Test (25)
               </th>
               <th
                 colSpan={2}
-                className="px-2 py-2 border-r border-gray-200 font-bold text-purple-700 bg-purple-50/40"
+                className="px-2 py-2 border-r border-gray-200 font-semibold text-purple-600 bg-purple-50/50 text-[10px]"
               >
                 Assign (20)
               </th>
               <th
                 rowSpan={2}
-                className="px-3 py-3 border-r border-gray-200 font-bold text-blue-700 bg-blue-50 uppercase"
+                className="px-2 py-2.5 border-r border-gray-200 font-semibold text-blue-700 bg-blue-50 text-[10px] uppercase tracking-wider align-middle"
               >
                 CIE
               </th>
               <th
                 rowSpan={2}
-                className="px-3 py-3 border-r border-gray-200 font-bold text-orange-700 bg-orange-50 uppercase"
+                className="px-2 py-2.5 border-r border-gray-200 font-semibold text-amber-700 bg-amber-50 text-[10px] uppercase tracking-wider align-middle"
               >
                 SEE
               </th>
               <th
                 rowSpan={2}
-                className="px-3 py-3 font-bold text-emerald-700 bg-emerald-50 uppercase"
+                className="px-2 py-2.5 font-semibold text-emerald-700 bg-emerald-50 text-[10px] uppercase tracking-wider align-middle"
               >
                 Total
               </th>
             </tr>
-            <tr className="bg-slate-50 border-b border-gray-200 text-slate-500 font-semibold">
+            <tr className="bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500">
               {["Q1", "Q2", "Q3"].map((l) => (
-                <th key={l} className="px-2 py-1.5 bg-blue-50/20">
+                <th key={l} className="px-2 py-1.5 bg-blue-50/30">
                   {l}
                 </th>
               ))}
               {["T1", "T2", "T3"].map((l) => (
-                <th key={l} className="px-2 py-1.5 bg-indigo-50/20">
+                <th key={l} className="px-2 py-1.5 bg-violet-50/30">
                   {l}
                 </th>
               ))}
-              {["A1", "A2"].map((l) => (
+              {["A1", "A2"].map((l, i) => (
                 <th
                   key={l}
-                  className={`px-2 py-1.5 bg-purple-50/20 ${l === "A2" ? "border-r border-gray-200" : ""}`}
+                  className={`px-2 py-1.5 bg-purple-50/30${i === 1 ? " border-r border-gray-200" : ""}`}
                 >
                   {l}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-50">
             {data.map((row, idx) => (
-              <tr key={idx} className="hover:bg-slate-50/30">
-                <td className="px-3 py-2 border-r border-gray-100 font-extrabold text-slate-700 bg-slate-50">
+              <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
+                <td className="px-3 py-2 border-r border-gray-100 font-semibold text-gray-700 bg-gray-50/80 text-[11px]">
                   {row.co}
                 </td>
-                <td className="px-1 py-2">{numInput(idx, "q1")}</td>
-                <td className="px-1 py-2">{numInput(idx, "q2")}</td>
-                <td className="px-1 py-2 border-r border-gray-100">
+                <td className="px-1 py-1.5">{numInput(idx, "q1")}</td>
+                <td className="px-1 py-1.5">{numInput(idx, "q2")}</td>
+                <td className="px-1 py-1.5 border-r border-gray-100">
                   {numInput(idx, "q3")}
                 </td>
-                <td className="px-1 py-2">{numInput(idx, "t1")}</td>
-                <td className="px-1 py-2">{numInput(idx, "t2")}</td>
-                <td className="px-1 py-2 border-r border-gray-100">
+                <td className="px-1 py-1.5">{numInput(idx, "t1")}</td>
+                <td className="px-1 py-1.5">{numInput(idx, "t2")}</td>
+                <td className="px-1 py-1.5 border-r border-gray-100">
                   {numInput(idx, "t3")}
                 </td>
-                <td className="px-1 py-2">{numInput(idx, "a1")}</td>
-                <td className="px-1 py-2 border-r border-gray-100">
+                <td className="px-1 py-1.5">{numInput(idx, "a1")}</td>
+                <td className="px-1 py-1.5 border-r border-gray-100">
                   {numInput(idx, "a2")}
                 </td>
-                <td className="px-3 py-2 border-r border-gray-100 font-extrabold text-blue-700 bg-blue-50/40 text-sm">
+                <td className="px-2 py-1.5 border-r border-gray-100 font-bold text-blue-700 bg-blue-50/40 text-xs">
                   {row.cie}
                 </td>
-                <td className="px-1 py-2 border-r border-gray-100 bg-orange-50/20">
-                  {numInput(idx, "see", "!text-orange-700 !font-bold")}
+                <td className="px-1 py-1.5 border-r border-gray-100 bg-amber-50/30">
+                  {numInput(idx, "see")}
                 </td>
-                <td className="px-3 py-2 font-extrabold text-emerald-700 bg-emerald-50/40 text-sm">
+                <td className="px-2 py-1.5 font-bold text-emerald-700 bg-emerald-50/40 text-xs">
                   {row.total}
                 </td>
               </tr>
@@ -947,71 +1127,114 @@ const AssessmentWeightEditor = ({ data, onChange, markDirty }) => {
           </tbody>
         </table>
       </div>
-
-      <div className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-100">
-        <span className="text-xs text-gray-500 font-medium">
-          CIE = sum of Q1–Q3 + T1–T3 + A1–A2 &nbsp;|&nbsp; Total = CIE + SEE
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] text-gray-400 font-medium">
+          CIE = Q1–Q3 + T1–T3 + A1–A2 &nbsp;·&nbsp; Total = CIE + SEE
+        </p>
         <button
           onClick={() => setShowPaste(true)}
-          className="px-5 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 shadow flex items-center gap-2 font-semibold"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
         >
-          <Clipboard size={15} /> Paste Data
+          <Clipboard size={12} className="text-teal-500" /> Paste Data
         </button>
       </div>
-
       {showPaste && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-2xl w-full shadow-2xl">
-            <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
-              <h3 className="text-xl font-bold text-gray-800">
-                Paste Assessment Weights
-              </h3>
-              <button
-                onClick={() => setShowPaste(false)}
-                className="text-gray-400 hover:text-rose-500 p-1 rounded-full hover:bg-rose-50"
-              >
-                <X size={22} />
-              </button>
-            </div>
-            <div className="bg-teal-50 p-3 rounded-lg border border-teal-100 mb-4 flex items-start gap-3">
-              <Calculator size={18} className="text-teal-600 shrink-0 mt-0.5" />
-              <p className="text-sm text-teal-800">
-                Paste rows starting with <strong>CO1</strong>,{" "}
-                <strong>CO2</strong>… from your document. Supports both detailed
-                (11-column) and aggregated (4-column) formats. CIE and Total are
-                auto-calculated.
-              </p>
-            </div>
-            <textarea
-              value={pasteRaw}
-              onChange={(e) => setPasteRaw(e.target.value)}
-              rows={8}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-mono text-sm outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white"
-              placeholder={
-                "CO1\t2\t4\t0\t30\t0\t6\t0\t30\t36\t42\t78\nCO2\t5\t5\t10\t20"
-              }
-            />
-            <div className="flex justify-end gap-3 mt-5">
-              <button
-                onClick={() => setShowPaste(false)}
-                className="px-5 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handlePaste}
-                className="px-5 py-2.5 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 shadow"
-              >
-                Parse & Insert
-              </button>
-            </div>
-          </div>
-        </div>
+        <PasteModal
+          title="Paste Assessment Weights"
+          description="Paste rows starting with CO1, CO2… Supports both detailed (11-column) and aggregated (4-column) formats. CIE and Total are auto-calculated."
+          placeholder={
+            "CO1\t2\t4\t0\t30\t0\t6\t0\t30\t36\t42\t78\nCO2\t5\t5\t10\t20"
+          }
+          onClose={() => setShowPaste(false)}
+          onConfirm={handlePaste}
+        />
       )}
     </div>
   );
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HISTORY MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+
+const HistoryModal = ({ list, search, onSearch, onLoad, onClose }) => (
+  <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="bg-white rounded-2xl w-full max-w-2xl flex flex-col max-h-[85vh] shadow-2xl animate-in zoom-in-95 duration-200">
+      <div className="p-5 border-b border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-semibold text-gray-800">
+              Previous Course Documents
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Select a saved CD to continue editing.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-2.5 text-gray-300" size={15} />
+          <input
+            type="text"
+            placeholder="Search by code or title…"
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:bg-white transition-all"
+          />
+        </div>
+      </div>
+      <div className="p-4 overflow-y-auto space-y-2 flex-1">
+        {list.length > 0 ? (
+          list.map((cd) => (
+            <button
+              key={cd._id}
+              onClick={() => onLoad(cd.courseCode)}
+              className="w-full text-left p-4 rounded-xl border border-gray-100 bg-white hover:border-blue-200 hover:bg-blue-50/30 transition-all group flex items-center justify-between gap-3"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="font-semibold text-gray-800 text-sm">
+                    {cd.courseCode}
+                  </span>
+                  <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                    v{cd.cdVersion}
+                  </span>
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase tracking-wider ${cd.status === "Approved" ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-amber-50 text-amber-600 border border-amber-200"}`}
+                  >
+                    {cd.status}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600 font-medium truncate">
+                  {cd.courseTitle || "—"}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {new Date(cd.updatedAt).toLocaleString()}
+                </p>
+              </div>
+              <ChevronRight
+                size={16}
+                className="text-gray-300 group-hover:text-blue-400 flex-shrink-0 transition-colors"
+              />
+            </button>
+          ))
+        ) : (
+          <div className="text-center py-10">
+            <BookOpen size={28} className="text-gray-200 mx-auto mb-2" />
+            <p className="text-sm text-gray-400">
+              No courses found matching "{search}".
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
@@ -1027,21 +1250,18 @@ const EditCD = () => {
   const [importing, setImporting] = useState(false);
   const [extractedCourses, setExtractedCourses] = useState([]);
   const [recentVersions, setRecentVersions] = useState([]);
-
-  // Previous CDs Modal State
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [cdHistoryList, setCdHistoryList] = useState([]);
   const [historySearch, setHistorySearch] = useState("");
-
-  const [showSidebarDropdown, setShowSidebarDropdown] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
   const [dirtySections, setDirtySections] = useState(new Set());
 
   const fileInputRef = useRef(null);
-  const dropdownRef = useRef(null);
-
-  const markDirty = useCallback((section) => {
-    setDirtySections((prev) => new Set(prev).add(section));
-  }, []);
+  const sidebarRef = useRef(null);
+  const markDirty = useCallback(
+    (section) => setDirtySections((prev) => new Set(prev).add(section)),
+    [],
+  );
 
   const [metaData, setMetaData] = useState({
     courseId: "",
@@ -1052,13 +1272,12 @@ const EditCD = () => {
     status: "Draft",
     isNew: true,
   });
-
   const [cdData, setCdData] = useState(sanitizeCDData({}));
 
   useEffect(() => {
     const handler = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target))
-        setShowSidebarDropdown(false);
+      if (sidebarRef.current && !sidebarRef.current.contains(e.target))
+        setShowSidebar(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -1090,9 +1309,8 @@ const EditCD = () => {
             !uniqueMap.has(cd.courseCode) ||
             new Date(cd.updatedAt) >
               new Date(uniqueMap.get(cd.courseCode).updatedAt)
-          ) {
+          )
             uniqueMap.set(cd.courseCode, cd);
-          }
         });
         setCdHistoryList(Array.from(uniqueMap.values()));
       }
@@ -1110,11 +1328,9 @@ const EditCD = () => {
       });
       if (data.success) {
         populateForm(data.cd);
-        toast.success(`Loaded latest version of ${courseCode}`);
+        toast.success(`Loaded ${courseCode}`);
         fetchRecentVersions(courseCode);
-      } else {
-        toast.error("Could not load course.");
-      }
+      } else toast.error("Could not load course.");
     } catch (e) {
       toast.error("Failed to load data.");
     } finally {
@@ -1173,23 +1389,19 @@ const EditCD = () => {
     });
     setDirtySections(new Set());
   };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.type !== "application/pdf")
       return toast.error("Only PDF files are supported.");
     setImporting(true);
-
     const formData = new FormData();
     formData.append("cdFile", file);
     try {
-      // In EditCD.jsx -> handleFileUpload
       const { data } = await axios.post("/api/creater/cd/import", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          createrToken: createrToken,
-        },
-        timeout: 120000, // Wait up to 2 minutes for very large PDF files
+        headers: { "Content-Type": "multipart/form-data", createrToken },
+        timeout: 120000,
       });
       if (data.success) {
         const arr = Array.isArray(data.parsedData)
@@ -1198,20 +1410,16 @@ const EditCD = () => {
         if (arr.length === 1) loadExtractedCourse(arr[0]);
         else if (arr.length > 1) setExtractedCourses(arr);
         else toast.error("No valid courses found in the PDF.");
-      } else {
-        toast.error(data.message || "Parsing failed.");
-      }
+      } else toast.error(data.message || "Parsing failed.");
     } catch (err) {
       console.error(err);
-      toast.error(
-        err.response?.data?.message ||
-          "Import failed. Please check server logs.",
-      );
+      toast.error(err.response?.data?.message || "Import failed.");
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
   const loadExtractedCourse = (obj) => {
     const s = sanitizeCDData(obj);
     setCdData(s);
@@ -1236,7 +1444,6 @@ const EditCD = () => {
       status === metaData.status
     )
       return toast.success("No changes to save.");
-
     setLoading(true);
     const payload = {
       courseCode: metaData.courseCode,
@@ -1325,28 +1532,48 @@ const EditCD = () => {
   );
 
   // ─────────────────────────────────────────────────────────────────────────
+  // IDENTITY FIELDS CONFIG
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const identityFields = [
+    { label: "Course Code", key: "courseCode", required: true },
+    { label: "Course Title", key: "courseTitle", required: true },
+    { label: "Program Code", key: "programCode" },
+    { label: "Program Title", key: "programTitle" },
+    { label: "School Code", key: "schoolCode" },
+    { label: "School Title", key: "schoolTitle" },
+    { label: "Department Code", key: "departmentCode" },
+    { label: "Department", key: "department" },
+    { label: "Faculty Code", key: "facultyCode" },
+    { label: "Faculty Title", key: "facultyTitle" },
+    { label: "Offering Department", key: "offeringDepartment" },
+    { label: "Faculty Member", key: "facultyMember" },
+  ];
+
+  // ─────────────────────────────────────────────────────────────────────────
   // RENDER STEPS
   // ─────────────────────────────────────────────────────────────────────────
 
   const renderStep1 = () => (
-    <div className="space-y-8 animate-in fade-in duration-300">
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -mr-8 -mt-8 group-hover:scale-110 transition-transform duration-500" />
-        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="p-4 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-2xl text-blue-600 shadow-inner">
-              <UploadCloud size={30} />
+    <div className="space-y-5">
+      {/* Import Banner */}
+      <SectionCard>
+        <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 bg-blue-50 rounded-xl flex-shrink-0">
+              <UploadCloud size={20} className="text-blue-500" />
             </div>
             <div>
-              <h3 className="text-xl font-extrabold text-gray-900">
-                Import Course Document
+              <h3 className="text-sm font-semibold text-gray-800">
+                Import from PDF
               </h3>
-              <p className="text-gray-500 mt-0.5 text-sm">
-                Upload a PDF to auto-fill this form via AI parsing.
+              <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">
+                AI-powered parsing auto-fills the entire form from your course
+                document.
               </p>
             </div>
           </div>
-          <div>
+          <div className="flex-shrink-0 w-full sm:w-auto">
             <input
               type="file"
               accept=".pdf"
@@ -1357,47 +1584,33 @@ const EditCD = () => {
             />
             <label
               htmlFor="cd-import"
-              className={`flex items-center gap-2 px-6 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl cursor-pointer font-semibold shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all ${importing ? "opacity-75 pointer-events-none" : ""}`}
+              className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl cursor-pointer text-sm font-medium shadow-sm hover:bg-gray-800 transition-all w-full sm:w-auto ${importing ? "opacity-60 pointer-events-none" : ""}`}
             >
               {importing ? (
-                <RefreshCw size={18} className="animate-spin" />
+                <RefreshCw size={15} className="animate-spin" />
               ) : (
-                <FileUp size={18} />
+                <FileUp size={15} />
               )}
-              {importing ? "Parsing…" : "Choose PDF File"}
+              {importing ? "Parsing PDF…" : "Choose PDF File"}
             </label>
           </div>
         </div>
-      </div>
+      </SectionCard>
 
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <div className="flex items-center gap-3 mb-7 border-b border-gray-100 pb-4">
-          <div className="p-2.5 bg-blue-50 rounded-xl">
-            <FileText className="text-blue-600" size={20} />
-          </div>
-          <h3 className="text-xl font-extrabold text-gray-800">
-            Course Identity
-          </h3>
+      {/* Course Identity */}
+      <SectionCard>
+        <div className="p-5 pb-0">
+          <SectionHeader
+            icon={<FileText size={16} className="text-blue-500" />}
+            iconBg="bg-blue-50"
+            title="Course Identity"
+            subtitle="Core identification details for the course document"
+          />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-          {[
-            { label: "Course Code", key: "courseCode" },
-            { label: "Course Title", key: "courseTitle" },
-            { label: "Program Code", key: "programCode" },
-            { label: "Program Title", key: "programTitle" },
-            { label: "School Code", key: "schoolCode" },
-            { label: "School Title", key: "schoolTitle" },
-            { label: "Department Code", key: "departmentCode" },
-            { label: "Department", key: "department" },
-            { label: "Faculty Code", key: "facultyCode" },
-            { label: "Faculty Title", key: "facultyTitle" },
-            { label: "Offering Department", key: "offeringDepartment" },
-            { label: "Faculty Member", key: "facultyMember" },
-          ].map((f) => (
+        <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-5 gap-y-4">
+          {identityFields.map((f) => (
             <div key={f.key}>
-              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider">
-                {f.label}
-              </label>
+              <FieldLabel required={f.required}>{f.label}</FieldLabel>
               <OptimizedInput
                 value={cdData[f.key]}
                 onChange={(v) => {
@@ -1412,378 +1625,453 @@ const EditCD = () => {
                       [f.key === "programTitle" ? "programName" : f.key]: v,
                     }));
                 }}
+                placeholder={`Enter ${f.label.toLowerCase()}`}
               />
             </div>
           ))}
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider">
-              Semester Duration
-            </label>
+          <div className="sm:col-span-2 xl:col-span-3">
+            <FieldLabel>Semester Duration</FieldLabel>
             <OptimizedInput
               value={cdData.semesterDuration}
               onChange={(v) => upd("semesterDuration", v)}
+              placeholder="e.g. Jan 2025 – May 2025"
             />
           </div>
         </div>
+      </SectionCard>
 
-        <div className="mt-8 pt-6 border-t border-gray-100">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="p-2.5 bg-indigo-50 rounded-xl">
-              <Briefcase className="text-indigo-600" size={20} />
-            </div>
-            <h3 className="text-xl font-extrabold text-gray-800">
-              Credits (L : T : P)
-            </h3>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
+      {/* Credits */}
+      <SectionCard>
+        <div className="p-5 pb-0">
+          <SectionHeader
+            icon={<TrendingUp size={16} className="text-violet-500" />}
+            iconBg="bg-violet-50"
+            title="Credits & Hours"
+            subtitle="L : T : P structure and total workload"
+          />
+        </div>
+        <div className="px-5 pb-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             {["L", "T", "P", "total"].map((k) => (
               <div
                 key={k}
-                className="bg-gray-50 p-4 rounded-xl border border-gray-200"
+                className="bg-gray-50 p-3.5 rounded-xl border border-gray-100 text-center"
               >
-                <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider text-center">
-                  {k === "total" ? "Total Credits" : k}
-                </label>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">
+                  {k === "total" ? "Total" : k}
+                </p>
                 <OptimizedInput
                   type="number"
                   value={cdData.credits[k]}
                   onChange={(v) => updN("credits", k, parseInt(v) || 0)}
-                  className="!text-center !text-base !font-bold"
+                  className="!text-center !text-sm !font-semibold !bg-white"
                 />
               </div>
             ))}
-            <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
-              <label className="block text-xs font-bold text-blue-600 mb-2 uppercase tracking-wider text-center">
-                Total Hours
-              </label>
+            <div className="bg-blue-50 p-3.5 rounded-xl border border-blue-100 text-center">
+              <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-widest mb-2">
+                Hours
+              </p>
               <OptimizedInput
                 type="number"
                 value={cdData.totalHours}
                 onChange={(v) => upd("totalHours", parseInt(v) || 0)}
-                className="!bg-white !text-center !text-base !font-bold !text-blue-700 !border-blue-300"
+                className="!text-center !text-sm !font-semibold !bg-white !border-blue-200 !text-blue-700"
               />
             </div>
           </div>
         </div>
-      </div>
+      </SectionCard>
     </div>
   );
 
   const renderStep2 = () => (
-    <div className="space-y-8 animate-in fade-in duration-300">
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <SectionHeader
-          icon={<FileText className="text-green-600" size={20} />}
-          bg="bg-green-50"
-          title="2.1  Course Aims and Summary"
-        />
-        <RichTextEditor
-          value={cdData.aimsSummary}
-          onChange={(c) => upd("aimsSummary", c)}
-          height={260}
-        />
-      </div>
-
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <SectionHeader
-          icon={<List className="text-indigo-600" size={20} />}
-          bg="bg-indigo-50"
-          title="2.2  Course Objectives"
-          subtitle="Format point-wise"
-        />
-        <RichTextEditor
-          value={cdData.objectives}
-          onChange={(c) => upd("objectives", c)}
-          height={260}
-        />
-      </div>
-
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <SectionHeader
-          icon={<Award className="text-yellow-600" size={20} />}
-          bg="bg-yellow-50"
-          title="2.3  Course Outcomes (COs)"
-          subtitle="Format point-wise or paste table"
-        />
-        <RichTextEditor
-          value={cdData.courseOutcomesHtml}
-          onChange={(c) => {
-            markDirty("courseOutcomes");
-            upd("courseOutcomesHtml", c);
-          }}
-          height={360}
-          placeholder="Paste or type course outcomes here..."
-        />
-      </div>
-
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <SectionHeader
-          icon={<Table className="text-purple-600" size={20} />}
-          bg="bg-purple-50"
-          title="Outcome Map  (CO → PO / PSO)"
-          subtitle="Paste your Matrix Table below"
-        />
-        <RichTextEditor
-          value={cdData.outcomeMapHtml}
-          onChange={(m) => {
-            markDirty("outcomeMap");
-            upd("outcomeMapHtml", m);
-          }}
-          height={320}
-          placeholder="Paste outcome mapping table here..."
-        />
-      </div>
-
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <SectionHeader
-          icon={<Layers className="text-orange-600" size={20} />}
-          bg="bg-orange-50"
-          title="2.4  Course Content (Syllabus)"
-          subtitle="Format point-wise"
-        />
-        <RichTextEditor
-          value={cdData.courseContent}
-          onChange={(c) => upd("courseContent", c)}
-          height={300}
-        />
-      </div>
-
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <SectionHeader
-          icon={<BookOpen className="text-cyan-600" size={20} />}
-          bg="bg-cyan-50"
-          title="2.5  Course Resources"
-        />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {[
-            { key: "textBooks", label: "Textbooks", accent: "blue" },
-            { key: "references", label: "References", accent: "green" },
-          ].map(({ key, label, accent }) => (
-            <ResourceList
-              key={key}
-              label={label}
-              accent={accent}
-              items={cdData.resources[key]}
-              onChange={(arr) => updRes(key, arr)}
+    <div className="space-y-5">
+      {[
+        {
+          title: "Course Aims & Summary",
+          subtitle: "High-level overview of the course purpose",
+          icon: <FileText size={16} className="text-green-500" />,
+          iconBg: "bg-green-50",
+          field: "aimsSummary",
+          height: 240,
+        },
+        {
+          title: "Course Objectives",
+          subtitle: "Specific learning goals formatted point-wise",
+          icon: <Target size={16} className="text-indigo-500" />,
+          iconBg: "bg-indigo-50",
+          field: "objectives",
+          height: 240,
+        },
+      ].map((sec) => (
+        <SectionCard key={sec.field}>
+          <div className="p-5 pb-0">
+            <SectionHeader
+              icon={sec.icon}
+              iconBg={sec.iconBg}
+              title={sec.title}
+              subtitle={sec.subtitle}
             />
-          ))}
-          <ResourceList
-            label="Other Resources"
-            accent="purple"
-            items={cdData.resources.otherResources}
-            onChange={(arr) => updRes("otherResources", arr)}
-            className="lg:col-span-2"
+          </div>
+          <div className="px-5 pb-5">
+            <RichTextEditor
+              value={cdData[sec.field]}
+              onChange={(c) => upd(sec.field, c)}
+              height={sec.height}
+            />
+          </div>
+        </SectionCard>
+      ))}
+
+      <SectionCard>
+        <div className="p-5 pb-0">
+          <SectionHeader
+            icon={<Award size={16} className="text-amber-500" />}
+            iconBg="bg-amber-50"
+            title="Course Outcomes (COs)"
+            subtitle="Measurable statements of what students will achieve"
           />
         </div>
-      </div>
+        <div className="px-5 pb-5">
+          <RichTextEditor
+            value={cdData.courseOutcomesHtml}
+            onChange={(c) => {
+              markDirty("courseOutcomes");
+              upd("courseOutcomesHtml", c);
+            }}
+            height={320}
+            placeholder="Paste or type course outcomes here…"
+          />
+        </div>
+      </SectionCard>
+
+      <SectionCard>
+        <div className="p-5 pb-0">
+          <SectionHeader
+            icon={<Table size={16} className="text-purple-500" />}
+            iconBg="bg-purple-50"
+            title="Outcome Mapping (CO → PO / PSO)"
+            subtitle="Correlation matrix between course and program outcomes"
+          />
+        </div>
+        <div className="px-5 pb-5">
+          <RichTextEditor
+            value={cdData.outcomeMapHtml}
+            onChange={(m) => {
+              markDirty("outcomeMap");
+              upd("outcomeMapHtml", m);
+            }}
+            height={280}
+            placeholder="Paste outcome mapping table here…"
+          />
+        </div>
+      </SectionCard>
+
+      <SectionCard>
+        <div className="p-5 pb-0">
+          <SectionHeader
+            icon={<Layers size={16} className="text-orange-500" />}
+            iconBg="bg-orange-50"
+            title="Course Content (Syllabus)"
+            subtitle="Module-wise breakdown of topics"
+          />
+        </div>
+        <div className="px-5 pb-5">
+          <RichTextEditor
+            value={cdData.courseContent}
+            onChange={(c) => upd("courseContent", c)}
+            height={280}
+          />
+        </div>
+      </SectionCard>
+
+      <SectionCard>
+        <div className="p-5 pb-0">
+          <SectionHeader
+            icon={<BookOpen size={16} className="text-cyan-500" />}
+            iconBg="bg-cyan-50"
+            title="Course Resources"
+            subtitle="Textbooks, references, and supplementary materials"
+          />
+        </div>
+        <div className="px-5 pb-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <ResourceList
+            label="Textbooks"
+            accentClass="blue"
+            items={cdData.resources.textBooks}
+            onChange={(arr) => updRes("textBooks", arr)}
+          />
+          <ResourceList
+            label="References"
+            accentClass="green"
+            items={cdData.resources.references}
+            onChange={(arr) => updRes("references", arr)}
+          />
+          <div className="lg:col-span-2">
+            <ResourceList
+              label="Other Resources"
+              accentClass="purple"
+              items={cdData.resources.otherResources}
+              onChange={(arr) => updRes("otherResources", arr)}
+            />
+          </div>
+        </div>
+      </SectionCard>
     </div>
   );
 
   const renderStep3 = () => (
-    <div className="space-y-8 animate-in fade-in duration-300">
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-4">
+    <div className="space-y-5">
+      {/* Teaching Schedule */}
+      <SectionCard>
+        <div className="p-5 pb-0">
           <SectionHeader
-            icon={<Table className="text-pink-600" size={20} />}
-            bg="bg-pink-50"
-            title="3.1  Teaching Schedule"
-            noMargin
+            icon={<BookMarked size={16} className="text-pink-500" />}
+            iconBg="bg-pink-50"
+            title="Teaching Schedule"
+            subtitle="Lecture-wise plan with resources"
+            compact
+            action={
+              <button
+                onClick={addTeaching}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
+              >
+                <Plus size={12} strokeWidth={2.5} className="text-pink-500" />{" "}
+                Add Lecture
+              </button>
+            }
           />
-          <button
-            onClick={addTeaching}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-pink-50 text-pink-700 font-bold rounded-lg hover:bg-pink-100 shadow-sm"
-          >
-            <Plus size={15} strokeWidth={3} /> Add Lecture
-          </button>
         </div>
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-slate-50">
-              <tr>
-                {["#", "Topic", "Slides", "Videos", ""].map((h, i) => (
-                  <th
-                    key={i}
-                    className="px-4 py-3 text-left font-bold text-slate-700 text-xs uppercase tracking-wider"
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-100">
-              {cdData.teaching.map((lec, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/40">
-                  <td className="px-3 py-2 w-16">
-                    <input
-                      type="text"
-                      value={lec.number}
-                      onChange={(e) =>
-                        updTeaching(idx, "number", e.target.value)
-                      }
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-center text-xs focus:ring-2 focus:ring-pink-200 outline-none"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={lec.topic}
-                      onChange={(e) =>
-                        updTeaching(idx, "topic", e.target.value)
-                      }
-                      className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-pink-200 outline-none"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={lec.slides}
-                      onChange={(e) =>
-                        updTeaching(idx, "slides", e.target.value)
-                      }
-                      className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-pink-200 outline-none"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={lec.videos}
-                      onChange={(e) =>
-                        updTeaching(idx, "videos", e.target.value)
-                      }
-                      className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-pink-200 outline-none"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <button
-                      onClick={() => delTeaching(idx)}
-                      className="text-rose-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {cdData.teaching.length === 0 && (
+        <div className="px-5 pb-5">
+          <div className="overflow-x-auto rounded-xl border border-gray-100 shadow-sm">
+            <table className="min-w-full divide-y divide-gray-100 text-xs">
+              <thead className="bg-gray-50">
                 <tr>
-                  <td
-                    colSpan={5}
-                    className="px-4 py-8 text-center text-gray-400 text-sm font-medium"
-                  >
-                    No lectures yet. Click "Add Lecture" or import a PDF.
-                  </td>
+                  {["#", "Topic", "Slides", "Videos", ""].map((h, i) => (
+                    <th
+                      key={i}
+                      className={`px-3 py-2.5 text-left font-semibold text-gray-500 uppercase tracking-wider text-[10px] ${i === 1 ? "w-auto" : "w-20"}`}
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-50">
+                {cdData.teaching.map((lec, idx) => (
+                  <tr
+                    key={idx}
+                    className="hover:bg-gray-50/60 transition-colors group"
+                  >
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        value={lec.number}
+                        onChange={(e) =>
+                          updTeaching(idx, "number", e.target.value)
+                        }
+                        className="w-12 px-2 py-1.5 border border-gray-200 rounded-lg text-center text-xs focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-pink-300 transition-all bg-gray-50"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        value={lec.topic}
+                        onChange={(e) =>
+                          updTeaching(idx, "topic", e.target.value)
+                        }
+                        className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-pink-300 transition-all"
+                        placeholder="Lecture topic…"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        value={lec.slides}
+                        onChange={(e) =>
+                          updTeaching(idx, "slides", e.target.value)
+                        }
+                        className="w-28 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-pink-300 transition-all"
+                        placeholder="Link…"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        value={lec.videos}
+                        onChange={(e) =>
+                          updTeaching(idx, "videos", e.target.value)
+                        }
+                        className="w-28 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-pink-300 transition-all"
+                        placeholder="Link…"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <button
+                        onClick={() => delTeaching(idx)}
+                        className="text-gray-300 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-50 opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {cdData.teaching.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="px-4 py-10 text-center text-xs text-gray-400"
+                    >
+                      <BookMarked
+                        size={24}
+                        className="text-gray-200 mx-auto mb-2"
+                      />
+                      No lectures yet. Click "Add Lecture" above or import a
+                      PDF.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      </SectionCard>
 
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <SectionHeader
-          icon={<Settings className="text-teal-600" size={20} />}
-          bg="bg-teal-50"
-          title="3.2  Assessment Weight Distribution"
-          subtitle="Paste your Assessment Table below"
-        />
-        <RichTextEditor
-          value={cdData.assessmentWeightHtml}
-          onChange={(c) => {
-            markDirty("assessmentWeight");
-            upd("assessmentWeightHtml", c);
-          }}
-          height={360}
-          placeholder="Assessment weight table will appear here..."
-        />
-      </div>
+      {/* Assessment Weight */}
+      <SectionCard>
+        <div className="p-5 pb-0">
+          <SectionHeader
+            icon={<BarChart3 size={16} className="text-teal-500" />}
+            iconBg="bg-teal-50"
+            title="Assessment Weight Distribution"
+            subtitle="CO-wise marks distribution across all assessments"
+          />
+        </div>
+        <div className="px-5 pb-5">
+          <RichTextEditor
+            value={cdData.assessmentWeightHtml}
+            onChange={(c) => {
+              markDirty("assessmentWeight");
+              upd("assessmentWeightHtml", c);
+            }}
+            height={320}
+            placeholder="Assessment weight table will appear here…"
+          />
+        </div>
+      </SectionCard>
 
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <SectionHeader
-          icon={<Award className="text-red-600" size={20} />}
-          bg="bg-red-50"
-          title="3.3  Grading Criterion"
-        />
-        <RichTextEditor
-          value={cdData.gradingCriterion}
-          onChange={(c) => {
-            markDirty("gradingCriterion");
-            setCdData((prev) => ({ ...prev, gradingCriterion: c }));
-          }}
-          height={200}
-        />
-      </div>
+      {/* Grading */}
+      <SectionCard>
+        <div className="p-5 pb-0">
+          <SectionHeader
+            icon={<Award size={16} className="text-rose-500" />}
+            iconBg="bg-rose-50"
+            title="Grading Criterion"
+            subtitle="Grade ranges and corresponding marks"
+          />
+        </div>
+        <div className="px-5 pb-5">
+          <RichTextEditor
+            value={cdData.gradingCriterion}
+            onChange={(c) => {
+              markDirty("gradingCriterion");
+              setCdData((p) => ({ ...p, gradingCriterion: c }));
+            }}
+            height={200}
+          />
+        </div>
+      </SectionCard>
 
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <SectionHeader
-          icon={<Download className="text-gray-600" size={20} />}
-          bg="bg-gray-100"
-          title="Attainment Calculations"
-        />
-        <div className="space-y-7">
+      {/* Attainment */}
+      <SectionCard>
+        <div className="p-5 pb-0">
+          <SectionHeader
+            icon={<TrendingUp size={16} className="text-gray-400" />}
+            iconBg="bg-gray-100"
+            title="Attainment Calculations"
+            subtitle="Methods for recording marks and setting targets"
+          />
+        </div>
+        <div className="px-5 pb-5 space-y-5">
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-2.5 uppercase tracking-wider">
-              Recording Marks and Awarding Grades
-            </label>
+            <FieldLabel>Recording Marks and Awarding Grades</FieldLabel>
             <RichTextEditor
               value={cdData.attainmentCalculations.recordingMarks}
               onChange={(c) => {
                 markDirty("attainmentCalculations");
                 updN("attainmentCalculations", "recordingMarks", c);
               }}
-              height={300}
+              height={260}
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-2.5 uppercase tracking-wider">
-              Setting Attainment Targets
-            </label>
+            <FieldLabel>Setting Attainment Targets</FieldLabel>
             <RichTextEditor
               value={cdData.attainmentCalculations.settingTargets}
               onChange={(c) => {
                 markDirty("attainmentCalculations");
                 updN("attainmentCalculations", "settingTargets", c);
               }}
-              height={300}
+              height={260}
             />
           </div>
         </div>
-      </div>
+      </SectionCard>
     </div>
   );
 
   const renderStep4 = () => (
-    <div className="space-y-8 animate-in fade-in duration-300">
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <SectionHeader
-          icon={<FileText className="text-lime-600" size={20} />}
-          bg="bg-lime-50"
-          title="4.1  Assignment Details / Problem Based Learning"
-        />
-        <RichTextEditor
-          value={cdData.otherDetails.assignmentDetails}
-          onChange={(c) => {
-            markDirty("otherDetails");
-            updN("otherDetails", "assignmentDetails", c);
-          }}
-          height={260}
-        />
-      </div>
-      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-        <SectionHeader
-          icon={<Users className="text-emerald-600" size={20} />}
-          bg="bg-emerald-50"
-          title="4.2  Academic Integrity Policy"
-        />
-        <RichTextEditor
-          value={cdData.otherDetails.academicIntegrity}
-          onChange={(c) => {
-            markDirty("otherDetails");
-            updN("otherDetails", "academicIntegrity", c);
-          }}
-          height={260}
-        />
-      </div>
+    <div className="space-y-5">
+      <SectionCard>
+        <div className="p-5 pb-0">
+          <SectionHeader
+            icon={<FlaskConical size={16} className="text-lime-500" />}
+            iconBg="bg-lime-50"
+            title="Assignment Details / Problem Based Learning"
+            subtitle="Assignment topics, problem statements, and deliverables"
+          />
+        </div>
+        <div className="px-5 pb-5">
+          <RichTextEditor
+            value={cdData.otherDetails.assignmentDetails}
+            onChange={(c) => {
+              markDirty("otherDetails");
+              updN("otherDetails", "assignmentDetails", c);
+            }}
+            height={260}
+          />
+        </div>
+      </SectionCard>
+      <SectionCard>
+        <div className="p-5 pb-0">
+          <SectionHeader
+            icon={<Shield size={16} className="text-emerald-500" />}
+            iconBg="bg-emerald-50"
+            title="Academic Integrity Policy"
+            subtitle="Rules regarding plagiarism, collaboration, and academic honesty"
+          />
+        </div>
+        <div className="px-5 pb-5">
+          <RichTextEditor
+            value={cdData.otherDetails.academicIntegrity}
+            onChange={(c) => {
+              markDirty("otherDetails");
+              updN("otherDetails", "academicIntegrity", c);
+            }}
+            height={260}
+          />
+        </div>
+      </SectionCard>
     </div>
   );
+
+  const stepCompletions = [
+    !!metaData.courseCode,
+    activeStep > 2,
+    activeStep > 3,
+    activeStep === 4 && !!metaData.courseCode,
+  ];
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -1791,76 +2079,74 @@ const EditCD = () => {
 
   return (
     <CreatorLayout>
-      {/* Global Style overrides to ensure Jodit Editor formats bullets properly */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
         .jodit-wysiwyg ul { list-style-type: none !important; padding-left: 20px !important; margin-bottom: 10px; }
         .jodit-wysiwyg ul li { position: relative; margin-bottom: 6px; text-align: justify; }
         .jodit-wysiwyg ul li::before { content: "●"; position: absolute; left: -18px; color: black; font-size: 1.1em; }
         .jodit-wysiwyg ol { list-style-type: decimal !important; padding-left: 25px !important; margin-bottom: 10px; }
         .jodit-wysiwyg li { margin-bottom: 6px; text-align: justify; }
         .jodit-wysiwyg p { margin-bottom: 8px; text-align: justify; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        * { font-family: 'DM Sans', sans-serif; }
       `,
         }}
       />
 
       {/* ── Multi-Course Selection Modal ─────────────────────────────────── */}
       {extractedCourses.length > 0 && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[85vh] overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl flex flex-col max-h-[85vh] shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
               <div>
-                <h3 className="font-extrabold text-gray-900 text-2xl tracking-tight">
+                <h3 className="text-base font-semibold text-gray-800">
                   Select Course to Import
                 </h3>
-                <p className="text-sm text-gray-500 mt-1.5 font-medium">
-                  We detected{" "}
-                  <span className="font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
-                    {extractedCourses.length}
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Detected{" "}
+                  <span className="font-semibold text-blue-600">
+                    {extractedCourses.length} courses
                   </span>{" "}
-                  courses in the uploaded PDF.
+                  in uploaded PDF
                 </p>
               </div>
               <button
                 onClick={() => setExtractedCourses([])}
-                className="text-gray-400 hover:text-rose-500 hover:bg-rose-50 p-2.5 rounded-full transition-colors"
+                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
               >
-                <X size={24} strokeWidth={2.5} />
+                <X size={18} />
               </button>
             </div>
-            <div className="p-6 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50/30">
+            <div className="p-4 overflow-y-auto space-y-2 flex-1">
               {extractedCourses.map((course, idx) => (
                 <button
                   key={idx}
                   onClick={() => loadExtractedCourse(course)}
-                  className="w-full text-left p-5 rounded-2xl border border-gray-200 bg-white hover:border-indigo-400 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-between group"
+                  className="w-full text-left p-4 rounded-xl border border-gray-100 bg-white hover:border-blue-200 hover:bg-blue-50/30 transition-all group flex items-center gap-3"
                 >
-                  <div className="flex-1 pr-6">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="font-extrabold text-indigo-900 text-lg tracking-tight">
-                        {course.courseCode || "Unknown Code"}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="font-semibold text-gray-800 text-sm">
+                        {course.courseCode || "Unknown"}
                       </span>
-                      <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-100">
+                      <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md border border-emerald-200">
                         {course.credits?.total || 0} Credits
                       </span>
                     </div>
-                    <div className="text-base font-bold text-gray-800 mb-2 leading-snug">
+                    <p className="text-xs text-gray-600 font-medium">
                       {course.courseTitle || "Unknown Title"}
-                    </div>
-                    <div className="text-xs font-semibold text-gray-500 flex items-center gap-2 bg-gray-50 inline-flex px-2 py-1 rounded-md">
-                      <Briefcase size={14} className="text-gray-400" />
-                      {course.department ||
-                        course.programTitle ||
-                        "Department not specified"}
-                    </div>
+                    </p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      {course.department || course.programTitle || "—"}
+                    </p>
                   </div>
-                  <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center group-hover:bg-indigo-600 transition-colors shadow-sm">
-                    <ChevronRight
-                      className="text-indigo-400 group-hover:text-white"
-                      strokeWidth={3}
-                    />
-                  </div>
+                  <ChevronRight
+                    size={16}
+                    className="text-gray-300 group-hover:text-blue-400 flex-shrink-0 transition-colors"
+                  />
                 </button>
               ))}
             </div>
@@ -1868,370 +2154,290 @@ const EditCD = () => {
         </div>
       )}
 
-      {/* ── Previous CDs Modal ─────────────────────────────────── */}
+      {/* ── History Modal ─────────────────────────────────── */}
       {showHistoryModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[85vh] overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h3 className="font-extrabold text-gray-900 text-2xl tracking-tight">
-                    Previous Course Documents
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1.5 font-medium">
-                    Select a previously saved CD to edit.
-                  </p>
-                </div>
+        <HistoryModal
+          list={filteredHistory}
+          search={historySearch}
+          onSearch={setHistorySearch}
+          onLoad={handleLoadFromHistory}
+          onClose={() => setShowHistoryModal(false)}
+        />
+      )}
+
+      {/* ── Sidebar Overlay ─────────────────────────────────── */}
+      {showSidebar && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden"
+          onClick={() => setShowSidebar(false)}
+        >
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
+        </div>
+      )}
+
+      {/* ── Version History Sidebar ─────────────────────────────────── */}
+      {showSidebar && (
+        <div
+          ref={sidebarRef}
+          className="fixed right-0 top-0 bottom-0 z-50 w-72 bg-white border-l border-gray-100 shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right-5 duration-200"
+        >
+          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700">
+              Sections & History
+            </h2>
+            <button
+              onClick={() => setShowSidebar(false)}
+              className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Progress */}
+          <div className="p-4 border-b border-gray-100">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
+                Completion
+              </span>
+              <span className="text-xs font-semibold text-gray-600">
+                {stepCompletions.filter(Boolean).length}/{STEP_CONFIG.length}
+              </span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-1.5 mb-3 overflow-hidden">
+              <div
+                className="bg-gray-800 h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${(stepCompletions.filter(Boolean).length / STEP_CONFIG.length) * 100}%`,
+                }}
+              />
+            </div>
+            <div className="space-y-1">
+              {STEP_CONFIG.map((step, i) => (
                 <button
-                  onClick={() => setShowHistoryModal(false)}
-                  className="text-gray-400 hover:text-rose-500 hover:bg-rose-50 p-2.5 rounded-full transition-colors"
+                  key={step.id}
+                  onClick={() => {
+                    setActiveStep(step.id);
+                    setShowSidebar(false);
+                  }}
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all text-left ${activeStep === step.id ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-600"}`}
                 >
-                  <X size={24} strokeWidth={2.5} />
-                </button>
-              </div>
-              <div className="relative">
-                <Search
-                  className="absolute left-4 top-3.5 text-gray-400"
-                  size={18}
-                />
-                <input
-                  type="text"
-                  placeholder="Search by Course Code or Title..."
-                  value={historySearch}
-                  onChange={(e) => setHistorySearch(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
-                />
-              </div>
-            </div>
-            <div className="p-6 overflow-y-auto space-y-3 custom-scrollbar bg-slate-50/30">
-              {filteredHistory.length > 0 ? (
-                filteredHistory.map((cd) => (
-                  <button
-                    key={cd._id}
-                    onClick={() => handleLoadFromHistory(cd.courseCode)}
-                    className="w-full text-left p-5 rounded-2xl border border-gray-200 bg-white hover:border-indigo-400 hover:shadow-md transition-all duration-200 flex items-center justify-between group"
+                  <div
+                    className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${activeStep === step.id ? "bg-white/20 text-white" : stepCompletions[i] ? "bg-emerald-100 text-emerald-600" : "bg-gray-100 text-gray-400"}`}
                   >
-                    <div className="flex-1 pr-6">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="font-extrabold text-indigo-900 text-lg tracking-tight">
-                          {cd.courseCode}
-                        </span>
-                        <span className="px-2.5 py-0.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-md border border-slate-200 uppercase tracking-widest">
-                          v{cd.cdVersion}
-                        </span>
-                        <span
-                          className={`px-2.5 py-0.5 text-xs font-bold rounded-md border uppercase ${cd.status === "Approved" ? "bg-green-50 text-green-700 border-green-200" : "bg-yellow-50 text-yellow-700 border-yellow-200"}`}
-                        >
-                          {cd.status}
-                        </span>
-                      </div>
-                      <div className="text-base font-bold text-gray-800 mb-1">
-                        {cd.courseTitle || "Unknown Title"}
-                      </div>
-                      <div className="text-xs font-medium text-gray-500">
-                        Last updated: {new Date(cd.updatedAt).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center group-hover:bg-indigo-600 transition-colors shadow-sm">
-                      <ChevronRight
-                        className="text-indigo-400 group-hover:text-white"
-                        strokeWidth={3}
-                      />
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <div className="text-center py-10 text-gray-500 font-medium">
-                  No previous courses found matching "{historySearch}".
-                </div>
-              )}
+                    {stepCompletions[i] && activeStep !== step.id ? (
+                      <CheckCircle size={11} strokeWidth={2.5} />
+                    ) : (
+                      <span className="text-[10px] font-bold">{step.id}</span>
+                    )}
+                  </div>
+                  <span className="text-xs font-medium truncate">
+                    {step.label}
+                  </span>
+                </button>
+              ))}
             </div>
+          </div>
+
+          {/* Version History */}
+          <div className="p-4 flex-1 overflow-y-auto">
+            <div className="flex items-center gap-2 mb-3">
+              <History size={14} className="text-gray-400" />
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
+                Version History
+              </span>
+            </div>
+            {recentVersions.length === 0 ? (
+              <p className="text-xs text-gray-300 italic text-center py-4">
+                No versions saved yet.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {recentVersions.map((ver) => (
+                  <div
+                    key={ver._id}
+                    onClick={() => {
+                      fetchFullCD(ver._id);
+                      setShowSidebar(false);
+                    }}
+                    className="p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 cursor-pointer transition-all group"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-gray-700 group-hover:text-gray-900">
+                        v{ver.cdVersion}
+                      </span>
+                      <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded uppercase">
+                        {ver.status}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-400">
+                      {new Date(ver.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* ── Top Bar ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-8">
-        <div>
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">
-            Course Document Editor
-          </h1>
-          <div className="text-gray-600 flex items-center gap-2 mt-3 flex-wrap">
-            {metaData.courseCode ? (
-              <>
-                <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-lg text-sm shadow-sm">
-                  {metaData.courseCode}
-                </span>
-                <span className="text-gray-800 font-semibold">
-                  {metaData.courseTitle}
-                </span>
-                <span className="ml-2 bg-slate-100 text-slate-700 text-xs font-bold px-2.5 py-1 rounded-md uppercase tracking-widest border border-slate-200 shadow-sm">
-                  v{metaData.versionNo}
-                </span>
-              </>
-            ) : (
-              <span className="text-sm font-semibold bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-100">
-                Upload a PDF or select a course to begin
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={() => {
-              fetchCreatorHistory();
-              setShowHistoryModal(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 rounded-xl hover:bg-gray-50 border border-gray-200 shadow-sm transition-all font-semibold"
-          >
-            <FolderOpen size={18} />
-            <span className="hidden sm:inline">Previous CDs</span>
-          </button>
-
-          <div className="relative" ref={dropdownRef}>
-            <button
-              onClick={() => setShowSidebarDropdown(!showSidebarDropdown)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 rounded-xl hover:bg-gray-50 border border-gray-200 shadow-sm transition-all font-semibold"
-            >
-              <Menu size={18} />
-              <span className="hidden sm:inline">Sections & History</span>
-            </button>
-            {showSidebarDropdown && (
-              <div className="absolute right-0 mt-3 w-80 bg-white border border-gray-100 rounded-2xl shadow-2xl z-50 p-5 max-h-[85vh] overflow-y-auto animate-in slide-in-from-top-2">
-                <ProgressSummary metaData={metaData} activeStep={activeStep} />
-                <div className="mt-5 bg-white rounded-xl border border-gray-100 shadow-sm">
-                  <nav className="space-y-1 p-2">
-                    {[
-                      { id: 1, label: "Course Information", icon: Briefcase },
-                      { id: 2, label: "Course Details", icon: List },
-                      { id: 3, label: "Teaching & Assessment", icon: Layers },
-                      { id: 4, label: "Other Details", icon: File },
-                    ].map((step) => (
-                      <button
-                        key={step.id}
-                        onClick={() => {
-                          setActiveStep(step.id);
-                          setShowSidebarDropdown(false);
-                        }}
-                        className={`w-full flex items-center gap-3 p-3 text-left rounded-xl transition-all font-semibold ${activeStep === step.id ? "bg-indigo-50 border border-indigo-100 shadow-sm text-indigo-800" : "hover:bg-gray-50 text-gray-600"}`}
-                      >
-                        <div
-                          className={`p-2 rounded-lg ${activeStep === step.id ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-400"}`}
-                        >
-                          <step.icon size={18} strokeWidth={2.5} />
-                        </div>
-                        <div className="flex-1">{step.label}</div>
-                      </button>
-                    ))}
-                  </nav>
-                </div>
-                {metaData.courseCode && (
-                  <div className="mt-5 bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-                    <div className="flex items-center gap-2 mb-4">
-                      <History className="text-indigo-500" size={18} />
-                      <h3 className="font-bold text-gray-800">
-                        Version History
-                      </h3>
-                    </div>
-                    {recentVersions.length === 0 ? (
-                      <div className="text-xs text-gray-400 italic text-center py-3 bg-gray-50 rounded-lg">
-                        No previous versions found.
-                      </div>
-                    ) : (
-                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-                        {recentVersions.map((ver) => (
-                          <div
-                            key={ver._id}
-                            className="bg-gray-50 p-3.5 rounded-xl border border-gray-100 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer group"
-                            onClick={() => {
-                              fetchFullCD(ver._id);
-                              setShowSidebarDropdown(false);
-                            }}
-                          >
-                            <div className="flex justify-between items-center mb-2">
-                              <span className="font-extrabold text-indigo-700 text-sm group-hover:text-indigo-800">
-                                v{ver.cdVersion}
-                              </span>
-                              <span className="text-[10px] font-bold px-2 py-1 rounded-md uppercase bg-white border border-gray-200 text-gray-600 shadow-sm">
-                                {ver.status}
-                              </span>
-                            </div>
-                            <div className="text-xs font-medium text-gray-500">
-                              {new Date(ver.createdAt).toLocaleDateString()}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+      {/* ── Page Layout ─────────────────────────────────────────────────── */}
+      <div className="max-w-5xl mx-auto px-3 sm:px-4 lg:px-0 pb-10">
+        {/* ── Page Header ─────────────────────────────────────────────────── */}
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
+            {/* Title Block */}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <GraduationCap
+                  size={18}
+                  className="text-gray-400 flex-shrink-0"
+                />
+                <h1 className="text-lg font-semibold text-gray-800 tracking-tight">
+                  Course Document Editor
+                </h1>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                {metaData.courseCode ? (
+                  <>
+                    <span className="text-xs font-semibold text-gray-700 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-lg">
+                      {metaData.courseCode}
+                    </span>
+                    <span className="text-sm text-gray-600 font-medium truncate max-w-xs">
+                      {metaData.courseTitle}
+                    </span>
+                    <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md uppercase tracking-widest border border-gray-200">
+                      v{metaData.versionNo}
+                    </span>
+                    {dirtySections.size > 0 && (
+                      <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                        Unsaved changes
+                      </span>
                     )}
-                  </div>
+                  </>
+                ) : (
+                  <span className="text-xs text-gray-400 font-medium">
+                    Upload a PDF or open a previous document to start editing.
+                  </span>
                 )}
               </div>
-            )}
-          </div>
-          <button
-            onClick={fetchLatestCD}
-            disabled={!metaData.courseCode || loading}
-            className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 text-blue-700 rounded-xl hover:bg-blue-100 transition-all font-bold disabled:opacity-50 border border-blue-100 shadow-sm"
-          >
-            <RefreshCw
-              size={18}
-              className={loading ? "animate-spin" : ""}
-              strokeWidth={2.5}
-            />{" "}
-            Fetch Latest
-          </button>
-          <button
-            onClick={() =>
-              navigate("/creator/preview-cd", {
-                state: { cdData: transformForSave(cdData), metaData },
-              })
-            }
-            disabled={!metaData.courseCode}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all font-bold disabled:opacity-50 shadow-sm"
-          >
-            <Eye size={18} strokeWidth={2.5} /> Preview
-          </button>
-          <button
-            onClick={() => handleSave("Draft")}
-            disabled={loading || !metaData.courseCode}
-            className="flex items-center gap-2 px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-black transition-all font-bold disabled:opacity-50 shadow-md shadow-gray-200"
-          >
-            {loading ? (
-              <RefreshCw size={18} className="animate-spin" />
-            ) : (
-              <Save size={18} strokeWidth={2.5} />
-            )}{" "}
-            Save Draft
-          </button>
-        </div>
-      </div>
+            </div>
 
-      {/* ── Step Content ─────────────────────────────────────────────────── */}
-      <div className="w-full">
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/50 p-8 md:p-10">
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+              <button
+                onClick={() => {
+                  fetchCreatorHistory();
+                  setShowHistoryModal(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
+              >
+                <FolderOpen size={14} />{" "}
+                <span className="hidden sm:inline">Previous CDs</span>
+              </button>
+              <button
+                onClick={() => setShowSidebar(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
+              >
+                <Menu size={14} />{" "}
+                <span className="hidden sm:inline">Sections</span>
+              </button>
+              <button
+                onClick={fetchLatestCD}
+                disabled={!metaData.courseCode || loading}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-40"
+              >
+                <RefreshCw
+                  size={14}
+                  className={loading ? "animate-spin" : ""}
+                />{" "}
+                <span className="hidden sm:inline">Fetch Latest</span>
+              </button>
+              <button
+                onClick={() =>
+                  navigate("/creator/preview-cd", {
+                    state: { cdData: transformForSave(cdData), metaData },
+                  })
+                }
+                disabled={!metaData.courseCode}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors disabled:opacity-40"
+              >
+                <Eye size={14} />{" "}
+                <span className="hidden sm:inline">Preview</span>
+              </button>
+              <button
+                onClick={() => handleSave("Draft")}
+                disabled={loading || !metaData.courseCode}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-gray-900 rounded-lg hover:bg-gray-800 shadow-sm transition-colors disabled:opacity-40"
+              >
+                {loading ? (
+                  <RefreshCw size={14} className="animate-spin" />
+                ) : (
+                  <Save size={14} />
+                )}
+                Save Draft
+              </button>
+            </div>
+          </div>
+
+          {/* Step Progress */}
+          <StepProgressBar
+            activeStep={activeStep}
+            onStepClick={setActiveStep}
+          />
+        </div>
+
+        {/* ── Step Content ─────────────────────────────────────────────────── */}
+        <div className="min-h-[400px]">
           {activeStep === 1 && renderStep1()}
           {activeStep === 2 && renderStep2()}
           {activeStep === 3 && renderStep3()}
           {activeStep === 4 && renderStep4()}
         </div>
 
-        <div className="mt-8 flex justify-between items-center bg-white p-6 rounded-2xl border border-gray-100 shadow-lg">
+        {/* ── Step Navigation ─────────────────────────────────────────────── */}
+        <div className="mt-6 flex flex-col-reverse sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
           <button
             onClick={() => setActiveStep((p) => Math.max(1, p - 1))}
             disabled={activeStep === 1}
-            className="flex items-center gap-2 px-6 py-3 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:text-gray-800 disabled:opacity-40 transition-all shadow-sm"
+            className="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30 transition-all"
           >
-            <ArrowLeft size={18} strokeWidth={2.5} /> Previous Step
+            <ArrowLeft size={16} strokeWidth={2} /> Previous
           </button>
-          <div className="flex items-center gap-4">
+
+          <div className="flex items-center justify-center gap-2">
+            {STEP_CONFIG.map((step) => (
+              <button
+                key={step.id}
+                onClick={() => setActiveStep(step.id)}
+                className={`w-2 h-2 rounded-full transition-all duration-200 ${activeStep === step.id ? "w-5 bg-gray-800" : "bg-gray-200 hover:bg-gray-300"}`}
+              />
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
             <button
               onClick={handleSaveAndNext}
               disabled={loading || !metaData.courseCode}
-              className="px-6 py-3 text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl hover:bg-emerald-100 disabled:opacity-40 transition-all"
+              className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 disabled:opacity-40 transition-all"
             >
+              {loading ? (
+                <RefreshCw size={14} className="animate-spin" />
+              ) : (
+                <Save size={14} />
+              )}
               Save & Continue
             </button>
             <button
               onClick={() => setActiveStep((p) => Math.min(4, p + 1))}
               disabled={activeStep === 4}
-              className="flex items-center gap-2 px-8 py-3 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-all shadow-md shadow-indigo-200"
+              className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-gray-900 text-white rounded-xl hover:bg-gray-800 disabled:opacity-30 transition-all shadow-sm"
             >
-              Next Step <ArrowRight size={18} strokeWidth={2.5} />
+              Next <ArrowRight size={16} strokeWidth={2} />
             </button>
           </div>
         </div>
       </div>
     </CreatorLayout>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SHARED SUB-COMPONENTS
-// ─────────────────────────────────────────────────────────────────────────────
-
-const SectionHeader = ({ icon, bg, title, subtitle, noMargin }) => (
-  <div
-    className={`flex items-center gap-3 ${noMargin ? "" : "mb-6 border-b border-gray-100 pb-4"}`}
-  >
-    <div className={`p-2.5 ${bg} rounded-xl`}>{icon}</div>
-    <div>
-      <h3 className="text-xl font-extrabold text-gray-800 tracking-tight">
-        {title}
-      </h3>
-      {subtitle && (
-        <p className="text-xs font-semibold text-gray-500 mt-0.5 uppercase tracking-wider">
-          {subtitle}
-        </p>
-      )}
-    </div>
-  </div>
-);
-
-const ResourceList = ({ label, accent, items, onChange, className = "" }) => {
-  const colors = {
-    blue: {
-      btn: "text-blue-600 hover:bg-blue-50",
-      border: "focus-within:border-blue-400",
-    },
-    green: {
-      btn: "text-green-600 hover:bg-green-50",
-      border: "focus-within:border-green-400",
-    },
-    purple: {
-      btn: "text-purple-600 hover:bg-purple-50",
-      border: "focus-within:border-purple-400",
-    },
-  };
-  const c = colors[accent] || colors.blue;
-  return (
-    <div
-      className={`bg-gray-50 p-5 rounded-xl border border-gray-200 ${className}`}
-    >
-      <div className="flex justify-between items-center mb-3">
-        <h4 className="font-bold text-gray-800">{label}</h4>
-        <button
-          onClick={() => onChange([...items, ""])}
-          className={`text-xs bg-white px-2 py-1 rounded shadow-sm font-bold flex items-center gap-1 ${c.btn}`}
-        >
-          <Plus size={13} /> Add
-        </button>
-      </div>
-      <div className="space-y-2">
-        {items.map((item, i) => (
-          <div
-            key={i}
-            className={`flex gap-2 items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm ${c.border}`}
-          >
-            <span className="text-xs font-bold text-gray-400 w-5 text-center">
-              {i + 1}.
-            </span>
-            <input
-              type="text"
-              value={item}
-              onChange={(e) => {
-                const arr = [...items];
-                arr[i] = e.target.value;
-                onChange(arr);
-              }}
-              className="flex-1 px-2 py-1 outline-none text-sm bg-transparent"
-              placeholder="Enter resource details…"
-            />
-            <button
-              onClick={() => onChange(items.filter((_, j) => j !== i))}
-              className="text-gray-400 hover:text-rose-500 p-1"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
-        {items.length === 0 && (
-          <p className="text-xs text-gray-400 italic text-center py-2">
-            No entries yet.
-          </p>
-        )}
-      </div>
-    </div>
   );
 };
 

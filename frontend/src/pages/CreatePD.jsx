@@ -46,6 +46,16 @@ import {
   Info,
   Building2,
   GraduationCap,
+  BookMarked,
+  BarChart3,
+  Sparkles,
+  Award,
+  Target,
+  TrendingUp,
+  Shield,
+  Layers3,
+  ChevronDown,
+  Briefcase,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -55,6 +65,7 @@ import JoditEditor from "jodit-react";
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
+
 const STANDARD_POS = [
   "Engineering knowledge: Apply the knowledge of mathematics, science, engineering fundamentals, and an engineering specialization to the solution of complex engineering problems.",
   "Problem analysis: Identify, formulate, review research literature, and analyze complex engineering problems reaching substantiated conclusions using first principles of mathematics, natural sciences, and engineering sciences.",
@@ -112,13 +123,19 @@ const PREPOPULATED_DATA = {
   open_electives: [],
 };
 
+const STEP_CONFIG = [
+  { id: 1, label: "Program Info", shortLabel: "Info", icon: GraduationCap },
+  { id: 2, label: "Objectives", shortLabel: "Obj", icon: Target },
+  { id: 3, label: "Structure", shortLabel: "Structure", icon: Layers3 },
+  { id: 4, label: "Electives", shortLabel: "Electives", icon: BookMarked },
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPER: Build programs list from creator's Creater model profile fields
-// Fields used: programme, discipline, course, faculty, school, college
+// HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
 const buildProgramsFromProfile = (profile) => {
   if (!profile) return [];
-
   const detectLevel = (prog = "") => {
     const p = prog.toLowerCase();
     return p.includes("m.tech") ||
@@ -132,7 +149,6 @@ const buildProgramsFromProfile = (profile) => {
       ? "PG"
       : "UG";
   };
-
   const generateCode = (prog = "", disc = "") => {
     const map = {
       "b.tech": "BTECH",
@@ -162,12 +178,9 @@ const buildProgramsFromProfile = (profile) => {
       .slice(0, 5);
     return `${deg}-${initials || "GEN"}`;
   };
-
   const prog = profile.programme || "";
   const disc = profile.discipline || profile.course || "";
-
   if (!prog) return [];
-
   const code = generateCode(prog, disc);
   return [
     {
@@ -184,9 +197,16 @@ const buildProgramsFromProfile = (profile) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DEBOUNCED INPUT  (prevents re-render lag on large state trees)
+// OPTIMIZED INPUT
 // ─────────────────────────────────────────────────────────────────────────────
-const OptimizedInput = ({ value, onChange, debounceTime = 400, ...props }) => {
+
+const OptimizedInput = ({
+  value,
+  onChange,
+  debounceTime = 400,
+  className = "",
+  ...props
+}) => {
   const [local, setLocal] = useState(value);
   useEffect(() => {
     setLocal(value);
@@ -205,122 +225,163 @@ const OptimizedInput = ({ value, onChange, debounceTime = 400, ...props }) => {
       onBlur={(e) => {
         if (local !== value) onChange(e.target.value);
       }}
+      className={[
+        "w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg",
+        "text-sm text-gray-800 placeholder-gray-300",
+        "focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400",
+        "transition-all duration-150",
+        className,
+      ].join(" ")}
     />
   );
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROGRESS SUMMARY  (sidebar)
+// STEP PROGRESS BAR
 // ─────────────────────────────────────────────────────────────────────────────
-const ProgressSummary = React.memo(({ metaData, pdData, activeStep }) => {
-  const steps = [
-    { id: 1, label: "Program Info", completed: !!metaData.programId },
-    {
-      id: 2,
-      label: "Objectives",
-      completed:
-        pdData.peos.some((p) => p?.trim()) &&
-        pdData.psos.some((p) => p?.trim()),
-    },
-    {
-      id: 3,
-      label: "Structure",
-      completed: pdData.semesters.some((s) => s.courses.length > 0),
-    },
-    {
-      id: 4,
-      label: "Electives",
-      completed:
-        pdData.prof_electives.some((g) => g.courses.length > 0) ||
-        pdData.open_electives.some((g) => g.courses.length > 0),
-    },
-  ];
-  const done = steps.filter((s) => s.completed).length;
-  return (
-    <div className="bg-white p-4 rounded-lg border border-gray-200">
-      <div className="flex justify-between mb-2">
-        <span className="text-sm font-medium text-gray-700">Progress</span>
-        <span className="text-sm font-semibold text-blue-600">
-          {done}/{steps.length}
-        </span>
+
+const StepProgressBar = React.memo(
+  ({ activeStep, onStepClick, completions }) => (
+    <div className="w-full">
+      {/* Mobile pill tabs */}
+      <div className="flex sm:hidden gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+        {STEP_CONFIG.map((step) => (
+          <button
+            key={step.id}
+            onClick={() => onStepClick(step.id)}
+            className={[
+              "flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all",
+              activeStep === step.id
+                ? "bg-gray-900 text-white shadow-sm"
+                : "bg-white border border-gray-200 text-gray-500 hover:border-gray-300",
+            ].join(" ")}
+          >
+            <step.icon size={12} />
+            {step.shortLabel}
+          </button>
+        ))}
       </div>
-      <div className="w-full bg-gray-200 rounded-full h-1.5">
-        <div
-          className="bg-gradient-to-r from-blue-500 to-blue-700 h-1.5 rounded-full transition-all duration-500"
-          style={{ width: `${(done / steps.length) * 100}%` }}
-        />
-      </div>
-      <div className="flex justify-between mt-3">
-        {steps.map((s) => (
-          <div key={s.id} className="flex flex-col items-center gap-1">
-            <div
-              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors
-              ${s.completed ? "bg-green-100 text-green-600" : activeStep === s.id ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-400"}`}
+
+      {/* Tablet+ full bar */}
+      <div className="hidden sm:flex items-center bg-white border border-gray-200 rounded-xl p-1.5 shadow-sm gap-0">
+        {STEP_CONFIG.map((step, idx) => (
+          <React.Fragment key={step.id}>
+            <button
+              onClick={() => onStepClick(step.id)}
+              className={[
+                "flex-1 flex items-center gap-2.5 px-4 py-2.5 rounded-lg transition-all text-sm font-medium",
+                activeStep === step.id
+                  ? "bg-gray-900 text-white shadow-sm"
+                  : completions[idx]
+                    ? "text-emerald-600 hover:bg-emerald-50"
+                    : "text-gray-400 hover:bg-gray-50 hover:text-gray-600",
+              ].join(" ")}
             >
-              {s.completed ? <CheckCircle size={14} /> : s.id}
-            </div>
-            <span className="text-[10px] text-gray-500">{s.label}</span>
-          </div>
+              <span
+                className={[
+                  "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0",
+                  activeStep === step.id
+                    ? "bg-white/20 text-white"
+                    : completions[idx]
+                      ? "bg-emerald-100 text-emerald-600"
+                      : "bg-gray-100 text-gray-400",
+                ].join(" ")}
+              >
+                {completions[idx] && activeStep !== step.id ? (
+                  <CheckCircle size={13} strokeWidth={2.5} />
+                ) : (
+                  step.id
+                )}
+              </span>
+              <span className="hidden md:block truncate">{step.label}</span>
+              <span className="block md:hidden">{step.shortLabel}</span>
+            </button>
+            {idx < STEP_CONFIG.length - 1 && (
+              <ChevronRight
+                size={14}
+                className="text-gray-300 flex-shrink-0 mx-0.5"
+              />
+            )}
+          </React.Fragment>
         ))}
       </div>
     </div>
-  );
-});
+  ),
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION CARD WRAPPER
+// SECTION CARD
 // ─────────────────────────────────────────────────────────────────────────────
+
 const SectionCard = ({
-  icon: Icon,
+  icon,
+  iconBg,
   title,
+  subtitle,
   action,
   children,
-  accent = "blue",
-}) => {
-  const colors = {
-    blue: "border-blue-200 bg-blue-50 text-blue-700",
-    green: "border-green-200 bg-green-50 text-green-700",
-    gray: "border-gray-200 bg-gray-100 text-gray-600",
-    purple: "border-purple-200 bg-purple-50 text-purple-700",
-  };
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3.5 bg-gray-50 border-b border-gray-100">
-        <div className="flex items-center gap-2.5">
-          <span className={`p-1.5 rounded-lg border ${colors[accent]}`}>
-            <Icon size={15} />
-          </span>
-          <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
+  noPad,
+}) => (
+  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100">
+      <div className="flex items-start gap-3 min-w-0">
+        <div
+          className={`p-2 rounded-lg flex-shrink-0 ${iconBg || "bg-gray-100"}`}
+        >
+          {icon}
         </div>
-        {action}
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-gray-800 leading-snug">
+            {title}
+          </h3>
+          {subtitle && (
+            <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
+          )}
+        </div>
       </div>
-      <div className="p-5">{children}</div>
+      {action && (
+        <div className="flex-shrink-0 flex items-center gap-2">{action}</div>
+      )}
     </div>
-  );
-};
+    <div className={noPad ? "" : "p-5"}>{children}</div>
+  </div>
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ASSIGN BUTTON  (shared between Step 3 & Step 4)
+// FIELD LABEL
 // ─────────────────────────────────────────────────────────────────────────────
+
+const FieldLabel = ({ children, required }) => (
+  <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">
+    {children}
+    {required && <span className="text-rose-400 ml-0.5">*</span>}
+  </label>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ASSIGN BUTTON
+// ─────────────────────────────────────────────────────────────────────────────
+
 const AssignBtn = ({ course, onClick }) => (
   <button
     onClick={onClick}
-    className={`flex items-center gap-1 justify-center w-full px-2 py-1 rounded text-xs border transition-all ${
+    className={[
+      "flex items-center gap-1 justify-center w-full px-2 py-1.5 rounded-lg text-xs border transition-all font-medium",
       course.assigneeId
-        ? "bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
-        : "bg-gray-50 border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50"
-    }`}
+        ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+        : "bg-gray-50 border-dashed border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50",
+    ].join(" ")}
   >
     {course.assigneeId ? (
       <>
-        <UserCheck size={13} />
+        <UserCheck size={12} />
         <span className="truncate max-w-[72px]" title={course.assigneeName}>
           {course.assigneeName?.split(" ")[0]}
         </span>
       </>
     ) : (
       <>
-        <UserPlus size={13} />
+        <UserPlus size={12} />
         Assign
       </>
     )}
@@ -328,53 +389,71 @@ const AssignBtn = ({ course, onClick }) => (
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// STATUS BADGE
+// ─────────────────────────────────────────────────────────────────────────────
+
+const StatusBadge = ({ children, color = "gray" }) => {
+  const colors = {
+    gray: "bg-gray-100 text-gray-500 border-gray-200",
+    amber: "bg-amber-50 text-amber-600 border-amber-200",
+    yellow: "bg-yellow-50 text-yellow-700 border-yellow-200",
+    blue: "bg-blue-50 text-blue-600 border-blue-200",
+    emerald: "bg-emerald-50 text-emerald-600 border-emerald-200",
+  };
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border uppercase tracking-wider ${colors[color]}`}
+    >
+      {children}
+    </span>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
+
 const CreatePD = () => {
   const navigate = useNavigate();
   const { axios, createrToken } = useAppContext();
   const location = useLocation();
 
-  // UI
   const [activeStep, setActiveStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
   const [searchProgram, setSearchProgram] = useState("");
   const [showProgramDropdown, setShowProgramDropdown] = useState(false);
-  const [showSidebarDropdown, setShowSidebarDropdown] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
   const [recentVersions, setRecentVersions] = useState([]);
   const [creatorProfile, setCreatorProfile] = useState(null);
   const [availablePrograms, setAvailablePrograms] = useState([]);
-
-  // Modals
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [currentAssignContext, setCurrentAssignContext] = useState(null);
 
   const dropdownRef = useRef(null);
+  const sidebarRef = useRef(null);
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
+  const programInputRef = useRef(null);
 
-  // ── TWO-TIER DIRTY TRACKING ────────────────────────────────────────────────
-  // contentDirty → version bumps on next save
-  // assignDirty  → isWorkflowUpdate=true, version stays unchanged
   const [contentDirty, setContentDirty] = useState(new Set());
   const [assignDirty, setAssignDirty] = useState(new Set());
 
-  const markContent = useCallback((section) => {
-    setContentDirty((prev) => new Set(prev).add(section));
-  }, []);
-
-  const markAssign = useCallback((section) => {
-    setAssignDirty((prev) => new Set(prev).add(section));
-  }, []);
+  const markContent = useCallback(
+    (s) => setContentDirty((p) => new Set(p).add(s)),
+    [],
+  );
+  const markAssign = useCallback(
+    (s) => setAssignDirty((p) => new Set(p).add(s)),
+    [],
+  );
 
   const hasContent = contentDirty.size > 0;
   const hasAssign = assignDirty.size > 0;
   const hasAny = hasContent || hasAssign;
-  const isAssignOnly = !hasContent && hasAssign; // Only assignments changed
+  const isAssignOnly = !hasContent && hasAssign;
 
-  // ── METADATA & DATA STATE ─────────────────────────────────────────────────
   const [metaData, setMetaData] = useState({
     programId: "",
     programCode: "",
@@ -389,7 +468,6 @@ const CreatePD = () => {
   });
   const [pdData, setPdData] = useState({ ...PREPOPULATED_DATA });
 
-  // Jodit (memoised to avoid re-instantiation)
   const joditConfig = useMemo(
     () => ({
       readonly: false,
@@ -417,8 +495,10 @@ const CreatePD = () => {
         "undo",
         "redo",
       ],
-      height: 300,
+      height: 260,
       statusbar: false,
+      style: { fontFamily: "'DM Sans', sans-serif", fontSize: "14px" },
+      toolbarAdaptive: true,
     }),
     [],
   );
@@ -429,19 +509,18 @@ const CreatePD = () => {
       p.name.toLowerCase().includes(searchProgram.toLowerCase()),
   );
 
-  // ── CLICK OUTSIDE – close dropdown ────────────────────────────────────────
+  // Close dropdowns on outside click
   useEffect(() => {
     const fn = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target))
-        setShowSidebarDropdown(false);
+        setShowProgramDropdown(false);
+      if (sidebarRef.current && !sidebarRef.current.contains(e.target))
+        setShowSidebar(false);
     };
     document.addEventListener("mousedown", fn);
     return () => document.removeEventListener("mousedown", fn);
   }, []);
 
-  // ── ON MOUNT: fetch creator profile → derive programs ─────────────────────
-  // Backend endpoint: GET /api/creater/profile
-  // Returns: { success, profile: { name, college, faculty, school, programme, course, discipline, … } }
   useEffect(() => {
     (async () => {
       try {
@@ -453,7 +532,6 @@ const CreatePD = () => {
           const p = data.profile;
           setCreatorProfile(p);
           setAvailablePrograms(buildProgramsFromProfile(p));
-          // Pre-fill institutional fields from profile
           setPdData((prev) => ({
             ...prev,
             details: {
@@ -464,8 +542,7 @@ const CreatePD = () => {
             },
           }));
         }
-      } catch (err) {
-        console.error("Profile fetch:", err);
+      } catch {
         toast.error("Could not load your profile data.");
       } finally {
         setProfileLoading(false);
@@ -473,23 +550,19 @@ const CreatePD = () => {
     })();
   }, []);
 
-  // ── LOAD FROM NAVIGATION STATE ────────────────────────────────────────────
   useEffect(() => {
     if (location.state?.loadId) fetchFullPD(location.state.loadId);
   }, [location.state]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // API HELPERS
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── API HELPERS ──────────────────────────────────────────────────────────
+
   const fetchRecentVersions = async (code) => {
     try {
       const { data } = await axios.get(`/api/creater/pd/versions/${code}`, {
         headers: { createrToken },
       });
       if (data.success) setRecentVersions(data.versions);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch {}
   };
 
   const fetchLatestPD = async () => {
@@ -529,30 +602,25 @@ const CreatePD = () => {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // PDF IMPORT
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── PDF IMPORT ───────────────────────────────────────────────────────────
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     if (file.type !== "application/pdf")
       return toast.error("Only PDF files supported.");
-
     if (!metaData.programId)
-      toast("ℹ️ Tip: Select a program before importing so details auto-link.", {
+      toast("ℹ️ Select a program before importing so details auto-link.", {
         duration: 4000,
       });
-
-    const toastId = toast.loading("📄 Parsing PDF — this can take up to 30 s…");
+    const toastId = toast.loading("Parsing PDF — this can take up to 30s…");
     setImporting(true);
-
     const formData = new FormData();
     formData.append("pdFile", file);
-
     try {
       const { data } = await axios.post("/api/creater/pd/import", formData, {
         headers: { createrToken, "Content-Type": "multipart/form-data" },
-        timeout: 90000, // Increase frontend timeout to 90 seconds
+        timeout: 90000,
       });
       if (data.success) {
         const imp = data.parsedData;
@@ -627,10 +695,8 @@ const CreatePD = () => {
         setContentDirty(
           new Set(["section1", "section2", "section3", "section4"]),
         );
-        toast.success("✅ Imported! Review and save.", { id: toastId });
-      } else {
-        toast.error(data.message || "Import failed", { id: toastId });
-      }
+        toast.success("Imported! Review and save.", { id: toastId });
+      } else toast.error(data.message || "Import failed", { id: toastId });
     } catch (err) {
       toast.error(
         err.code === "ECONNABORTED"
@@ -644,13 +710,12 @@ const CreatePD = () => {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // POPULATE FORM from API fetch
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── POPULATE FORM ────────────────────────────────────────────────────────
+
   const populateForm = (pd) => {
     const s1 = pd.section1_info,
-      s2 = pd.section2_objectives;
-    const s3 = pd.section3_structure,
+      s2 = pd.section2_objectives,
+      s3 = pd.section3_structure,
       s4 = pd.section4_electives;
     setMetaData({
       programId: pd.programCode,
@@ -720,59 +785,50 @@ const CreatePD = () => {
     setAssignDirty(new Set());
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // FORM CHANGE HANDLERS — content changes use markContent()
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── CHANGE HANDLERS ──────────────────────────────────────────────────────
+
   const handleMetaChange = useCallback(
-    (field, value) => setMetaData((p) => ({ ...p, [field]: value })),
+    (f, v) => setMetaData((p) => ({ ...p, [f]: v })),
     [],
   );
-
   const handleNestedChange = useCallback(
-    (section, field, value) => {
+    (sec, f, v) => {
       markContent("section1");
-      setPdData((p) => ({
-        ...p,
-        [section]: { ...p[section], [field]: value },
-      }));
+      setPdData((p) => ({ ...p, [sec]: { ...p[sec], [f]: v } }));
     },
     [markContent],
   );
-
   const handleOverviewChange = useCallback(
-    (content) => {
-      if (content !== pdData.overview) {
+    (c) => {
+      if (c !== pdData.overview) {
         markContent("section2");
-        setPdData((p) => ({ ...p, overview: content }));
+        setPdData((p) => ({ ...p, overview: c }));
       }
     },
     [pdData.overview, markContent],
   );
-
   const handleArrayChange = useCallback(
-    (key, index, content) => {
+    (k, i, c) => {
       markContent("section2");
       setPdData((p) => {
-        const a = [...p[key]];
-        a[index] = content;
-        return { ...p, [key]: a };
+        const a = [...p[k]];
+        a[i] = c;
+        return { ...p, [k]: a };
       });
     },
     [markContent],
   );
-
   const addArrayItem = useCallback(
-    (key, def = "") => {
+    (k, d = "") => {
       markContent("section2");
-      setPdData((p) => ({ ...p, [key]: [...p[key], def] }));
+      setPdData((p) => ({ ...p, [k]: [...p[k], d] }));
     },
     [markContent],
   );
-
   const removeArrayItem = useCallback(
-    (key, i) => {
+    (k, i) => {
       markContent("section2");
-      setPdData((p) => ({ ...p, [key]: p[key].filter((_, idx) => idx !== i) }));
+      setPdData((p) => ({ ...p, [k]: p[k].filter((_, idx) => idx !== i) }));
     },
     [markContent],
   );
@@ -803,7 +859,6 @@ const CreatePD = () => {
     },
     [markContent],
   );
-
   const addStructureItem = useCallback(() => {
     markContent("section3");
     setPdData((p) => ({
@@ -814,7 +869,6 @@ const CreatePD = () => {
       ],
     }));
   }, [markContent]);
-
   const removeStructureItem = useCallback(
     (i) => {
       markContent("section3");
@@ -825,13 +879,12 @@ const CreatePD = () => {
     },
     [markContent],
   );
-
   const updateStructureItem = useCallback(
-    (i, field, value) => {
+    (i, f, v) => {
       markContent("section3");
       setPdData((p) => {
         const t = [...p.structure_table];
-        t[i] = { ...t[i], [field]: value };
+        t[i] = { ...t[i], [f]: v };
         return { ...p, structure_table: t };
       });
     },
@@ -850,12 +903,11 @@ const CreatePD = () => {
       };
     });
   }, [markContent]);
-
   const removeSemester = useCallback(
     (i) => {
       if (pdData.semesters.length <= 1)
         return toast.error("At least one semester required.");
-      if (window.confirm("Delete this semester and all its courses?")) {
+      if (window.confirm("Delete this semester?")) {
         markContent("section3");
         setPdData((p) => ({
           ...p,
@@ -865,7 +917,6 @@ const CreatePD = () => {
     },
     [pdData.semesters.length, markContent],
   );
-
   const addCourse = useCallback(
     (si) => {
       markContent("section3");
@@ -883,7 +934,6 @@ const CreatePD = () => {
     },
     [markContent],
   );
-
   const removeCourse = useCallback(
     (si, ci) => {
       markContent("section3");
@@ -895,23 +945,21 @@ const CreatePD = () => {
     },
     [markContent],
   );
-
   const updateCourse = useCallback(
-    (si, ci, field, value) => {
+    (si, ci, f, v) => {
       markContent("section3");
       setPdData((p) => {
         const s = [...p.semesters];
-        s[si].courses[ci][field] = value;
+        s[si].courses[ci][f] = v;
         return { ...p, semesters: s };
       });
     },
     [markContent],
   );
 
-  // ── ASSIGN HANDLERS — use markAssign (NOT markContent) ───────────────────
   const handleAssignCreator = useCallback(
     (si, ci, creator) => {
-      markAssign("section3"); // ← only assignment change — will NOT bump version
+      markAssign("section3");
       setPdData((p) => {
         const s = [...p.semesters];
         s[si].courses[ci].assigneeId = creator.id;
@@ -921,44 +969,41 @@ const CreatePD = () => {
     },
     [markAssign],
   );
-
   const handleAssignElectiveCreator = useCallback(
     (type, gi, ci, creator) => {
-      markAssign("section4"); // ← only assignment change — will NOT bump version
+      markAssign("section4");
       const key = type === "prof" ? "prof_electives" : "open_electives";
       setPdData((p) => {
-        const arr = [...p[key]];
-        arr[gi].courses[ci].assigneeId = creator.id;
-        arr[gi].courses[ci].assigneeName = creator.name;
-        return { ...p, [key]: arr };
+        const a = [...p[key]];
+        a[gi].courses[ci].assigneeId = creator.id;
+        a[gi].courses[ci].assigneeName = creator.name;
+        return { ...p, [key]: a };
       });
     },
     [markAssign],
   );
 
-  const openAssignModal = (si, ci, course) => {
+  const openAssignModal = (si, ci, c) => {
     setCurrentAssignContext({
       semIndex: si,
       courseIndex: ci,
-      code: course.code || "New Course",
-      currentAssigneeId: course.assigneeId,
+      code: c.code || "New Course",
+      currentAssigneeId: c.assigneeId,
     });
     setIsAssignModalOpen(true);
   };
-
-  const openElectiveAssignModal = (type, gi, ci, course) => {
+  const openElectiveAssignModal = (type, gi, ci, c) => {
     setCurrentAssignContext({
       isElective: true,
       electiveType: type,
       groupIndex: gi,
       courseIndex: ci,
-      code: course.code || "Elective",
-      currentAssigneeId: course.assigneeId,
+      code: c.code || "Elective",
+      currentAssigneeId: c.assigneeId,
     });
     setIsAssignModalOpen(true);
   };
 
-  // Elective CRUD (content changes)
   const addElectiveGroup = useCallback(
     (type) => {
       markContent("section4");
@@ -977,10 +1022,9 @@ const CreatePD = () => {
     },
     [markContent],
   );
-
   const removeElectiveGroup = useCallback(
     (type, i) => {
-      if (window.confirm("Remove this elective group?")) {
+      if (window.confirm("Remove this group?")) {
         markContent("section4");
         const key = type === "prof" ? "prof_electives" : "open_electives";
         setPdData((p) => ({
@@ -991,8 +1035,7 @@ const CreatePD = () => {
     },
     [markContent],
   );
-
-  const updateElectiveGroupSemester = useCallback(
+  const updateElectiveGroupSem = useCallback(
     (type, gi, v) => {
       markContent("section4");
       const key = type === "prof" ? "prof_electives" : "open_electives";
@@ -1004,7 +1047,6 @@ const CreatePD = () => {
     },
     [markContent],
   );
-
   const updateElectiveGroupTitle = useCallback(
     (type, gi, v) => {
       markContent("section4");
@@ -1017,7 +1059,6 @@ const CreatePD = () => {
     },
     [markContent],
   );
-
   const addElectiveCourse = useCallback(
     (type, gi) => {
       markContent("section4");
@@ -1030,7 +1071,6 @@ const CreatePD = () => {
     },
     [markContent],
   );
-
   const removeElectiveCourse = useCallback(
     (type, gi, ci) => {
       markContent("section4");
@@ -1043,23 +1083,19 @@ const CreatePD = () => {
     },
     [markContent],
   );
-
   const updateElectiveCourse = useCallback(
-    (type, gi, ci, field, value) => {
+    (type, gi, ci, f, v) => {
       markContent("section4");
       const key = type === "prof" ? "prof_electives" : "open_electives";
       setPdData((p) => {
         const a = [...p[key]];
-        a[gi].courses[ci][field] = value;
+        a[gi].courses[ci][f] = v;
         return { ...p, [key]: a };
       });
     },
     [markContent],
   );
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // PROGRAM SELECT  (from profile-derived list)
-  // ─────────────────────────────────────────────────────────────────────────
   const handleProgramSelect = useCallback(
     (program) => {
       setMetaData((p) => ({
@@ -1093,29 +1129,23 @@ const CreatePD = () => {
     [creatorProfile],
   );
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // SAVE — smart version control
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── SAVE ─────────────────────────────────────────────────────────────────
+
   const handleSave = useCallback(
     async (status = "Draft") => {
       if (!metaData.programId) return toast.error("Select a program first");
       if (!metaData.isNew && !hasAny && status === metaData.status)
         return toast.success("No changes to save.");
-
       setLoading(true);
-
-      // Only assignments changed (no content) → workflow update, no version bump
       const workflowOnly = !metaData.isNew && isAssignOnly;
-
       const sectionsToUpdate = metaData.isNew
         ? ["all"]
         : Array.from(new Set([...contentDirty, ...assignDirty]));
-
       const payload = {
         programId: metaData.programCode,
         isNewProgram: metaData.isNew,
         sectionsToUpdate,
-        isWorkflowUpdate: workflowOnly, // ← backend key flag
+        isWorkflowUpdate: workflowOnly,
         metaData: { ...metaData, status },
         section1Data: {
           department: pdData.details.department,
@@ -1170,7 +1200,6 @@ const CreatePD = () => {
           })),
         },
       };
-
       try {
         const { data } = await axios.post("/api/creater/pd/save", payload, {
           headers: { createrToken },
@@ -1178,9 +1207,9 @@ const CreatePD = () => {
         if (data.success) {
           workflowOnly
             ? toast.success(
-                `✅ Assignments saved — version v${data.version} unchanged`,
+                `Assignments saved — version v${data.version} unchanged`,
               )
-            : toast.success(`✅ ${data.message}`);
+            : toast.success(data.message);
           setMetaData((p) => ({
             ...p,
             isNew: false,
@@ -1190,9 +1219,7 @@ const CreatePD = () => {
           fetchRecentVersions(metaData.programCode);
           setContentDirty(new Set());
           setAssignDirty(new Set());
-        } else {
-          toast.error(data.message);
-        }
+        } else toast.error(data.message);
       } catch {
         toast.error("Save failed. Please try again.");
       } finally {
@@ -1215,71 +1242,36 @@ const CreatePD = () => {
     await handleSave("Draft");
     setActiveStep((p) => Math.min(4, p + 1));
   }, [handleSave]);
-
   const handlePreview = useCallback(() => {
     if (!metaData.programId) return toast.error("Select a program first");
     navigate("/creator/preview", { state: { pdData, metaData } });
   }, [metaData, pdData, navigate]);
 
-  const saveBtnLabel = () => {
-    if (loading) return "Saving…";
-    if (isAssignOnly) return "Save Assignments";
-    return "Save Draft";
-  };
+  const saveBtnLabel = () =>
+    loading ? "Saving…" : isAssignOnly ? "Save Assignments" : "Save Draft";
+
+  // ── STEP COMPLETIONS ──────────────────────────────────────────────────────
+
+  const completions = [
+    !!metaData.programId,
+    pdData.peos.some((p) => p?.trim()) && pdData.psos.some((p) => p?.trim()),
+    pdData.semesters.some((s) => s.courses.length > 0),
+    pdData.prof_electives.some((g) => g.courses.length > 0) ||
+      pdData.open_electives.some((g) => g.courses.length > 0),
+  ];
 
   // ─────────────────────────────────────────────────────────────────────────
-  // HISTORY PANEL
+  // STEP 1 RENDER
   // ─────────────────────────────────────────────────────────────────────────
-  const renderHistoryPanel = useCallback(() => {
-    if (!metaData.programCode) return null;
-    return (
-      <div className="mt-4 border border-gray-200 rounded-lg p-3">
-        <div className="flex items-center gap-2 mb-2">
-          <History size={14} className="text-gray-400" />
-          <span className="text-xs font-semibold text-gray-600">
-            Version History
-          </span>
-        </div>
-        {recentVersions.length === 0 ? (
-          <p className="text-xs text-gray-400 italic">No previous versions.</p>
-        ) : (
-          <div className="space-y-1.5 max-h-48 overflow-y-auto">
-            {recentVersions.map((ver) => (
-              <div
-                key={ver._id}
-                className="flex justify-between items-center p-2 bg-gray-50 rounded-lg hover:bg-blue-50 hover:border-blue-200 border border-transparent cursor-pointer transition-colors"
-                onClick={() => {
-                  fetchFullPD(ver._id);
-                  setShowSidebarDropdown(false);
-                }}
-              >
-                <span className="font-bold text-blue-600 text-xs">
-                  v{ver.pdVersion}
-                </span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full ${ver.status === "Approved" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}
-                >
-                  {ver.status}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }, [metaData.programCode, recentVersions, fetchFullPD]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // STEP 1 – Program Information
-  // ─────────────────────────────────────────────────────────────────────────
   const renderStep1 = () => (
     <div className="space-y-5">
-      {/* Institution banner from profile */}
+      {/* Institution Banner */}
       {creatorProfile && (
-        <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-indigo-200 bg-indigo-50 text-sm text-indigo-800">
-          <Building2 size={15} className="text-indigo-500 flex-shrink-0" />
-          <span>
-            <span className="font-semibold">Your institution: </span>
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-blue-100 bg-blue-50/60">
+          <Building2 size={15} className="text-blue-400 flex-shrink-0" />
+          <p className="text-xs text-blue-700 font-medium">
+            <span className="font-semibold">Institution: </span>
             {[
               creatorProfile.college,
               creatorProfile.faculty,
@@ -1287,15 +1279,16 @@ const CreatePD = () => {
             ]
               .filter(Boolean)
               .join(" › ")}
-          </span>
+          </p>
         </div>
       )}
 
       {/* Program Selection */}
       <SectionCard
-        icon={GraduationCap}
+        icon={<GraduationCap size={16} className="text-blue-500" />}
+        iconBg="bg-blue-50"
         title="Program Selection"
-        accent="blue"
+        subtitle="Select the program this document belongs to"
         action={
           profileLoading ? (
             <span className="flex items-center gap-1 text-xs text-gray-400">
@@ -1303,19 +1296,18 @@ const CreatePD = () => {
               Loading…
             </span>
           ) : (
-            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+            <StatusBadge color="gray">
               {availablePrograms.length} program
               {availablePrograms.length !== 1 ? "s" : ""}
-            </span>
+            </StatusBadge>
           )
         }
       >
-        <div className="relative">
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">
-            Select Program *
-          </label>
+        <div ref={dropdownRef} className="relative">
+          <FieldLabel required>Select Program</FieldLabel>
           <div className="relative">
             <input
+              ref={programInputRef}
               type="text"
               value={searchProgram}
               onChange={(e) => {
@@ -1325,55 +1317,55 @@ const CreatePD = () => {
               onFocus={() => setShowProgramDropdown(true)}
               placeholder={
                 availablePrograms.length
-                  ? "Search your programs…"
-                  : "No programs found — check your profile"
+                  ? "Search programs…"
+                  : "No programs — check your profile"
               }
-              className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              className="w-full pl-4 pr-10 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all"
             />
             <Search
-              className="absolute right-3 top-2.5 text-gray-400"
-              size={17}
+              className="absolute right-3 top-2.5 text-gray-300"
+              size={16}
             />
           </div>
 
           {showProgramDropdown && (
-            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+            <div className="absolute z-30 w-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
               {filteredPrograms.length > 0 ? (
                 filteredPrograms.map((p) => (
                   <div
                     key={p.id}
                     onClick={() => handleProgramSelect(p)}
-                    className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-0 transition-colors"
+                    className="px-4 py-3 hover:bg-blue-50/60 cursor-pointer border-b border-gray-50 last:border-0 transition-colors"
                   >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-semibold text-gray-900 text-sm">
-                          {p.code}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="font-semibold text-gray-800 text-sm">
+                            {p.code}
+                          </span>
+                          {p.school && (
+                            <span className="text-[10px] text-blue-500 font-medium">
+                              {p.school}
+                            </span>
+                          )}
                         </div>
-                        <div className="text-xs text-gray-500 mt-0.5">
+                        <p className="text-xs text-gray-500 truncate">
                           {p.name}
-                        </div>
-                        {p.school && (
-                          <div className="text-[11px] text-indigo-500 mt-0.5">
-                            {p.school}
-                          </div>
-                        )}
+                        </p>
                       </div>
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${p.level === "UG" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}
-                      >
+                      <StatusBadge color={p.level === "UG" ? "blue" : "amber"}>
                         {p.level}
-                      </span>
+                      </StatusBadge>
                     </div>
                   </div>
                 ))
               ) : (
-                <div className="px-4 py-6 text-center">
-                  <Info size={18} className="mx-auto text-gray-300 mb-2" />
-                  <p className="text-sm text-gray-400">
+                <div className="px-4 py-8 text-center">
+                  <Info size={20} className="mx-auto text-gray-200 mb-2" />
+                  <p className="text-xs text-gray-400">
                     {profileLoading
-                      ? "Loading your profile…"
-                      : "No programs. Ensure your profile has programme & discipline filled."}
+                      ? "Loading…"
+                      : "No programs found. Check your profile."}
                   </p>
                 </div>
               )}
@@ -1381,14 +1373,14 @@ const CreatePD = () => {
           )}
 
           {metaData.programId && (
-            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg flex justify-between items-center">
-              <div>
-                <div className="font-semibold text-gray-900 text-sm">
+            <div className="mt-3 p-3.5 bg-blue-50/60 border border-blue-100 rounded-xl flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-semibold text-gray-800 text-sm truncate">
                   {metaData.programName}
-                </div>
-                <div className="text-xs text-blue-600 mt-0.5">
+                </p>
+                <p className="text-xs text-blue-500 font-medium mt-0.5">
                   {metaData.programCode}
-                </div>
+                </p>
               </div>
               <button
                 onClick={() => {
@@ -1400,83 +1392,79 @@ const CreatePD = () => {
                   }));
                   setSearchProgram("");
                 }}
+                className="text-gray-300 hover:text-rose-400 transition-colors flex-shrink-0"
               >
-                <X
-                  size={17}
-                  className="text-gray-400 hover:text-red-500 transition-colors"
-                />
+                <X size={16} />
               </button>
             </div>
           )}
         </div>
 
-        {/* Version / scheme meta row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+        {/* Meta row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-gray-100">
           {[
             {
               label: "Scheme Year",
-              icon: Calendar,
+              icon: <Calendar size={11} />,
               field: "schemeYear",
               placeholder: "2024",
             },
             {
               label: "Effective A.Y.",
-              icon: Clock,
+              icon: <Clock size={11} />,
               field: "effectiveAy",
               placeholder: "2024-25",
             },
             {
               label: "Total Credits",
-              icon: CreditCard,
+              icon: <CreditCard size={11} />,
               field: "totalCredits",
               type: "number",
             },
-          ].map(({ label, icon: Icon, field, placeholder, type }) => (
+            {
+              label: "Version",
+              icon: <Hash size={11} />,
+              field: "versionNo",
+              readOnly: true,
+            },
+          ].map(({ label, icon, field, placeholder, type, readOnly }) => (
             <div key={field}>
-              <label className="flex items-center gap-1 text-xs font-medium text-gray-600 mb-1">
-                <Icon size={11} />
+              <label className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-1.5 tracking-wide">
+                {icon}
                 {label}
               </label>
-              <OptimizedInput
-                type={type || "text"}
-                value={metaData[field]}
-                onChange={(v) =>
-                  handleMetaChange(
-                    field,
-                    type === "number" ? parseInt(v) || 0 : v,
-                  )
-                }
-                placeholder={placeholder}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+              {readOnly ? (
+                <input
+                  readOnly
+                  value={metaData[field]}
+                  className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-100 rounded-lg text-gray-400 cursor-not-allowed"
+                />
+              ) : (
+                <OptimizedInput
+                  type={type || "text"}
+                  value={metaData[field]}
+                  onChange={(v) =>
+                    handleMetaChange(
+                      field,
+                      type === "number" ? parseInt(v) || 0 : v,
+                    )
+                  }
+                  placeholder={placeholder}
+                />
+              )}
             </div>
           ))}
-          <div>
-            <label className="flex items-center gap-1 text-xs font-medium text-gray-600 mb-1">
-              <Hash size={11} />
-              Version
-            </label>
-            <input
-              type="text"
-              value={metaData.versionNo}
-              readOnly
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-400 cursor-not-allowed"
-            />
-          </div>
         </div>
       </SectionCard>
 
       {/* PDF Import */}
       <SectionCard
-        icon={UploadCloud}
-        title="Import Existing Program Document"
-        accent="blue"
+        icon={<UploadCloud size={16} className="text-violet-500" />}
+        iconBg="bg-violet-50"
+        title="Import Program Document"
+        subtitle="Upload a PDF to auto-populate fields via AI parsing"
       >
-        <p className="text-sm text-gray-500 mb-4">
-          Upload a PDF (2024 Scheme format) to auto-populate the fields below.
-          Data is merged — existing values are preserved.
-        </p>
-        <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
           <input
             type="file"
             accept=".pdf"
@@ -1487,8 +1475,12 @@ const CreatePD = () => {
           />
           <label
             htmlFor="pd-import-upload"
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium cursor-pointer transition-all
-              ${importing ? "bg-blue-50 border-blue-200 text-blue-400 pointer-events-none" : "bg-white border-gray-300 text-gray-700 hover:border-blue-400 hover:text-blue-700 hover:bg-blue-50"}`}
+            className={[
+              "inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all border",
+              importing
+                ? "bg-violet-50 border-violet-200 text-violet-400 pointer-events-none"
+                : "bg-white border-gray-200 text-gray-700 hover:border-violet-300 hover:text-violet-700 hover:bg-violet-50 shadow-sm",
+            ].join(" ")}
           >
             {importing ? (
               <RefreshCw size={15} className="animate-spin" />
@@ -1498,35 +1490,46 @@ const CreatePD = () => {
             {importing ? "Parsing PDF…" : "Choose PDF File"}
           </label>
           {importing && (
-            <span className="flex items-center gap-2 text-xs text-blue-600">
+            <span className="flex items-center gap-2 text-xs text-violet-600">
               <span className="flex gap-0.5">
                 {[0, 150, 300].map((d) => (
                   <span
                     key={d}
-                    className="w-1 h-1 rounded-full bg-blue-400 animate-bounce"
+                    className="w-1 h-1 rounded-full bg-violet-400 animate-bounce"
                     style={{ animationDelay: `${d}ms` }}
                   />
                 ))}
               </span>
-              Processing document structure…
+              Processing document…
             </span>
+          )}
+          {!importing && (
+            <p className="text-xs text-gray-400">
+              Supports 2024 Scheme format. Data is merged, existing values
+              preserved.
+            </p>
           )}
         </div>
       </SectionCard>
 
       {/* Program Details */}
-      <SectionCard icon={Users} title="Program Details" accent="gray">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <SectionCard
+        icon={<Users size={16} className="text-gray-400" />}
+        iconBg="bg-gray-100"
+        title="Program Details"
+        subtitle="Institutional and contact information"
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {Object.entries(pdData.details).map(([k, v]) => (
             <div key={k}>
-              <label className="block text-xs font-medium text-gray-600 mb-1 capitalize">
-                {k.replace(/_/g, " ")}
-              </label>
+              <FieldLabel>
+                {k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+              </FieldLabel>
               <OptimizedInput
                 type="text"
                 value={v}
                 onChange={(val) => handleNestedChange("details", k, val)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder={`Enter ${k.replace(/_/g, " ")}`}
               />
             </div>
           ))}
@@ -1534,18 +1537,23 @@ const CreatePD = () => {
       </SectionCard>
 
       {/* Award Details */}
-      <SectionCard icon={File} title="Award Details" accent="gray">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <SectionCard
+        icon={<Award size={16} className="text-amber-500" />}
+        iconBg="bg-amber-50"
+        title="Award Details"
+        subtitle="Accreditation and award metadata"
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {Object.entries(pdData.award).map(([k, v]) => (
             <div key={k}>
-              <label className="block text-xs font-medium text-gray-600 mb-1 capitalize">
-                {k.replace(/_/g, " ")}
-              </label>
+              <FieldLabel>
+                {k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+              </FieldLabel>
               <OptimizedInput
                 type="text"
                 value={v}
                 onChange={(val) => handleNestedChange("award", k, val)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="—"
               />
             </div>
           ))}
@@ -1555,11 +1563,17 @@ const CreatePD = () => {
   );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STEP 2 – Objectives & Outcomes
+  // STEP 2 RENDER
   // ─────────────────────────────────────────────────────────────────────────
+
   const renderStep2 = () => (
     <div className="space-y-5">
-      <SectionCard icon={FileText} title="Program Overview" accent="blue">
+      <SectionCard
+        icon={<FileText size={16} className="text-blue-500" />}
+        iconBg="bg-blue-50"
+        title="Program Overview"
+        subtitle="High-level description of the program"
+      >
         <JoditEditor
           ref={editorRef}
           value={pdData.overview}
@@ -1568,45 +1582,45 @@ const CreatePD = () => {
         />
       </SectionCard>
 
+      {/* PEOs */}
       <SectionCard
-        icon={List}
+        icon={<Target size={16} className="text-indigo-500" />}
+        iconBg="bg-indigo-50"
         title="Program Educational Objectives (PEOs)"
-        accent="blue"
+        subtitle="Long-term achievements graduates are expected to attain"
         action={
           <button
             onClick={() => addArrayItem("peos", "")}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 border border-blue-200 font-medium"
+            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm transition-colors"
           >
-            <Plus size={12} /> Add PEO
+            <Plus size={11} className="text-indigo-500" />
+            Add PEO
           </button>
         }
       >
         <div className="space-y-4">
           {pdData.peos.map((peo, i) => (
-            <div
-              key={i}
-              className="flex gap-3 p-4 border border-gray-200 rounded-xl bg-gray-50"
-            >
-              <span className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-1">
+            <div key={i} className="flex gap-3">
+              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-bold flex items-center justify-center mt-1">
                 {i + 1}
-              </span>
-              <div className="flex-1">
-                <div className="flex justify-between mb-2">
-                  <span className="text-xs font-semibold text-gray-600">
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     PEO-{i + 1}
                   </span>
                   {pdData.peos.length > 1 && (
                     <button
                       onClick={() => removeArrayItem("peos", i)}
-                      className="text-gray-300 hover:text-red-500"
+                      className="text-gray-300 hover:text-rose-400 transition-colors"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={12} />
                     </button>
                   )}
                 </div>
                 <JoditEditor
                   value={peo}
-                  config={{ ...joditConfig, height: 180 }}
+                  config={{ ...joditConfig, height: 160 }}
                   onBlur={(v) => handleArrayChange("peos", i, v)}
                 />
               </div>
@@ -1615,96 +1629,95 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
+      {/* POs */}
       <SectionCard
-        icon={Book}
+        icon={<BookOpen size={16} className="text-emerald-500" />}
+        iconBg="bg-emerald-50"
         title="Program Outcomes (POs)"
-        accent="green"
+        subtitle="Attributes graduates are expected to demonstrate"
         action={
           <div className="flex gap-2">
             <button
               onClick={resetPOs}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 border border-gray-200"
+              className="flex items-center gap-1 text-xs font-medium text-gray-500 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm transition-colors"
             >
-              <RotateCcw size={11} /> Reset
+              <RotateCcw size={11} />
+              Reset
             </button>
             <button
               onClick={addPO}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-50 text-green-700 rounded-lg hover:bg-green-100 border border-green-200 font-medium"
+              className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm transition-colors"
             >
-              <Plus size={12} /> Add PO
+              <Plus size={11} className="text-emerald-500" />
+              Add PO
             </button>
           </div>
         }
       >
         <div className="space-y-3">
           {pdData.pos.map((po, i) => (
-            <div
-              key={i}
-              className="p-3 border border-gray-200 rounded-xl bg-gray-50"
-            >
-              <div className="flex gap-3 items-start">
-                <span className="text-xs font-bold text-gray-500 min-w-[40px] pt-2">
-                  PO-{i + 1}
-                </span>
-                <div className="flex-1">
-                  <JoditEditor
-                    value={po}
-                    config={{ ...joditConfig, height: 140 }}
-                    onBlur={(v) => handleArrayChange("pos", i, v)}
-                  />
-                </div>
-                <button
-                  onClick={() => removePO(i)}
-                  disabled={pdData.pos.length <= 1}
-                  className="text-gray-300 hover:text-red-500 pt-2 disabled:opacity-30"
-                >
-                  <Trash2 size={13} />
-                </button>
+            <div key={i} className="flex gap-3 items-start">
+              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-600 text-xs font-bold flex items-center justify-center mt-1">
+                {i + 1}
               </div>
+              <div className="flex-1">
+                <JoditEditor
+                  value={po}
+                  config={{ ...joditConfig, height: 120 }}
+                  onBlur={(v) => handleArrayChange("pos", i, v)}
+                />
+              </div>
+              <button
+                onClick={() => removePO(i)}
+                disabled={pdData.pos.length <= 1}
+                className="text-gray-300 hover:text-rose-400 transition-colors disabled:opacity-20 mt-1 flex-shrink-0"
+              >
+                <Trash2 size={12} />
+              </button>
             </div>
           ))}
         </div>
       </SectionCard>
 
+      {/* PSOs */}
       <SectionCard
-        icon={List}
+        icon={<Sparkles size={16} className="text-amber-500" />}
+        iconBg="bg-amber-50"
         title="Program Specific Outcomes (PSOs)"
-        accent="green"
+        subtitle="Domain-specific skills expected from graduates"
         action={
           <button
             onClick={() => addArrayItem("psos", "")}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-50 text-green-700 rounded-lg hover:bg-green-100 border border-green-200 font-medium"
+            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm transition-colors"
           >
-            <Plus size={12} /> Add PSO
+            <Plus size={11} className="text-amber-500" />
+            Add PSO
           </button>
         }
       >
         <div className="space-y-4">
           {pdData.psos.map((pso, i) => (
-            <div
-              key={i}
-              className="flex gap-3 p-4 border border-gray-200 rounded-xl bg-gray-50"
-            >
-              <span className="w-7 h-7 rounded-full bg-green-100 text-green-700 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-1">
+            <div key={i} className="flex gap-3">
+              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-amber-50 border border-amber-100 text-amber-600 text-xs font-bold flex items-center justify-center mt-1">
                 {i + 1}
-              </span>
-              <div className="flex-1">
-                <div className="flex justify-between mb-2">
-                  <span className="text-xs font-semibold text-gray-600">
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     PSO-{i + 1}
                   </span>
                   {pdData.psos.length > 1 && (
                     <button
                       onClick={() => removeArrayItem("psos", i)}
-                      className="text-gray-300 hover:text-red-500"
+                      className="text-gray-300 hover:text-rose-400 transition-colors"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={12} />
                     </button>
                   )}
                 </div>
                 <JoditEditor
                   value={pso}
-                  config={{ ...joditConfig, height: 180 }}
+                  config={{ ...joditConfig, height: 160 }}
                   onBlur={(v) => handleArrayChange("psos", i, v)}
                 />
               </div>
@@ -1716,86 +1729,102 @@ const CreatePD = () => {
   );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STEP 3 – Structure & Curriculum
+  // STEP 3 RENDER
   // ─────────────────────────────────────────────────────────────────────────
+
   const renderStep3 = () => (
     <div className="space-y-5">
+      {/* Credit Definition */}
       <SectionCard
-        icon={Settings}
-        title="Credit Definition (L : T : P)"
-        accent="blue"
+        icon={<Settings size={16} className="text-gray-400" />}
+        iconBg="bg-gray-100"
+        title="Credit Definition"
+        subtitle="Hours per week for each session type"
       >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
-            ["L", "Lecture (1 hr/week)"],
-            ["T", "Tutorial (2 hr/week)"],
-            ["P", "Practical (2 hr/week)"],
-          ].map(([k, label]) => (
-            <div key={k}>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+            ["L", "Lecture", "1 hr/week"],
+            ["T", "Tutorial", "2 hr/week"],
+            ["P", "Practical", "2 hr/week"],
+          ].map(([k, label, hint]) => (
+            <div
+              key={k}
+              className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-center"
+            >
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-0.5">
                 {label}
-              </label>
+              </p>
+              <p className="text-[10px] text-gray-300 mb-2">{hint}</p>
               <OptimizedInput
                 type="number"
                 value={pdData.credit_def[k]}
                 onChange={(v) => updateCreditDef(k, v)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                className="!text-center !font-semibold !text-sm !bg-white"
               />
             </div>
           ))}
         </div>
       </SectionCard>
 
+      {/* Structure Table */}
       <SectionCard
-        icon={Table}
+        icon={<Table size={16} className="text-blue-500" />}
+        iconBg="bg-blue-50"
         title="Programme Structure"
-        accent="blue"
+        subtitle="Category-wise credit distribution"
         action={
           <button
             onClick={addStructureItem}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 border border-blue-200 font-medium"
+            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm transition-colors"
           >
-            <Plus size={12} /> Add Row
+            <Plus size={11} className="text-blue-500" />
+            Add Row
           </button>
         }
+        noPad
       >
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full border-collapse text-xs">
             <thead>
-              <tr className="bg-gray-50">
-                {["#", "Category", "Code", "Credits", ""].map((h) => (
+              <tr className="bg-gray-50 border-b border-gray-100">
+                {["#", "Category", "Code", "Credits", ""].map((h, i) => (
                   <th
-                    key={h}
-                    className="border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-600"
+                    key={i}
+                    className={`px-4 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider text-[10px] ${i === 3 ? "w-20" : i === 4 ? "w-12" : ""}`}
                   >
                     {h}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-gray-50">
               {pdData.structure_table.map((row, i) => (
-                <tr key={i} className="hover:bg-gray-50">
-                  <td className="border border-gray-200 px-3 py-2 text-center text-xs text-gray-400">
+                <tr
+                  key={i}
+                  className="hover:bg-gray-50/60 transition-colors group"
+                >
+                  <td className="px-4 py-2.5 text-gray-300 text-xs text-center">
                     {i + 1}
                   </td>
-                  <td className="border border-gray-200 px-3 py-2">
+                  <td className="px-3 py-2.5">
                     <OptimizedInput
                       type="text"
                       value={row.category}
                       onChange={(v) => updateStructureItem(i, "category", v)}
-                      className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:ring-1 focus:ring-blue-400 outline-none"
+                      className="!py-1.5 !text-xs"
+                      placeholder="Category name"
                     />
                   </td>
-                  <td className="border border-gray-200 px-3 py-2 w-24">
+                  <td className="px-3 py-2.5 w-28">
                     <OptimizedInput
                       type="text"
                       value={row.code}
                       onChange={(v) => updateStructureItem(i, "code", v)}
-                      className="w-full px-2 py-1 text-xs border border-gray-200 rounded uppercase focus:ring-1 focus:ring-blue-400 outline-none"
+                      className="!py-1.5 !text-xs uppercase"
+                      placeholder="CODE"
                     />
                   </td>
-                  <td className="border border-gray-200 px-3 py-2 w-24">
+                  <td className="px-3 py-2.5 w-20">
                     <OptimizedInput
                       type="number"
                       min="0"
@@ -1803,35 +1832,45 @@ const CreatePD = () => {
                       onChange={(v) =>
                         updateStructureItem(i, "credits", parseInt(v) || 0)
                       }
-                      className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:ring-1 focus:ring-blue-400 outline-none"
+                      className="!py-1.5 !text-xs !text-center"
                     />
                   </td>
-                  <td className="border border-gray-200 px-3 py-2 text-center">
+                  <td className="px-4 py-2.5 text-center">
                     <button
                       onClick={() => removeStructureItem(i)}
-                      className="text-gray-300 hover:text-red-500"
+                      className="text-gray-300 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={12} />
                     </button>
                   </td>
                 </tr>
               ))}
+              {pdData.structure_table.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-4 py-8 text-center text-xs text-gray-300"
+                  >
+                    No rows yet. Click Add Row.
+                  </td>
+                </tr>
+              )}
             </tbody>
             <tfoot>
-              <tr className="bg-gray-50 font-semibold">
+              <tr className="bg-gray-50 border-t border-gray-100">
                 <td
                   colSpan={3}
-                  className="border border-gray-200 px-3 py-2 text-right text-xs text-gray-600"
+                  className="px-4 py-3 text-right text-xs font-semibold text-gray-500"
                 >
                   Total Credits
                 </td>
-                <td className="border border-gray-200 px-3 py-2 text-sm font-bold text-gray-900">
+                <td className="px-4 py-3 text-sm font-bold text-gray-800">
                   {pdData.structure_table.reduce(
                     (s, r) => s + (r.credits || 0),
                     0,
                   )}
                 </td>
-                <td className="border border-gray-200" />
+                <td />
               </tr>
             </tfoot>
           </table>
@@ -1840,58 +1879,72 @@ const CreatePD = () => {
 
       {/* Semesters */}
       <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <span className="text-sm font-semibold text-gray-700">
-            Semester-wise Courses
-          </span>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-800">
+              Semester-wise Courses
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {pdData.semesters.length} semesters ·{" "}
+              {pdData.semesters.reduce((s, sem) => s + sem.courses.length, 0)}{" "}
+              total courses
+            </p>
+          </div>
           <button
             onClick={addSemester}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors shadow-sm"
           >
-            <Plus size={13} /> Add Semester
+            <Plus size={12} strokeWidth={2.5} />
+            Add Semester
           </button>
         </div>
 
         {pdData.semesters.map((sem, si) => (
           <div
             key={sem.sem_no}
-            className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
+            className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
           >
-            <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
-              <div className="flex items-center gap-2">
-                <FolderOpen size={15} className="text-gray-500" />
-                <span className="font-semibold text-gray-800 text-sm">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-gray-50/50">
+              <div className="flex items-center gap-3">
+                <FolderOpen size={15} className="text-gray-400" />
+                <span className="font-semibold text-gray-700 text-sm">
                   Semester {sem.sem_no}
                 </span>
-                <span className="text-xs text-gray-400 bg-white border border-gray-200 px-2 py-0.5 rounded-full">
-                  {sem.courses.length} courses
+                <span className="text-[10px] font-semibold text-gray-400 bg-white border border-gray-200 px-2 py-0.5 rounded-full">
+                  {sem.courses.length} course
+                  {sem.courses.length !== 1 ? "s" : ""}
                 </span>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => addCourse(si)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 border border-blue-200"
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
                 >
-                  <Plus size={11} /> Add Course
+                  <Plus size={11} />
+                  Add
                 </button>
                 <button
                   onClick={() => removeSemester(si)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100 border border-red-200"
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-rose-500 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors"
                 >
-                  <Trash2 size={11} /> Remove
+                  <Trash2 size={11} />
+                  Remove
                 </button>
               </div>
             </div>
 
             {sem.courses.length === 0 ? (
-              <p className="text-center text-sm text-gray-400 py-5">
-                No courses yet — click "Add Course" above.
-              </p>
+              <div className="py-8 text-center">
+                <BookOpen size={22} className="text-gray-200 mx-auto mb-2" />
+                <p className="text-xs text-gray-400">
+                  No courses yet. Click Add.
+                </p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-xs">
                   <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
+                    <tr className="bg-gray-50/60 border-b border-gray-100">
                       {[
                         "#",
                         "Code",
@@ -1901,42 +1954,42 @@ const CreatePD = () => {
                         "Category",
                         "Assignee",
                         "",
-                      ].map((h) => (
+                      ].map((h, i) => (
                         <th
-                          key={h}
-                          className="px-3 py-2 text-left font-semibold text-gray-600"
+                          key={i}
+                          className="px-3 py-2.5 text-left font-semibold text-gray-400 uppercase tracking-wider text-[10px]"
                         >
                           {h}
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-gray-50">
                     {sem.courses.map((c, ci) => (
                       <tr
                         key={ci}
-                        className="hover:bg-gray-50 border-b border-gray-100"
+                        className="hover:bg-gray-50/60 transition-colors group"
                       >
-                        <td className="px-3 py-2 text-gray-400 text-center">
+                        <td className="px-3 py-2 text-gray-300 text-center text-[11px]">
                           {ci + 1}
                         </td>
-                        <td className="px-3 py-2 w-28">
+                        <td className="px-2 py-2 w-24">
                           <OptimizedInput
                             type="text"
                             value={c.code}
                             onChange={(v) => updateCourse(si, ci, "code", v)}
-                            className="w-full px-2 py-1 border border-gray-200 rounded uppercase focus:ring-1 focus:ring-blue-400 outline-none"
+                            className="!py-1.5 !text-xs uppercase !px-2"
                           />
                         </td>
-                        <td className="px-3 py-2 min-w-[150px]">
+                        <td className="px-2 py-2 min-w-[140px]">
                           <OptimizedInput
                             type="text"
                             value={c.title}
                             onChange={(v) => updateCourse(si, ci, "title", v)}
-                            className="w-full px-2 py-1 border border-gray-200 rounded focus:ring-1 focus:ring-blue-400 outline-none"
+                            className="!py-1.5 !text-xs !px-2"
                           />
                         </td>
-                        <td className="px-3 py-2 w-12">
+                        <td className="px-2 py-2 w-12">
                           <OptimizedInput
                             type="number"
                             min="0"
@@ -1944,16 +1997,16 @@ const CreatePD = () => {
                             onChange={(v) =>
                               updateCourse(si, ci, "credits", parseInt(v) || 0)
                             }
-                            className="w-full px-2 py-1 border border-gray-200 rounded focus:ring-1 focus:ring-blue-400 outline-none"
+                            className="!py-1.5 !text-xs !text-center !px-1"
                           />
                         </td>
-                        <td className="px-3 py-2 w-28">
+                        <td className="px-2 py-2 w-28">
                           <select
                             value={c.type}
                             onChange={(e) =>
                               updateCourse(si, ci, "type", e.target.value)
                             }
-                            className="w-full px-1.5 py-1 border border-gray-200 rounded focus:ring-1 focus:ring-blue-400 outline-none"
+                            className="w-full px-1.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 bg-white"
                           >
                             {[
                               "Theory",
@@ -1968,13 +2021,13 @@ const CreatePD = () => {
                             ))}
                           </select>
                         </td>
-                        <td className="px-3 py-2 w-32">
+                        <td className="px-2 py-2 w-32">
                           <select
                             value={c.category}
                             onChange={(e) =>
                               updateCourse(si, ci, "category", e.target.value)
                             }
-                            className="w-full px-1.5 py-1 border border-gray-200 rounded focus:ring-1 focus:ring-blue-400 outline-none"
+                            className="w-full px-1.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 bg-white"
                           >
                             {[
                               "Core",
@@ -1996,7 +2049,7 @@ const CreatePD = () => {
                             ))}
                           </select>
                         </td>
-                        <td className="px-3 py-2 w-28">
+                        <td className="px-2 py-2 w-28">
                           <AssignBtn
                             course={c}
                             onClick={() => openAssignModal(si, ci, c)}
@@ -2005,7 +2058,7 @@ const CreatePD = () => {
                         <td className="px-3 py-2 text-center">
                           <button
                             onClick={() => removeCourse(si, ci)}
-                            className="text-gray-300 hover:text-red-500"
+                            className="text-gray-300 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
                           >
                             <Trash2 size={12} />
                           </button>
@@ -2023,123 +2076,130 @@ const CreatePD = () => {
   );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STEP 4 – Electives  (shared renderer)
+  // STEP 4 RENDER
   // ─────────────────────────────────────────────────────────────────────────
+
   const renderElectiveSection = (type) => {
     const isPE = type === "prof";
     const key = isPE ? "prof_electives" : "open_electives";
     const groups = pdData[key];
     const label = isPE ? "Professional Electives" : "Open Electives";
-    const accent = isPE ? "blue" : "green";
-    const btnCls = isPE
-      ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
-      : "bg-green-50 text-green-700 border-green-200 hover:bg-green-100";
+    const iconColor = isPE ? "text-blue-500" : "text-emerald-500";
+    const iconBg = isPE ? "bg-blue-50" : "bg-emerald-50";
+    const plusColor = isPE ? "text-blue-500" : "text-emerald-500";
 
     return (
       <SectionCard
-        icon={Grid}
+        icon={<Grid size={16} className={iconColor} />}
+        iconBg={iconBg}
         title={label}
-        accent={accent}
+        subtitle={`${groups.length} group${groups.length !== 1 ? "s" : ""} · ${groups.reduce((s, g) => s + g.courses.length, 0)} courses`}
         action={
           <button
             onClick={() => addElectiveGroup(type)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border font-medium ${btnCls}`}
+            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm transition-colors"
           >
-            <Plus size={12} /> Add Group
+            <Plus size={11} className={plusColor} />
+            Add Group
           </button>
         }
       >
         {groups.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-4">
-            No groups yet.
-          </p>
+          <div className="py-8 text-center">
+            <Grid size={24} className="text-gray-200 mx-auto mb-2" />
+            <p className="text-xs text-gray-400">
+              No elective groups yet. Click Add Group.
+            </p>
+          </div>
         ) : (
           <div className="space-y-4">
             {groups.map((grp, gi) => (
               <div
                 key={gi}
-                className="border border-gray-200 rounded-xl overflow-hidden"
+                className="border border-gray-100 rounded-xl overflow-hidden"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-gray-50/50 border-b border-gray-100">
                   <div className="flex items-center gap-2 flex-1 flex-wrap min-w-0">
-                    <span className="text-xs text-gray-500 flex-shrink-0">
+                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex-shrink-0">
                       Sem
                     </span>
                     <OptimizedInput
                       type="number"
                       min="1"
                       value={grp.sem}
-                      onChange={(v) => updateElectiveGroupSemester(type, gi, v)}
-                      className="w-12 px-1.5 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-400 outline-none"
+                      onChange={(v) => updateElectiveGroupSem(type, gi, v)}
+                      className="!w-12 !py-1.5 !px-2 !text-xs !text-center"
                     />
                     <OptimizedInput
                       type="text"
                       value={grp.title}
                       onChange={(v) => updateElectiveGroupTitle(type, gi, v)}
-                      className="flex-1 min-w-[150px] px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-400 outline-none"
+                      className="flex-1 min-w-[150px] !py-1.5 !text-xs"
                     />
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => addElectiveCourse(type, gi)}
-                      className={`text-xs px-2.5 py-1 rounded-lg border font-medium ${btnCls}`}
+                      className="text-xs px-2.5 py-1.5 font-medium bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
                     >
                       + Course
                     </button>
                     <button
                       onClick={() => removeElectiveGroup(type, gi)}
-                      className="text-gray-300 hover:text-red-500"
+                      className="text-gray-300 hover:text-rose-400 transition-colors p-1"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 </div>
                 {grp.courses.length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-4">
+                  <p className="text-xs text-gray-300 text-center py-5">
                     No courses yet.
                   </p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full border-collapse text-xs">
                       <thead>
-                        <tr className="bg-gray-50 border-b border-gray-200">
-                          {["Code", "Title", "Cr", "Assignee", ""].map((h) => (
-                            <th
-                              key={h}
-                              className="px-3 py-2 text-left font-semibold text-gray-600"
-                            >
-                              {h}
-                            </th>
-                          ))}
+                        <tr className="bg-gray-50/40 border-b border-gray-100">
+                          {["Code", "Title", "Cr", "Assignee", ""].map(
+                            (h, i) => (
+                              <th
+                                key={i}
+                                className="px-3 py-2.5 text-left font-semibold text-gray-400 uppercase tracking-wider text-[10px]"
+                              >
+                                {h}
+                              </th>
+                            ),
+                          )}
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-gray-50">
                         {grp.courses.map((c, ci) => (
                           <tr
                             key={ci}
-                            className="hover:bg-gray-50 border-b border-gray-100"
+                            className="hover:bg-gray-50/60 transition-colors group"
                           >
-                            <td className="px-3 py-2 w-28">
+                            <td className="px-2 py-2 w-28">
                               <OptimizedInput
                                 type="text"
                                 value={c.code}
                                 onChange={(v) =>
                                   updateElectiveCourse(type, gi, ci, "code", v)
                                 }
-                                className="w-full px-2 py-1 border border-gray-200 rounded uppercase focus:ring-1 focus:ring-blue-400 outline-none"
+                                className="!py-1.5 !text-xs !px-2 uppercase"
                               />
                             </td>
-                            <td className="px-3 py-2">
+                            <td className="px-2 py-2">
                               <OptimizedInput
                                 type="text"
                                 value={c.title}
                                 onChange={(v) =>
                                   updateElectiveCourse(type, gi, ci, "title", v)
                                 }
-                                className="w-full px-2 py-1 border border-gray-200 rounded focus:ring-1 focus:ring-blue-400 outline-none"
+                                className="!py-1.5 !text-xs !px-2"
                               />
                             </td>
-                            <td className="px-3 py-2 w-12">
+                            <td className="px-2 py-2 w-12">
                               <OptimizedInput
                                 type="number"
                                 min="0"
@@ -2153,10 +2213,10 @@ const CreatePD = () => {
                                     parseInt(v) || 0,
                                   )
                                 }
-                                className="w-full px-2 py-1 border border-gray-200 rounded focus:ring-1 focus:ring-blue-400 outline-none"
+                                className="!py-1.5 !text-xs !text-center !px-1"
                               />
                             </td>
-                            <td className="px-3 py-2 w-28">
+                            <td className="px-2 py-2 w-28">
                               <AssignBtn
                                 course={c}
                                 onClick={() =>
@@ -2169,7 +2229,7 @@ const CreatePD = () => {
                                 onClick={() =>
                                   removeElectiveCourse(type, gi, ci)
                                 }
-                                className="text-gray-300 hover:text-red-500"
+                                className="text-gray-300 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
                               >
                                 <Trash2 size={12} />
                               </button>
@@ -2196,241 +2256,337 @@ const CreatePD = () => {
   );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STEP DEFINITIONS
-  // ─────────────────────────────────────────────────────────────────────────
-  const STEPS = [
-    { id: 1, label: "Program Info", icon: BookOpen },
-    { id: 2, label: "Objectives", icon: List },
-    { id: 3, label: "Structure", icon: Layers },
-    { id: 4, label: "Electives", icon: Table },
-  ];
-
-  // ─────────────────────────────────────────────────────────────────────────
   // MAIN RENDER
   // ─────────────────────────────────────────────────────────────────────────
+
   return (
     <CreatorLayout>
-      {/* ── HEADER ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-5">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-gray-900">
-            Program Document Manager
-          </h1>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            <p className="text-sm text-gray-500">
-              {metaData.programName || "Select a program to begin"}
-            </p>
-            {metaData.programCode && (
-              <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">
-                v{metaData.versionNo}
-              </span>
-            )}
-            {isAssignOnly && (
-              <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-                <Info size={10} /> Assignment update · version locked
-              </span>
-            )}
-            {hasContent && (
-              <span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-                <AlertTriangle size={10} /> Unsaved changes
-              </span>
-            )}
-          </div>
-        </div>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
+        * { font-family: 'DM Sans', sans-serif; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+      `,
+        }}
+      />
 
-        <div className="flex flex-wrap gap-2 flex-shrink-0">
-          {/* Sidebar menu */}
-          <div className="relative" ref={dropdownRef}>
+      {/* ── Sidebar drawer ─────────────────────────────────────────────── */}
+      {showSidebar && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowSidebar(false)}
+        >
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
+        </div>
+      )}
+      {showSidebar && (
+        <div
+          ref={sidebarRef}
+          className="fixed right-0 top-0 bottom-0 z-50 w-72 bg-white border-l border-gray-100 shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right-5 duration-200"
+        >
+          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700">Navigation</h2>
             <button
-              onClick={() => setShowSidebarDropdown((p) => !p)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 border border-gray-300"
+              onClick={() => setShowSidebar(false)}
+              className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
             >
-              <Menu size={14} />
-              <span className="hidden sm:inline">Menu</span>
+              <X size={16} />
             </button>
-            {showSidebarDropdown && (
-              <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 rounded-xl shadow-2xl z-50 p-4 max-h-[80vh] overflow-y-auto">
-                <ProgressSummary
-                  metaData={metaData}
-                  pdData={pdData}
-                  activeStep={activeStep}
-                />
-                <nav className="mt-3 space-y-1">
-                  {STEPS.map((step) => (
-                    <button
-                      key={step.id}
-                      onClick={() => {
-                        setActiveStep(step.id);
-                        setShowSidebarDropdown(false);
-                      }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors
-                        ${activeStep === step.id ? "bg-blue-50 border border-blue-200" : "hover:bg-gray-50"}`}
-                    >
-                      <span
-                        className={`p-1.5 rounded-lg ${activeStep === step.id ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500"}`}
-                      >
-                        <step.icon size={14} />
+          </div>
+
+          {/* Progress */}
+          <div className="p-4 border-b border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
+                Completion
+              </span>
+              <span className="text-xs font-semibold text-gray-600">
+                {completions.filter(Boolean).length}/{STEP_CONFIG.length}
+              </span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-1.5 mb-3 overflow-hidden">
+              <div
+                className="bg-gray-800 h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${(completions.filter(Boolean).length / STEP_CONFIG.length) * 100}%`,
+                }}
+              />
+            </div>
+            <div className="space-y-1">
+              {STEP_CONFIG.map((step, i) => (
+                <button
+                  key={step.id}
+                  onClick={() => {
+                    setActiveStep(step.id);
+                    setShowSidebar(false);
+                  }}
+                  className={[
+                    "w-full flex items-center gap-3 p-2.5 rounded-lg transition-all text-left",
+                    activeStep === step.id
+                      ? "bg-gray-900 text-white"
+                      : "hover:bg-gray-50 text-gray-600",
+                  ].join(" ")}
+                >
+                  <div
+                    className={[
+                      "w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0",
+                      activeStep === step.id
+                        ? "bg-white/20 text-white"
+                        : completions[i]
+                          ? "bg-emerald-100 text-emerald-600"
+                          : "bg-gray-100 text-gray-400",
+                    ].join(" ")}
+                  >
+                    {completions[i] && activeStep !== step.id ? (
+                      <CheckCircle size={11} strokeWidth={2.5} />
+                    ) : (
+                      <span className="text-[10px] font-bold">{step.id}</span>
+                    )}
+                  </div>
+                  <span className="text-xs font-medium truncate">
+                    {step.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Version History */}
+          <div className="p-4 flex-1 overflow-y-auto">
+            <div className="flex items-center gap-2 mb-3">
+              <History size={14} className="text-gray-400" />
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
+                Version History
+              </span>
+            </div>
+            {recentVersions.length === 0 ? (
+              <p className="text-xs text-gray-300 italic text-center py-4">
+                No versions saved yet.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {recentVersions.map((ver) => (
+                  <div
+                    key={ver._id}
+                    onClick={() => {
+                      fetchFullPD(ver._id);
+                      setShowSidebar(false);
+                    }}
+                    className="p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 cursor-pointer transition-all group"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-gray-700">
+                        v{ver.pdVersion}
                       </span>
                       <span
-                        className={`text-sm font-medium ${activeStep === step.id ? "text-blue-700" : "text-gray-700"}`}
+                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded uppercase ${ver.status === "Approved" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}
                       >
-                        {step.label}
+                        {ver.status}
                       </span>
-                      {activeStep === step.id && (
-                        <ChevronRight
-                          size={14}
-                          className="ml-auto text-blue-500"
-                        />
-                      )}
-                    </button>
-                  ))}
-                </nav>
-                {hasContent && (
-                  <div className="mt-3 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700">
-                    <AlertTriangle size={11} className="inline mr-1" />
-                    Content changed:{" "}
-                    {Array.from(contentDirty)
-                      .map((s) => s.replace("section", "S"))
-                      .join(", ")}
+                    </div>
+                    <p className="text-[10px] text-gray-400">
+                      {new Date(ver.createdAt).toLocaleDateString()}
+                    </p>
                   </div>
-                )}
-                {isAssignOnly && (
-                  <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-                    <Info size={11} className="inline mr-1" />
-                    Assignment-only — version will NOT increment on save
-                  </div>
-                )}
-                {renderHistoryPanel()}
+                ))}
               </div>
             )}
           </div>
-
-          <button
-            onClick={fetchLatestPD}
-            disabled={!metaData.programCode || loading}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 border border-indigo-200 disabled:opacity-40"
-          >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            <span className="hidden sm:inline">Fetch Latest</span>
-          </button>
-
-          <button
-            onClick={handlePreview}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-white text-gray-700 rounded-lg hover:bg-gray-50 border border-gray-300"
-          >
-            <Eye size={14} /> Preview
-          </button>
-
-          <button
-            onClick={() => handleSave("Draft")}
-            disabled={loading}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-all disabled:opacity-50 ${
-              isAssignOnly
-                ? "bg-amber-500 hover:bg-amber-600 text-white"
-                : "bg-gray-900 hover:bg-black text-white"
-            }`}
-          >
-            <Save size={14} /> {saveBtnLabel()}
-          </button>
-
-          <button
-            onClick={() => handleSave("UnderReview")}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
-          >
-            <Send size={14} /> Submit
-          </button>
-        </div>
-      </div>
-
-      {/* ── STEP TAB BAR ────────────────────────────────────────────────── */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-5 overflow-x-auto">
-        {STEPS.map((step) => (
-          <button
-            key={step.id}
-            onClick={() => setActiveStep(step.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium flex-shrink-0 transition-all ${
-              activeStep === step.id
-                ? "bg-white text-blue-700 shadow-sm border border-gray-200"
-                : "text-gray-500 hover:text-gray-800 hover:bg-gray-200"
-            }`}
-          >
-            <step.icon size={14} />
-            {step.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── DIRTY BANNER ────────────────────────────────────────────────── */}
-      {hasAny && (
-        <div
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm mb-4 ${
-            isAssignOnly
-              ? "bg-amber-50 border-amber-200 text-amber-800"
-              : "bg-yellow-50 border-yellow-200 text-yellow-800"
-          }`}
-        >
-          {isAssignOnly ? (
-            <Info size={14} className="flex-shrink-0" />
-          ) : (
-            <AlertTriangle size={14} className="flex-shrink-0" />
-          )}
-          {isAssignOnly
-            ? "You have pending assignment changes. Saving will update the DB without incrementing the version."
-            : `Unsaved content in: ${Array.from(contentDirty)
-                .map((s) => s.replace("section", "Sec "))
-                .join(", ")}`}
         </div>
       )}
 
-      {/* ── STEP CONTENT ────────────────────────────────────────────────── */}
-      <div>
-        {activeStep === 1 && renderStep1()}
-        {activeStep === 2 && renderStep2()}
-        {activeStep === 3 && renderStep3()}
-        {activeStep === 4 && renderStep4()}
-      </div>
+      {/* ── Page layout ─────────────────────────────────────────────────── */}
+      <div className="max-w-5xl mx-auto px-3 sm:px-4 lg:px-0 pb-10">
+        {/* ── Header ───────────────────────────────────────────────────── */}
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
+            {/* Title */}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <BookMarked size={18} className="text-gray-400 flex-shrink-0" />
+                <h1 className="text-lg font-semibold text-gray-800 tracking-tight">
+                  Program Document Manager
+                </h1>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                {metaData.programCode ? (
+                  <>
+                    <span className="text-xs font-semibold text-gray-700 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-lg">
+                      {metaData.programCode}
+                    </span>
+                    <span className="text-sm text-gray-600 font-medium truncate max-w-xs">
+                      {metaData.programName}
+                    </span>
+                    <StatusBadge color="gray">
+                      v{metaData.versionNo}
+                    </StatusBadge>
+                    {isAssignOnly && (
+                      <StatusBadge color="amber">
+                        <Info size={9} />
+                        Assignment update · version locked
+                      </StatusBadge>
+                    )}
+                    {hasContent && (
+                      <StatusBadge color="yellow">
+                        <AlertTriangle size={9} />
+                        Unsaved changes
+                      </StatusBadge>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-xs text-gray-400 font-medium">
+                    Select a program to begin.
+                  </span>
+                )}
+              </div>
+            </div>
 
-      {/* ── FOOTER NAVIGATION ───────────────────────────────────────────── */}
-      <div className="mt-6 flex justify-between items-center">
-        <button
-          onClick={() => setActiveStep((p) => Math.max(1, p - 1))}
-          disabled={activeStep === 1}
-          className="flex items-center gap-2 px-5 py-2.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40"
-        >
-          <ArrowLeft size={15} /> Previous
-        </button>
+            {/* Actions */}
+            <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+              <button
+                onClick={() => setShowSidebar(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
+              >
+                <Menu size={14} />
+                <span className="hidden sm:inline">Sections</span>
+              </button>
+              <button
+                onClick={fetchLatestPD}
+                disabled={!metaData.programCode || loading}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-40"
+              >
+                <RefreshCw
+                  size={14}
+                  className={loading ? "animate-spin" : ""}
+                />
+                <span className="hidden sm:inline">Fetch Latest</span>
+              </button>
+              <button
+                onClick={handlePreview}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
+              >
+                <Eye size={14} />
+                <span className="hidden sm:inline">Preview</span>
+              </button>
+              <button
+                onClick={() => handleSave("Draft")}
+                disabled={loading}
+                className={[
+                  "flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition-colors shadow-sm disabled:opacity-40",
+                  isAssignOnly
+                    ? "bg-amber-500 hover:bg-amber-600 text-white"
+                    : "bg-gray-900 hover:bg-gray-800 text-white",
+                ].join(" ")}
+              >
+                <Save size={14} />
+                {saveBtnLabel()}
+              </button>
+              <button
+                onClick={() => handleSave("UnderReview")}
+                disabled={loading}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-40"
+              >
+                <Send size={14} />
+                Submit
+              </button>
+            </div>
+          </div>
 
-        {/* Step indicator dots */}
-        <div className="flex items-center gap-2">
-          {STEPS.map((s) => (
+          {/* Step bar */}
+          <StepProgressBar
+            activeStep={activeStep}
+            onStepClick={setActiveStep}
+            completions={completions}
+          />
+        </div>
+
+        {/* ── Dirty Banner ──────────────────────────────────────────────── */}
+        {hasAny && (
+          <div
+            className={[
+              "flex items-start gap-2.5 px-4 py-3 rounded-xl border text-xs mb-5",
+              isAssignOnly
+                ? "bg-amber-50 border-amber-200 text-amber-700"
+                : "bg-yellow-50 border-yellow-200 text-yellow-700",
+            ].join(" ")}
+          >
+            {isAssignOnly ? (
+              <Info size={14} className="flex-shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            )}
+            <p className="font-medium">
+              {isAssignOnly
+                ? "Pending assignment changes. Saving will update the database without incrementing the version."
+                : `Unsaved content in: ${Array.from(contentDirty)
+                    .map((s) => s.replace("section", "Section "))
+                    .join(", ")}`}
+            </p>
+          </div>
+        )}
+
+        {/* ── Step Content ──────────────────────────────────────────────── */}
+        <div className="min-h-[400px]">
+          {activeStep === 1 && renderStep1()}
+          {activeStep === 2 && renderStep2()}
+          {activeStep === 3 && renderStep3()}
+          {activeStep === 4 && renderStep4()}
+        </div>
+
+        {/* ── Footer Navigation ─────────────────────────────────────────── */}
+        <div className="mt-6 flex flex-col-reverse sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+          <button
+            onClick={() => setActiveStep((p) => Math.max(1, p - 1))}
+            disabled={activeStep === 1}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30 transition-all"
+          >
+            <ArrowLeft size={16} strokeWidth={2} />
+            Previous
+          </button>
+
+          <div className="flex items-center justify-center gap-2">
+            {STEP_CONFIG.map((step) => (
+              <button
+                key={step.id}
+                onClick={() => setActiveStep(step.id)}
+                className={[
+                  "rounded-full transition-all duration-200",
+                  activeStep === step.id
+                    ? "w-5 h-2 bg-gray-800"
+                    : "w-2 h-2 bg-gray-200 hover:bg-gray-300",
+                ].join(" ")}
+              />
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
             <button
-              key={s.id}
-              onClick={() => setActiveStep(s.id)}
-              className={`rounded-full transition-all duration-200 ${activeStep === s.id ? "w-5 h-2 bg-blue-600" : "w-2 h-2 bg-gray-300 hover:bg-gray-400"}`}
-            />
-          ))}
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            onClick={handleSaveAndNext}
-            disabled={loading}
-            className="px-4 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
-          >
-            Save &amp; Next
-          </button>
-          <button
-            onClick={() => setActiveStep((p) => Math.min(4, p + 1))}
-            disabled={activeStep === 4}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-40"
-          >
-            Next <ArrowRight size={15} />
-          </button>
+              onClick={handleSaveAndNext}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 disabled:opacity-40 transition-all"
+            >
+              {loading ? (
+                <RefreshCw size={14} className="animate-spin" />
+              ) : (
+                <Save size={14} />
+              )}
+              Save & Next
+            </button>
+            <button
+              onClick={() => setActiveStep((p) => Math.min(4, p + 1))}
+              disabled={activeStep === 4}
+              className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-gray-900 text-white rounded-xl hover:bg-gray-800 disabled:opacity-30 transition-all shadow-sm"
+            >
+              Next
+              <ArrowRight size={16} strokeWidth={2} />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ── ASSIGN CREATOR MODAL ────────────────────────────────────────── */}
+      {/* ── Assign Creator Modal ──────────────────────────────────────────── */}
       <SearchCreator
         isOpen={isAssignModalOpen}
         onClose={() => setIsAssignModalOpen(false)}
@@ -2438,20 +2594,19 @@ const CreatePD = () => {
         currentAssigneeId={currentAssignContext?.currentAssigneeId}
         onSelect={(creator) => {
           if (!currentAssignContext) return;
-          if (currentAssignContext.isElective) {
+          if (currentAssignContext.isElective)
             handleAssignElectiveCreator(
               currentAssignContext.electiveType,
               currentAssignContext.groupIndex,
               currentAssignContext.courseIndex,
               creator,
             );
-          } else {
+          else
             handleAssignCreator(
               currentAssignContext.semIndex,
               currentAssignContext.courseIndex,
               creator,
             );
-          }
           setIsAssignModalOpen(false);
         }}
       />
