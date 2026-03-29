@@ -8,6 +8,7 @@ import {
   LogOut,
   FileText,
   Menu,
+  DockIcon,
 } from "lucide-react";
 
 const CreatorSidebar = () => {
@@ -49,6 +50,11 @@ const CreatorSidebar = () => {
       name: "PD History",
       path: "/creator/pd-history",
       icon: History,
+    },
+    {
+      name: "CD History",
+      path: "/creator/cd-history",
+      icon: DockIcon,
     },
   ];
 

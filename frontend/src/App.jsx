@@ -9,6 +9,7 @@ import Preview from "./components/Preview";
 import HistoryPD from "./pages/HistoryPD";
 import EditCD from "./pages/EditCD";
 import PreviewCD from "./components/PreviewCD";
+import HistoryCD from "./pages/HistoryCD";
 
 const App = () => {
   const { createrToken } = useAppContext();
@@ -23,6 +24,7 @@ const App = () => {
             <Route path="/" element={<CreatorDashboard />} />
             <Route path="/creator/create-pd" element={<CreatePD />} />
             <Route path="/creator/pd-history" element={<HistoryPD />} />
+            <Route path="/creator/cd-history" element={<HistoryCD />} />
             <Route path="/creator/preview" element={<Preview />} />
             <Route path="creator/preview-cd" element={<PreviewCD />} />
             <Route path="/creator/edit-cd" element={<EditCD />} />

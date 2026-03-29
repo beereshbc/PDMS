@@ -3,23 +3,18 @@ import CreatorLayout from "../components/CreatorLayout";
 import { useAppContext } from "../context/AppContext";
 import {
   Search,
-  FileText,
-  Calendar,
   Clock,
   Eye,
   Edit,
   Filter,
   Printer,
-  ChevronRight,
   Plus,
   Loader2,
-  GraduationCap,
+  BookOpen,
   BookMarked,
   RefreshCw,
   X,
-  CheckCircle,
-  AlertCircle,
-  Hash,
+  Calendar,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
@@ -137,7 +132,7 @@ const StatusPill = ({ value, active, onClick }) => {
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 
-const HistoryPD = () => {
+const HistoryCD = () => {
   const { axios, createrToken } = useAppContext();
   const navigate = useNavigate();
 
@@ -154,16 +149,16 @@ const HistoryPD = () => {
       if (silent) setRefreshing(true);
       else setLoading(true);
       try {
-        const { data } = await axios.get("/api/creater/pd/history", {
+        const { data } = await axios.get("/api/creater/cd/history", {
           headers: { createrToken },
         });
         if (data.success) {
-          setDocuments(data.pds);
-          setFilteredDocs(data.pds);
+          setDocuments(data.cds);
+          setFilteredDocs(data.cds);
         }
       } catch (err) {
-        console.error("History fetch error:", err);
-        toast.error("Failed to load history");
+        console.error("CD History fetch error:", err);
+        toast.error("Failed to load CD history");
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -186,29 +181,21 @@ const HistoryPD = () => {
       const q = searchTerm.toLowerCase();
       temp = temp.filter(
         (d) =>
-          d.programCode.toLowerCase().includes(q) ||
-          (d.section1_info?.programName || "").toLowerCase().includes(q),
+          d.courseCode.toLowerCase().includes(q) ||
+          (d.courseTitle || "").toLowerCase().includes(q) ||
+          (d.programName || "").toLowerCase().includes(q),
       );
     }
     setFilteredDocs(temp);
   }, [searchTerm, statusFilter, documents]);
 
-  // ── Status counts ─────────────────────────────────────────────────────────
-  const counts = STATUS_OPTIONS.reduce((acc, s) => {
-    acc[s] =
-      s === "All"
-        ? documents.length
-        : documents.filter((d) => d.status === s).length;
-    return acc;
-  }, {});
-
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleEdit = (id) =>
-    navigate("/creator/create-pd", { state: { loadId: id } });
+    navigate("/creator/create-cd", { state: { loadId: id } });
   const handlePreview = (id) =>
-    navigate("/creator/preview", { state: { loadId: id } });
+    navigate("/creator/preview-cd", { state: { loadId: id } });
   const handlePrint = (id) =>
-    navigate("/creator/preview", { state: { loadId: id, autoPrint: true } });
+    navigate("/creator/preview-cd", { state: { loadId: id, autoPrint: true } });
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -232,13 +219,13 @@ const HistoryPD = () => {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <GraduationCap size={18} className="text-gray-400" />
+              <BookOpen size={18} className="text-gray-400" />
               <h1 className="text-lg font-semibold text-gray-800 tracking-tight">
-                PD History
+                CD History
               </h1>
             </div>
             <p className="text-xs text-gray-400 font-medium">
-              All versions of Program Documents —{" "}
+              All versions of Course Documents —{" "}
               <span className="text-gray-600 font-semibold">
                 {documents.length}
               </span>{" "}
@@ -258,11 +245,11 @@ const HistoryPD = () => {
               Refresh
             </button>
             <Link
-              to="/creator/create-pd"
+              to="/creator/create-cd"
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-gray-900 text-white rounded-xl hover:bg-gray-800 shadow-sm transition-colors"
             >
               <Plus size={14} />
-              New PD
+              New CD
             </Link>
           </div>
         </div>
@@ -272,7 +259,7 @@ const HistoryPD = () => {
           icon={<Filter size={15} className="text-gray-400" />}
           iconBg="bg-gray-100"
           title="Filter Documents"
-          subtitle="Search by program code or name, then filter by status"
+          subtitle="Search by course code, title, or program name"
         >
           {/* Search */}
           <div className="relative mb-4">
@@ -282,10 +269,10 @@ const HistoryPD = () => {
             />
             <input
               type="text"
-              placeholder="Search by program code or name…"
+              placeholder="Search by course code, title or program name…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-9 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all placeholder-gray-300"
+              className="w-full pl-9 pr-9 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition-all placeholder-gray-300"
             />
             {searchTerm && (
               <button
@@ -335,21 +322,21 @@ const HistoryPD = () => {
 
         {/* ── Documents Table ─────────────────────────────────────────────── */}
         <SectionCard
-          icon={<BookMarked size={15} className="text-blue-500" />}
-          iconBg="bg-blue-50"
-          title="Program Documents"
+          icon={<BookOpen size={15} className="text-violet-500" />}
+          iconBg="bg-violet-50"
+          title="Course Documents"
           subtitle={`${filteredDocs.length} result${filteredDocs.length !== 1 ? "s" : ""}`}
           noPad
         >
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <Loader2 className="animate-spin text-blue-500" size={28} />
+              <Loader2 className="animate-spin text-violet-500" size={28} />
               <p className="text-xs text-gray-400">Loading documents…</p>
             </div>
           ) : filteredDocs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <div className="p-4 bg-gray-50 rounded-2xl">
-                <GraduationCap size={32} className="text-gray-200" />
+                <BookOpen size={32} className="text-gray-200" />
               </div>
               <p className="text-sm font-medium text-gray-600">
                 No documents found
@@ -357,14 +344,14 @@ const HistoryPD = () => {
               <p className="text-xs text-gray-400 text-center max-w-xs">
                 {searchTerm || statusFilter !== "All"
                   ? "Try adjusting your search or filter."
-                  : "Create your first Program Document to get started."}
+                  : "Create your first Course Document to get started."}
               </p>
               {!searchTerm && statusFilter === "All" && (
                 <Link
-                  to="/creator/create-pd"
+                  to="/creator/create-cd"
                   className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-gray-900 text-white rounded-xl hover:bg-gray-800 mt-1 transition-colors"
                 >
-                  <Plus size={13} /> Create PD
+                  <Plus size={13} /> Create CD
                 </Link>
               )}
             </div>
@@ -374,8 +361,9 @@ const HistoryPD = () => {
                 <thead>
                   <tr className="bg-gray-50/80 border-b border-gray-100">
                     {[
-                      "Program Information",
-                      "Ver / Scheme",
+                      "Course Information",
+                      "Program",
+                      "Version",
                       "Status",
                       "Updated",
                       "Actions",
@@ -383,7 +371,7 @@ const HistoryPD = () => {
                       <th
                         key={i}
                         className={`px-5 py-3.5 text-[10px] font-semibold text-gray-500 uppercase tracking-widest ${
-                          i === 4 ? "text-right" : ""
+                          i === 5 ? "text-right" : ""
                         }`}
                       >
                         {h}
@@ -397,30 +385,30 @@ const HistoryPD = () => {
                       key={doc._id}
                       className="hover:bg-gray-50/60 transition-colors group"
                     >
-                      {/* Program Info */}
+                      {/* Course Info */}
                       <td className="px-5 py-4">
                         <div className="flex flex-col">
                           <span className="font-semibold text-gray-800 text-sm">
-                            {doc.programCode}
+                            {doc.courseCode}
                           </span>
-                          <span className="text-xs text-gray-400 truncate max-w-[220px] mt-0.5">
-                            {doc.section1_info?.programName ||
-                              "Untitled Program"}
+                          <span className="text-xs text-gray-400 truncate max-w-[200px] mt-0.5">
+                            {doc.courseTitle || "Untitled Course"}
                           </span>
                         </div>
                       </td>
 
-                      {/* Version / Scheme */}
+                      {/* Program */}
                       <td className="px-5 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[11px] font-semibold bg-blue-50 text-blue-600 border border-blue-100 px-2 py-0.5 rounded w-fit">
-                            v{doc.pdVersion}
-                          </span>
-                          <span className="text-[11px] text-gray-400 flex items-center gap-1">
-                            <Calendar size={11} className="text-gray-300" />
-                            {doc.schemeYear}
-                          </span>
-                        </div>
+                        <span className="text-xs text-gray-500 truncate max-w-[140px] block">
+                          {doc.programName || "—"}
+                        </span>
+                      </td>
+
+                      {/* Version */}
+                      <td className="px-5 py-4">
+                        <span className="text-[11px] font-semibold bg-violet-50 text-violet-600 border border-violet-100 px-2 py-0.5 rounded">
+                          v{doc.cdVersion}
+                        </span>
                       </td>
 
                       {/* Status */}
@@ -480,7 +468,7 @@ const HistoryPD = () => {
                 </tbody>
               </table>
 
-              {/* Footer count */}
+              {/* Footer */}
               <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50">
                 <p className="text-[11px] text-gray-400 font-medium">
                   {filteredDocs.length} document
@@ -495,4 +483,4 @@ const HistoryPD = () => {
   );
 };
 
-export default HistoryPD;
+export default HistoryCD;
