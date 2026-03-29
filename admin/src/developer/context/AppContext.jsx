@@ -1,11 +1,8 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import axios from "axios";
-import toast from "react-hot-toast";
 
 const AppDevContext = createContext();
 
-// Create a dedicated axios instance instead of modifying the global default
-// This prevents conflicts if you have other types of users (like Admins)
 const devInstance = axios.create({
   baseURL: import.meta.env.VITE_BASE_URL || "http://localhost:5000",
 });
@@ -15,41 +12,24 @@ export const AppDevProvider = ({ children }) => {
     localStorage.getItem("devToken") || "",
   );
 
-  // Interceptor: Automatically attach the token to every request made via this context
   useEffect(() => {
     const requestInterceptor = devInstance.interceptors.request.use(
       (config) => {
         if (devToken) {
-          config.headers.token = devToken; // Matches backend expectations for protected routes
+          // Matches backend 'devtoken' header
+          config.headers.devtoken = devToken;
         }
         return config;
       },
       (error) => Promise.reject(error),
     );
-
     return () => devInstance.interceptors.request.eject(requestInterceptor);
   }, [devToken]);
-
-  // Keep localStorage in sync when devToken changes
-  useEffect(() => {
-    if (devToken) {
-      localStorage.setItem("devToken", devToken);
-    } else {
-      localStorage.removeItem("devToken");
-    }
-  }, [devToken]);
-
-  const logout = () => {
-    setDevToken("");
-    localStorage.removeItem("devToken");
-    toast.success("Developer session terminated");
-  };
 
   const value = {
     axios: devInstance,
     devToken,
     setDevToken,
-    logout,
   };
 
   return (
@@ -57,10 +37,4 @@ export const AppDevProvider = ({ children }) => {
   );
 };
 
-export const useAppDevContext = () => {
-  const context = useContext(AppDevContext);
-  if (!context) {
-    throw new Error("useAppDevContext must be used within an AppDevProvider");
-  }
-  return context;
-};
+export const useAppDevContext = () => useContext(AppDevContext);

@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 
 const AppContext = createContext();
 
-// Create a dedicated axios instance for Admin
+// 1. Create the instance
 const adminAxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_BASE_URL || "http://localhost:5000",
 });
@@ -14,12 +14,13 @@ export const AppProvider = ({ children }) => {
     localStorage.getItem("adminToken") || "",
   );
 
-  // 1. Interceptor: Automatically attach the admin token to every request header
+  // 2. The Interceptor - This is the bridge that fixes the 401
   useEffect(() => {
     const requestInterceptor = adminAxiosInstance.interceptors.request.use(
       (config) => {
         if (adminToken) {
-          config.headers.admintoken = adminToken; // Backend expects this header for Admin routes
+          // This must match 'admintoken' in your backend middleware
+          config.headers.admintoken = adminToken;
         }
         return config;
       },
@@ -30,16 +31,16 @@ export const AppProvider = ({ children }) => {
       adminAxiosInstance.interceptors.request.eject(requestInterceptor);
   }, [adminToken]);
 
-  // 2. Sync State to LocalStorage: Automatically update localStorage when token changes
+  // 3. Sync to LocalStorage
   useEffect(() => {
     if (adminToken) {
       localStorage.setItem("adminToken", adminToken);
+      console.log(adminToken);
     } else {
       localStorage.removeItem("adminToken");
     }
   }, [adminToken]);
 
-  // 3. Centralized Logout Function
   const adminLogout = () => {
     setAdminToken("");
     localStorage.removeItem("adminToken");
@@ -47,7 +48,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const value = {
-    axios: adminAxiosInstance,
+    axios: adminAxiosInstance, // Components use this
     adminToken,
     setAdminToken,
     adminLogout,
@@ -56,10 +57,4 @@ export const AppProvider = ({ children }) => {
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
 
-export const useAppContext = () => {
-  const context = useContext(AppContext);
-  if (!context) {
-    throw new Error("useAppContext must be used within an AppProvider");
-  }
-  return context;
-};
+export const useAppContext = () => useContext(AppContext);

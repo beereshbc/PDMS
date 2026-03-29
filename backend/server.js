@@ -19,6 +19,7 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -26,7 +27,6 @@ app.use(
       }
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    // FIX IS HERE: Added "devtoken" to the list
     allowedHeaders: [
       "Content-Type",
       "Authorization",
@@ -36,7 +36,6 @@ app.use(
       "devtoken",
     ],
     credentials: true,
-    preflightContinue: false,
     optionsSuccessStatus: 204,
   }),
 );
