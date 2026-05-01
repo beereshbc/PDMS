@@ -8,6 +8,8 @@ import CD_Section1_Identity from "../models/cd/CD_Section1_Identity.js";
 import CD_Section2_Outcomes from "../models/cd/CD_Section2_Outcomes.js";
 import CD_Section3_Syllabus from "../models/cd/CD_Section3_Syllabus.js";
 import CD_Section4_Resources from "../models/cd/CD_Section4_Resources.js";
+import Admin from "../models/Admin.js";
+import PD from "../models/pd/PD.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,7 +18,6 @@ const __dirname = path.dirname(__filename);
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** "1.0.3"  →  "1.0.4"  (patch bump) */
 const incrementVersion = (version = "1.0.0") => {
   const parts = version.split(".");
   if (parts.length < 3) return "1.0.1";
@@ -24,11 +25,6 @@ const incrementVersion = (version = "1.0.0") => {
   return parts.join(".");
 };
 
-/**
- * Reconstruct the flat object that EditCD.jsx's transformFetchedToFrontend
- * + sanitizeCDData expect.  All populated section refs must already be
- * attached (via .populate()).
- */
 const buildFormattedCD = (cd) => {
   const s1 = cd.section1_identity || {};
   const s2 = cd.section2_outcomes || {};
@@ -36,32 +32,22 @@ const buildFormattedCD = (cd) => {
   const s4 = cd.section4_resources || {};
 
   return {
-    // ── Master metadata ───────────────────────────────────────────────────────
     courseCode: cd.courseCode,
     courseTitle: cd.courseTitle,
     programName: cd.programName,
     cdVersion: cd.cdVersion,
     status: cd.status,
-
-    // ── Section 1 – Identity & Credits ───────────────────────────────────────
-    // Spread nested identity so sanitizeCDData can read flat fields
     ...(s1.identity || {}),
-    identity: s1.identity || {}, // keep nested copy too (used by transformFetchedToFrontend)
+    identity: s1.identity || {},
     credits: s1.credits || {},
-
-    // ── Section 2 – Aims, Objectives, Outcomes, Outcome Map ─────────────────
     aimsSummary: s2.aimsSummary || "",
     objectives: s2.objectives || "",
     courseOutcomes: s2.courseOutcomes || [],
     courseOutcomesHtml: s2.courseOutcomesHtml || "",
     outcomeMap: s2.outcomeMap || {},
     outcomeMapHtml: s2.outcomeMapHtml || "",
-
-    // ── Section 3 – Syllabus & Teaching ─────────────────────────────────────
     courseContent: s3.courseContent || "",
     teaching: s3.teaching || [],
-
-    // ── Section 4 – Resources, Assessment, Grading, Attainment, Other ───────
     resources: s4.resources || {
       textBooks: [],
       references: [],
@@ -82,36 +68,44 @@ const buildFormattedCD = (cd) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ADMIN SELECTION FOR REVIEW MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+export const getAdminsForReview = async (req, res) => {
+  try {
+    const admins = await Admin.find({ role: "admin", status: "active" }).select(
+      "name email department school",
+    );
+    res.json({ success: true, admins });
+  } catch (error) {
+    console.error("Error fetching admins:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch admins." });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PARSE / IMPORT
 // ─────────────────────────────────────────────────────────────────────────────
-
 export const uploadAndParseCD = async (req, res) => {
-  // 1. Guard against missing files
-  if (!req.file) {
+  if (!req.file)
     return res
       .status(400)
       .json({ success: false, message: "No file uploaded" });
-  }
 
   const filePath = req.file.path;
   let responseSent = false;
 
-  // 2. Guaranteed Cleanup Helper
   const cleanupFile = () => {
     try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } catch (err) {
       console.error(`Failed to delete temp file ${filePath}:`, err);
     }
   };
 
   try {
-    // 3. Absolute path resolution
     const scriptPath = path.join(__dirname, "..", "scripts", "cd_parser.py");
-
-    // 4. Production Environment Check (Render uses python3)
     const pythonCommand =
       process.env.NODE_ENV === "production" ? "python3" : "python";
 
@@ -128,17 +122,12 @@ export const uploadAndParseCD = async (req, res) => {
     let dataString = "";
     let errorString = "";
 
-    // 5. Increased Timeout for heavy PDF parsing (60 seconds)
     const timeoutId = setTimeout(() => {
       if (!responseSent) {
         pythonProcess.kill("SIGKILL");
         responseSent = true;
         cleanupFile();
-        res.status(504).json({
-          success: false,
-          message:
-            "Parsing timed out. The PDF may be too large for current server resources.",
-        });
+        res.status(504).json({ success: false, message: "Parsing timed out." });
       }
     }, 60000);
 
@@ -154,7 +143,6 @@ export const uploadAndParseCD = async (req, res) => {
       cleanupFile();
       if (!responseSent) {
         responseSent = true;
-        console.error("Spawn Error:", error);
         res.status(500).json({
           success: false,
           message: "Failed to start Python parser.",
@@ -165,87 +153,63 @@ export const uploadAndParseCD = async (req, res) => {
 
     pythonProcess.on("close", (code) => {
       clearTimeout(timeoutId);
-      cleanupFile(); // Cleanup uploaded PDF immediately after script finishes
-
+      cleanupFile();
       if (responseSent) return;
       responseSent = true;
 
       if (code !== 0) {
-        console.error(`Python Error (Code ${code}):`, errorString);
         return res.status(500).json({
           success: false,
-          message: "Parsing failed during script execution.",
+          message: "Parsing failed.",
           details: errorString,
         });
       }
 
       try {
-        // 6. Extract JSON block (handles any random print logs in the script)
         const jsonStartIndex = dataString.indexOf("{");
         const jsonEndIndex = dataString.lastIndexOf("}") + 1;
-
         if (jsonStartIndex === -1) throw new Error("No JSON found");
 
         const parsed = JSON.parse(
           dataString.slice(jsonStartIndex, jsonEndIndex),
         );
-
-        if (!parsed.success) {
+        if (!parsed.success)
           return res
             .status(400)
             .json({ success: false, message: parsed.message });
-        }
 
         return res.json({ success: true, parsedData: parsed.parsedData });
       } catch (e) {
-        console.error("JSON Parsing Error:", e.message);
         return res.status(500).json({
           success: false,
-          message: "Invalid response format from parser.",
+          message: "Invalid parser response.",
           raw: dataString,
         });
       }
     });
   } catch (error) {
     cleanupFile();
-    if (!responseSent) {
-      console.error("Controller Error:", error);
+    if (!responseSent)
       res
         .status(500)
         .json({ success: false, message: "Unexpected server error." });
-    }
   }
 };
-// ─────────────────────────────────────────────────────────────────────────────
-// SAVE / UPDATE
-// ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Dirty-section keys the frontend can send (from markDirty calls):
- *
- *   "all"                 → update every section
- *   "basic"               → identity fields + aimsSummary + objectives + courseContent
- *                           (sent by the generic `upd()` helper on the frontend)
- *   "credits"             → Section 1
- *   "courseOutcomes"      → Section 2
- *   "outcomeMap"          → Section 2
- *   "teaching"            → Section 3
- *   "assessmentWeight"    → Section 4
- *   "gradingCriterion"    → Section 4
- *   "attainmentCalculations" → Section 4
- *   "otherDetails"        → Section 4
- *   "resources"           → Section 4
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// SAVE / UPDATE WORKFLOW (FIXED FOR DUPLICATE KEY ERRORS)
+// ─────────────────────────────────────────────────────────────────────────────
 export const createOrUpdateCD = async (req, res) => {
   try {
     const {
       courseCode,
       courseTitle,
       programName,
-      isNewCD, // hint from frontend — we verify against DB too
+      isNewCD,
       status,
       sectionsToUpdate = [],
       cdData,
+      reviewerId,
     } = req.body;
 
     if (!courseCode) {
@@ -257,7 +221,6 @@ export const createOrUpdateCD = async (req, res) => {
     const creatorId = req.id;
     const updateAll = sectionsToUpdate.includes("all");
 
-    // ── Dirty-section → model-section mapping ─────────────────────────────────
     const s1Keys = ["basic", "identity", "credits"];
     const s2Keys = ["basic", "courseOutcomes", "outcomeMap"];
     const s3Keys = ["basic", "courseContent", "teaching"];
@@ -278,22 +241,34 @@ export const createOrUpdateCD = async (req, res) => {
     const s3Dirty = dirty(s3Keys);
     const s4Dirty = dirty(s4Keys);
 
-    // ── Resolve version & previous section refs ──────────────────────────────
     const existingCD = await CourseDocument.findOne({ courseCode }).sort({
       createdAt: -1,
     });
     const isActuallyNew = !existingCD;
+
+    // Check if we need to bump the version
+    let needsVersionBump = false;
+    if (
+      !isActuallyNew &&
+      (existingCD.status === "Approved" || existingCD.status === "UnderReview")
+    ) {
+      needsVersionBump = true;
+    }
+
     const newCdVersion = isActuallyNew
       ? "1.0.0"
-      : incrementVersion(existingCD.cdVersion);
+      : needsVersionBump
+        ? incrementVersion(existingCD.cdVersion)
+        : existingCD.cdVersion;
 
     let s1_Id = existingCD?.section1_identity;
     let s2_Id = existingCD?.section2_outcomes;
     let s3_Id = existingCD?.section3_syllabus;
     let s4_Id = existingCD?.section4_resources;
 
-    // ── Section 1 – Identity & Credits ───────────────────────────────────────
-    if (isActuallyNew || s1Dirty) {
+    // ── SCENARIO 1: Brand New OR Bumping Version ──
+    if (isActuallyNew || needsVersionBump) {
+      // Must create completely new section documents for the new snapshot
       const s1 = await CD_Section1_Identity.create({
         courseCode,
         version: newCdVersion,
@@ -301,11 +276,6 @@ export const createOrUpdateCD = async (req, res) => {
         credits: cdData.credits || {},
         createdBy: creatorId,
       });
-      s1_Id = s1._id;
-    }
-
-    // ── Section 2 – Aims, Objectives, Course Outcomes, Outcome Map ───────────
-    if (isActuallyNew || s2Dirty) {
       const s2 = await CD_Section2_Outcomes.create({
         courseCode,
         version: newCdVersion,
@@ -317,11 +287,6 @@ export const createOrUpdateCD = async (req, res) => {
         outcomeMapHtml: cdData.outcomeMapHtml || "",
         createdBy: creatorId,
       });
-      s2_Id = s2._id;
-    }
-
-    // ── Section 3 – Course Content & Teaching Schedule ───────────────────────
-    if (isActuallyNew || s3Dirty) {
       const s3 = await CD_Section3_Syllabus.create({
         courseCode,
         version: newCdVersion,
@@ -329,11 +294,6 @@ export const createOrUpdateCD = async (req, res) => {
         teaching: cdData.teaching || [],
         createdBy: creatorId,
       });
-      s3_Id = s3._id;
-    }
-
-    // ── Section 4 – Resources, Assessment, Grading, Attainment, Other ────────
-    if (isActuallyNew || s4Dirty) {
       const s4 = await CD_Section4_Resources.create({
         courseCode,
         version: newCdVersion,
@@ -345,34 +305,141 @@ export const createOrUpdateCD = async (req, res) => {
         otherDetails: cdData.otherDetails || {},
         createdBy: creatorId,
       });
-      s4_Id = s4._id;
+
+      const masterCD = await CourseDocument.create({
+        courseCode,
+        courseTitle,
+        programName,
+        cdVersion: newCdVersion,
+        section1_identity: s1._id,
+        section2_outcomes: s2._id,
+        section3_syllabus: s3._id,
+        section4_resources: s4._id,
+        status: status || (isActuallyNew ? "Draft" : existingCD.status),
+        createdBy: creatorId,
+        approvedBy: reviewerId || null,
+        previousVersion: isActuallyNew ? null : existingCD._id,
+      });
+
+      return res.json({
+        success: true,
+        message:
+          status === "UnderReview"
+            ? `Submitted v${newCdVersion} for review.`
+            : `Draft v${newCdVersion} saved successfully.`,
+        version: newCdVersion,
+        data: masterCD,
+      });
     }
 
-    // ── Master snapshot ───────────────────────────────────────────────────────
-    const masterCD = await CourseDocument.create({
-      courseCode,
-      courseTitle,
-      programName,
-      cdVersion: newCdVersion,
-      section1_identity: s1_Id,
-      section2_outcomes: s2_Id,
-      section3_syllabus: s3_Id,
-      section4_resources: s4_Id,
-      status: status || "Draft",
-      createdBy: creatorId,
-    });
+    // ── SCENARIO 2: Updating an Existing Draft In-Place ──
+    // Uses findByIdAndUpdate to prevent duplicate key constraint errors
+    if (s1Dirty) {
+      if (s1_Id)
+        await CD_Section1_Identity.findByIdAndUpdate(s1_Id, {
+          identity: cdData.identity,
+          credits: cdData.credits,
+        });
+      else {
+        const s = await CD_Section1_Identity.create({
+          courseCode,
+          version: newCdVersion,
+          identity: cdData.identity || {},
+          credits: cdData.credits || {},
+          createdBy: creatorId,
+        });
+        s1_Id = s._id;
+      }
+    }
+    if (s2Dirty) {
+      if (s2_Id)
+        await CD_Section2_Outcomes.findByIdAndUpdate(s2_Id, {
+          aimsSummary: cdData.aimsSummary,
+          objectives: cdData.objectives,
+          courseOutcomes: cdData.courseOutcomes,
+          courseOutcomesHtml: cdData.courseOutcomesHtml,
+          outcomeMap: cdData.outcomeMap,
+          outcomeMapHtml: cdData.outcomeMapHtml,
+        });
+      else {
+        const s = await CD_Section2_Outcomes.create({
+          courseCode,
+          version: newCdVersion,
+          aimsSummary: cdData.aimsSummary || "",
+          objectives: cdData.objectives || "",
+          courseOutcomes: cdData.courseOutcomes || [],
+          courseOutcomesHtml: cdData.courseOutcomesHtml || "",
+          outcomeMap: cdData.outcomeMap || {},
+          outcomeMapHtml: cdData.outcomeMapHtml || "",
+          createdBy: creatorId,
+        });
+        s2_Id = s._id;
+      }
+    }
+    if (s3Dirty) {
+      if (s3_Id)
+        await CD_Section3_Syllabus.findByIdAndUpdate(s3_Id, {
+          courseContent: cdData.courseContent,
+          teaching: cdData.teaching,
+        });
+      else {
+        const s = await CD_Section3_Syllabus.create({
+          courseCode,
+          version: newCdVersion,
+          courseContent: cdData.courseContent || "",
+          teaching: cdData.teaching || [],
+          createdBy: creatorId,
+        });
+        s3_Id = s._id;
+      }
+    }
+    if (s4Dirty) {
+      if (s4_Id)
+        await CD_Section4_Resources.findByIdAndUpdate(s4_Id, {
+          resources: cdData.resources,
+          assessmentWeight: cdData.assessmentWeight,
+          assessmentWeightHtml: cdData.assessmentWeightHtml,
+          gradingCriterion: cdData.gradingCriterion,
+          attainmentCalculations: cdData.attainmentCalculations,
+          otherDetails: cdData.otherDetails,
+        });
+      else {
+        const s = await CD_Section4_Resources.create({
+          courseCode,
+          version: newCdVersion,
+          resources: cdData.resources || {},
+          assessmentWeight: cdData.assessmentWeight || [],
+          assessmentWeightHtml: cdData.assessmentWeightHtml || "",
+          gradingCriterion: cdData.gradingCriterion || "",
+          attainmentCalculations: cdData.attainmentCalculations || {},
+          otherDetails: cdData.otherDetails || {},
+          createdBy: creatorId,
+        });
+        s4_Id = s._id;
+      }
+    }
 
-    console.log(
-      `CD ${isActuallyNew ? "created" : "updated"}: ${courseCode} v${newCdVersion}`,
-    );
+    // Update Master Document
+    existingCD.courseTitle = courseTitle;
+    existingCD.programName = programName;
+    existingCD.status = status || "Draft";
+    if (reviewerId && status === "UnderReview") {
+      existingCD.approvedBy = reviewerId;
+    }
+    existingCD.section1_identity = s1_Id;
+    existingCD.section2_outcomes = s2_Id;
+    existingCD.section3_syllabus = s3_Id;
+    existingCD.section4_resources = s4_Id;
+    await existingCD.save();
 
     return res.json({
       success: true,
-      message: isActuallyNew
-        ? `Course Document "${courseCode}" created.`
-        : `Course Document updated to v${newCdVersion}.`,
+      message:
+        status === "UnderReview"
+          ? `Submitted v${newCdVersion} for review.`
+          : `Draft v${newCdVersion} updated successfully.`,
       version: newCdVersion,
-      data: masterCD,
+      data: existingCD,
     });
   } catch (error) {
     console.error("createOrUpdateCD error:", error);
@@ -381,7 +448,7 @@ export const createOrUpdateCD = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FETCH
+// FETCH ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
 
 const POPULATE_CHAIN = [
@@ -391,7 +458,6 @@ const POPULATE_CHAIN = [
   "section4_resources",
 ];
 
-/** Fetch a specific CD snapshot by its Mongo _id */
 export const getCDById = async (req, res) => {
   try {
     const cd = await CourseDocument.findById(req.params.id)
@@ -399,21 +465,16 @@ export const getCDById = async (req, res) => {
       .populate(POPULATE_CHAIN[1])
       .populate(POPULATE_CHAIN[2])
       .populate(POPULATE_CHAIN[3]);
-
-    if (!cd) {
+    if (!cd)
       return res
         .status(404)
         .json({ success: false, message: "Course Document not found." });
-    }
-
     return res.json({ success: true, cd: buildFormattedCD(cd) });
   } catch (error) {
-    console.error("getCDById error:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
 
-/** Fetch the latest (most recent) snapshot for a given courseCode */
 export const getLatestCD = async (req, res) => {
   try {
     const cd = await CourseDocument.findOne({
@@ -424,23 +485,15 @@ export const getLatestCD = async (req, res) => {
       .populate(POPULATE_CHAIN[1])
       .populate(POPULATE_CHAIN[2])
       .populate(POPULATE_CHAIN[3]);
-
-    if (!cd) {
+    if (!cd)
       return res
         .status(404)
         .json({ success: false, message: "No history found for this course." });
-    }
-
     return res.json({ success: true, cd: buildFormattedCD(cd) });
   } catch (error) {
-    console.error("getLatestCD error:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// VERSION HISTORY
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const getRecentVersions = async (req, res) => {
   try {
@@ -450,7 +503,6 @@ export const getRecentVersions = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(5)
       .select("cdVersion createdAt status");
-
     return res.json({ success: true, versions });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -458,13 +510,12 @@ export const getRecentVersions = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DASHBOARD & HISTORY
+// DASHBOARD & ASSIGNED COURSES
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const getCDDashboardStats = async (req, res) => {
   try {
     const creatorId = req.id;
-
     const [total, drafts, underReview, approved, recentDocs] =
       await Promise.all([
         CourseDocument.countDocuments({ createdBy: creatorId }),
@@ -485,14 +536,12 @@ export const getCDDashboardStats = async (req, res) => {
           .limit(5)
           .select("courseCode courseTitle cdVersion status updatedAt"),
       ]);
-
     return res.json({
       success: true,
       stats: { total, drafts, underReview, approved },
       recentDocs,
     });
   } catch (error) {
-    console.error("getCDDashboardStats error:", error);
     return res
       .status(500)
       .json({ success: false, message: "Failed to fetch dashboard data." });
@@ -501,15 +550,96 @@ export const getCDDashboardStats = async (req, res) => {
 
 export const getCDCreatorHistory = async (req, res) => {
   try {
-    const cds = await CourseDocument.find({ createdBy: req.id })
-      .sort({ updatedAt: -1 })
-      .select("courseCode courseTitle cdVersion status updatedAt");
+    const allCDs = await CourseDocument.find({ createdBy: req.id })
+      .populate("section1_identity")
+      .populate("section2_outcomes")
+      .populate("section3_syllabus")
+      .populate("section4_resources")
+      .sort({ updatedAt: -1 });
 
-    return res.json({ success: true, count: cds.length, cds });
+    const groupedMap = new Map();
+    allCDs.forEach((cd) => {
+      if (!groupedMap.has(cd.courseCode)) {
+        groupedMap.set(cd.courseCode, {
+          courseCode: cd.courseCode,
+          courseTitle: cd.courseTitle,
+          programName: cd.programName,
+          latestVersion: cd.cdVersion,
+          latestStatus: cd.status,
+          updatedAt: cd.updatedAt,
+          versions: [],
+        });
+      }
+      groupedMap.get(cd.courseCode).versions.push({
+        _id: cd._id,
+        versionNo: cd.cdVersion,
+        status: cd.status,
+        updatedAt: cd.updatedAt,
+        // Fallback checks both fields to ensure the comment is captured
+        changeSummary: cd.reviewComment || cd.rejectionMessage || "",
+        cdData: buildFormattedCD(cd),
+      });
+    });
+
+    return res.json({
+      success: true,
+      count: groupedMap.size,
+      groupedData: Array.from(groupedMap.values()),
+    });
   } catch (error) {
-    console.error("getCDCreatorHistory error:", error);
     return res
       .status(500)
-      .json({ success: false, message: "Failed to fetch document history." });
+      .json({ success: false, message: "Failed to fetch document history" });
+  }
+};
+export const getAssignedCDs = async (req, res) => {
+  try {
+    const creatorId = req.id;
+    const pds = await PD.find({
+      $or: [
+        { "pd_data.semesters.courses.assigneeId": creatorId },
+        { "pd_data.prof_electives.courses.assigneeId": creatorId },
+        { "pd_data.open_electives.courses.assigneeId": creatorId },
+      ],
+    }).populate("created_by", "name email");
+
+    const assignedCourses = [];
+    pds.forEach((pd) => {
+      const checkAndPush = (course, contextInfo) => {
+        if (course.assigneeId === creatorId) {
+          assignedCourses.push({
+            courseCode: course.code,
+            courseTitle: course.title,
+            credits: course.credits,
+            type: course.type || "Theory",
+            programCode: pd.program_id,
+            programName: pd.program_name,
+            pdVersion: pd.version_no,
+            pdCreatorName: pd.created_by?.name || "Unknown",
+            pdCreatorEmail: pd.created_by?.email || "Unknown",
+            context: contextInfo,
+          });
+        }
+      };
+      pd.pd_data?.semesters?.forEach((sem) =>
+        sem.courses?.forEach((c) => checkAndPush(c, `Semester ${sem.sem_no}`)),
+      );
+      pd.pd_data?.prof_electives?.forEach((grp) =>
+        grp.courses?.forEach((c) =>
+          checkAndPush(c, `Professional Elective (Sem ${grp.sem})`),
+        ),
+      );
+      pd.pd_data?.open_electives?.forEach((grp) =>
+        grp.courses?.forEach((c) =>
+          checkAndPush(c, `Open Elective (Sem ${grp.sem})`),
+        ),
+      );
+    });
+
+    res.json({ success: true, assignedCourses });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch assigned courses." });
   }
 };

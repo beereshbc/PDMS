@@ -7,21 +7,32 @@ import {
   uploadAndParseCD,
   getCDDashboardStats,
   getCDCreatorHistory,
+  getAdminsForReview,
+  getAssignedCDs, // <-- NEW
 } from "../controllers/cdCreaterController.js";
 import authCreater from "../middlewares/createrAuth.js";
 import upload from "../middlewares/multer.js";
 
 const cdCreaterRouter = express.Router();
 
-cdCreaterRouter.post("/save", authCreater, createOrUpdateCD);
-cdCreaterRouter.get("/versions/:courseCode", authCreater, getRecentVersions);
-cdCreaterRouter.get("/fetch/:id", authCreater, getCDById);
-cdCreaterRouter.get("/latest/:courseCode", authCreater, getLatestCD);
+// ── Protected Routes (Requires Creator JWT) ─────────────────────────────────
+cdCreaterRouter.use(authCreater);
+
+cdCreaterRouter.post("/save", createOrUpdateCD);
+cdCreaterRouter.get("/history", getCDCreatorHistory);
+cdCreaterRouter.get("/dashboard-stats", getCDDashboardStats);
+cdCreaterRouter.get("/review-admins", getAdminsForReview);
+
+// <-- NEW: Fetch courses assigned to this creator in PDs
+cdCreaterRouter.get("/assigned", getAssignedCDs);
+
+cdCreaterRouter.get("/versions/:courseCode", getRecentVersions);
+cdCreaterRouter.get("/fetch/:id", getCDById);
+cdCreaterRouter.get("/latest/:courseCode", getLatestCD);
 
 // Wrapped Multer upload to gracefully handle File size/type errors
 cdCreaterRouter.post(
   "/import",
-  authCreater,
   (req, res, next) => {
     upload.single("cdFile")(req, res, (err) => {
       if (err) {
@@ -33,8 +44,5 @@ cdCreaterRouter.post(
   },
   uploadAndParseCD,
 );
-
-cdCreaterRouter.get("/dashboard-stats", authCreater, getCDDashboardStats);
-cdCreaterRouter.get("/history", authCreater, getCDCreatorHistory);
 
 export default cdCreaterRouter;

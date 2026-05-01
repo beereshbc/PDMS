@@ -25,7 +25,7 @@ const App = () => {
             <Route path="/creator/create-pd" element={<CreatePD />} />
             <Route path="/creator/pd-history" element={<HistoryPD />} />
             <Route path="/creator/cd-history" element={<HistoryCD />} />
-            <Route path="/creator/preview" element={<Preview />} />
+
             <Route path="creator/preview-cd" element={<PreviewCD />} />
             <Route path="/creator/edit-cd" element={<EditCD />} />
           </>

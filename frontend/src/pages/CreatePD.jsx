@@ -61,6 +61,7 @@ import { toast } from "react-hot-toast";
 import { useLocation, useNavigate } from "react-router-dom";
 import SearchCreator from "../components/SearchCreator";
 import JoditEditor from "jodit-react";
+import Preview from "../components/Preview";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -130,10 +131,6 @@ const STEP_CONFIG = [
   { id: 4, label: "Electives", shortLabel: "Electives", icon: BookMarked },
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-
 const buildProgramsFromProfile = (profile) => {
   if (!profile) return [];
   const detectLevel = (prog = "") => {
@@ -197,7 +194,7 @@ const buildProgramsFromProfile = (profile) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OPTIMIZED INPUT
+// UI COMPONENTS (INPUTS, HEADERS, BUTTONS)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const OptimizedInput = ({
@@ -226,24 +223,16 @@ const OptimizedInput = ({
         if (local !== value) onChange(e.target.value);
       }}
       className={[
-        "w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg",
-        "text-sm text-gray-800 placeholder-gray-300",
-        "focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400",
-        "transition-all duration-150",
+        `w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-150`,
         className,
       ].join(" ")}
     />
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STEP PROGRESS BAR
-// ─────────────────────────────────────────────────────────────────────────────
-
 const StepProgressBar = React.memo(
   ({ activeStep, onStepClick, completions }) => (
     <div className="w-full">
-      {/* Mobile pill tabs */}
       <div className="flex sm:hidden gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
         {STEP_CONFIG.map((step) => (
           <button
@@ -261,8 +250,6 @@ const StepProgressBar = React.memo(
           </button>
         ))}
       </div>
-
-      {/* Tablet+ full bar */}
       <div className="hidden sm:flex items-center bg-white border border-gray-200 rounded-xl p-1.5 shadow-sm gap-0">
         {STEP_CONFIG.map((step, idx) => (
           <React.Fragment key={step.id}>
@@ -309,10 +296,6 @@ const StepProgressBar = React.memo(
   ),
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SECTION CARD
-// ─────────────────────────────────────────────────────────────────────────────
-
 const SectionCard = ({
   icon,
   iconBg,
@@ -347,20 +330,11 @@ const SectionCard = ({
   </div>
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FIELD LABEL
-// ─────────────────────────────────────────────────────────────────────────────
-
 const FieldLabel = ({ children, required }) => (
   <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">
-    {children}
-    {required && <span className="text-rose-400 ml-0.5">*</span>}
+    {children} {required && <span className="text-rose-400 ml-0.5">*</span>}
   </label>
 );
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ASSIGN BUTTON
-// ─────────────────────────────────────────────────────────────────────────────
 
 const AssignBtn = ({ course, onClick }) => (
   <button
@@ -388,10 +362,6 @@ const AssignBtn = ({ course, onClick }) => (
   </button>
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STATUS BADGE
-// ─────────────────────────────────────────────────────────────────────────────
-
 const StatusBadge = ({ children, color = "gray" }) => {
   const colors = {
     gray: "bg-gray-100 text-gray-500 border-gray-200",
@@ -406,6 +376,121 @@ const StatusBadge = ({ children, color = "gray" }) => {
     >
       {children}
     </span>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN SELECTION MODAL (NEW)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ReviewSubmitModal = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  axios,
+  createrToken,
+}) => {
+  const [admins, setAdmins] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedAdminId, setSelectedAdminId] = useState("");
+
+  useEffect(() => {
+    if (isOpen) {
+      const fetchAdmins = async () => {
+        setLoading(true);
+        try {
+          // You must create this endpoint in your backend routes (handled in controller)
+          const { data } = await axios.get("/api/creater/pd/review-admins", {
+            headers: { createrToken },
+          });
+          if (data.success) {
+            setAdmins(data.admins);
+          }
+        } catch (error) {
+          toast.error("Failed to load reviewers.");
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchAdmins();
+    }
+  }, [isOpen, axios, createrToken]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div>
+            <h3 className="text-base font-semibold text-gray-800">
+              Submit for Review
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Select an Admin / Reviewer to evaluate this document.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:bg-gray-100 p-1.5 rounded-lg transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5 max-h-[300px] overflow-y-auto space-y-2">
+          {loading ? (
+            <div className="flex justify-center py-6">
+              <RefreshCw className="animate-spin text-gray-400" size={20} />
+            </div>
+          ) : admins.length === 0 ? (
+            <div className="text-center py-6 text-sm text-gray-400">
+              No active admins available.
+            </div>
+          ) : (
+            admins.map((admin) => (
+              <label
+                key={admin._id}
+                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selectedAdminId === admin._id ? "border-blue-500 bg-blue-50/50" : "border-gray-200 hover:border-blue-300"}`}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="radio"
+                    name="adminSelect"
+                    value={admin._id}
+                    checked={selectedAdminId === admin._id}
+                    onChange={(e) => setSelectedAdminId(e.target.value)}
+                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">
+                      {admin.name}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {admin.department || admin.email}
+                    </p>
+                  </div>
+                </div>
+              </label>
+            ))
+          )}
+        </div>
+        <div className="p-5 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50 rounded-b-2xl">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(selectedAdminId)}
+            disabled={!selectedAdminId}
+            className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            <Send size={15} /> Confirm Submit
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -428,8 +513,12 @@ const CreatePD = () => {
   const [recentVersions, setRecentVersions] = useState([]);
   const [creatorProfile, setCreatorProfile] = useState(null);
   const [availablePrograms, setAvailablePrograms] = useState([]);
+
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [currentAssignContext, setCurrentAssignContext] = useState(null);
+
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false); // Admin Submit Modal State
 
   const dropdownRef = useRef(null);
   const sidebarRef = useRef(null);
@@ -464,7 +553,7 @@ const CreatePD = () => {
     totalCredits: 160,
     academicCredits: 130,
     isNew: true,
-    status: "Draft",
+    status: "draft",
   });
   const [pdData, setPdData] = useState({ ...PREPOPULATED_DATA });
 
@@ -509,7 +598,6 @@ const CreatePD = () => {
       p.name.toLowerCase().includes(searchProgram.toLowerCase()),
   );
 
-  // Close dropdowns on outside click
   useEffect(() => {
     const fn = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target))
@@ -554,8 +642,6 @@ const CreatePD = () => {
     if (location.state?.loadId) fetchFullPD(location.state.loadId);
   }, [location.state]);
 
-  // ── API HELPERS ──────────────────────────────────────────────────────────
-
   const fetchRecentVersions = async (code) => {
     try {
       const { data } = await axios.get(`/api/creater/pd/versions/${code}`, {
@@ -592,8 +678,8 @@ const CreatePD = () => {
       });
       if (data.success) {
         populateForm(data.pd);
-        fetchRecentVersions(data.pd.programCode);
-        toast.success(`Loaded v${data.pd.pdVersion}`);
+        fetchRecentVersions(data.pd.programCode || data.pd.program_id);
+        toast.success(`Loaded v${data.pd.pdVersion || data.pd.version_no}`);
       } else toast.error(data.message);
     } catch {
       toast.error("Failed to load document");
@@ -601,8 +687,6 @@ const CreatePD = () => {
       setLoading(false);
     }
   };
-
-  // ── PDF IMPORT ───────────────────────────────────────────────────────────
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
@@ -710,82 +794,96 @@ const CreatePD = () => {
     }
   };
 
-  // ── POPULATE FORM ────────────────────────────────────────────────────────
-
   const populateForm = (pd) => {
-    const s1 = pd.section1_info,
-      s2 = pd.section2_objectives,
-      s3 = pd.section3_structure,
-      s4 = pd.section4_electives;
-    setMetaData({
-      programId: pd.programCode,
-      programCode: pd.programCode,
-      programName: s1.programName,
-      schemeYear: pd.schemeYear,
-      versionNo: pd.pdVersion,
-      effectiveAy: pd.effectiveAcademicYear,
-      totalCredits: s3.totalProgramCredits,
-      academicCredits: 130,
-      isNew: false,
-      status: pd.status || "Draft",
-    });
-    setPdData({
-      details: {
-        university: "GM University",
-        faculty: s1.faculty,
-        school: s1.school,
-        department: s1.department,
-        program_name: s1.programName,
-        director: s1.directorOfSchool,
-        hod: s1.headOfDepartment,
-        contact_email: s1.contactEmail || "",
-        contact_phone: s1.contactPhone || "",
-      },
-      award: {
-        title: s1.awardTitle,
-        mode: s1.modeOfStudy,
-        awarding_body: s1.awardingInstitution,
-        joint_award: s1.jointAward,
-        teaching_institution: s1.teachingInstitution,
-        date_program_specs: s1.dateOfProgramSpecs,
-        date_approval: s1.dateOfCourseApproval,
-        next_review: s1.nextReviewDate,
-        approving_body: s1.approvingRegulatingBody,
-        accredited_body: s1.accreditedBody,
-        accreditation_grade: s1.gradeAwarded,
-        accreditation_validity: s1.accreditationValidity,
-        benchmark: s1.programBenchmark,
-      },
-      overview: s2.programOverview,
-      peos: s2.peos,
-      pos: s2.pos,
-      psos: s2.psos,
-      credit_def: {
-        L: s3.creditDefinition.lecture,
-        T: s3.creditDefinition.tutorial,
-        P: s3.creditDefinition.practical,
-      },
-      structure_table: s3.structureTable,
-      semesters: s3.semesters.map((sem) => ({
-        sem_no: sem.semNumber,
-        courses: sem.courses,
-      })),
-      prof_electives: s4.professionalElectives.map((g) => ({
-        sem: g.semester,
-        title: g.title,
-        courses: g.courses,
-      })),
-      open_electives: s4.openElectives.map((g) => ({
-        sem: g.semester,
-        title: g.title,
-        courses: g.courses,
-      })),
-    });
+    // Adapter for Unified PD Schema
+    if (pd.pd_data) {
+      setPdData(pd.pd_data);
+      setMetaData({
+        programId: pd.program_id,
+        programCode: pd.program_id,
+        programName: pd.program_name,
+        schemeYear: pd.scheme_year,
+        versionNo: pd.version_no,
+        effectiveAy: pd.effective_ay,
+        totalCredits: pd.total_credits,
+        academicCredits: pd.academic_credits,
+        isNew: false,
+        status: pd.status || "draft",
+      });
+    } else {
+      // Legacy Structure mapping fallback
+      const s1 = pd.section1_info,
+        s2 = pd.section2_objectives,
+        s3 = pd.section3_structure,
+        s4 = pd.section4_electives;
+      setMetaData({
+        programId: pd.programCode,
+        programCode: pd.programCode,
+        programName: s1.programName,
+        schemeYear: pd.schemeYear,
+        versionNo: pd.pdVersion,
+        effectiveAy: pd.effectiveAcademicYear,
+        totalCredits: s3.totalProgramCredits,
+        academicCredits: 130,
+        isNew: false,
+        status: pd.status || "draft",
+      });
+      setPdData({
+        details: {
+          university: "GM University",
+          faculty: s1.faculty,
+          school: s1.school,
+          department: s1.department,
+          program_name: s1.programName,
+          director: s1.directorOfSchool,
+          hod: s1.headOfDepartment,
+          contact_email: s1.contactEmail || "",
+          contact_phone: s1.contactPhone || "",
+        },
+        award: {
+          title: s1.awardTitle,
+          mode: s1.modeOfStudy,
+          awarding_body: s1.awardingInstitution,
+          joint_award: s1.jointAward,
+          teaching_institution: s1.teachingInstitution,
+          date_program_specs: s1.dateOfProgramSpecs,
+          date_approval: s1.dateOfCourseApproval,
+          next_review: s1.nextReviewDate,
+          approving_body: s1.approvingRegulatingBody,
+          accredited_body: s1.accreditedBody,
+          accreditation_grade: s1.gradeAwarded,
+          accreditation_validity: s1.accreditationValidity,
+          benchmark: s1.programBenchmark,
+        },
+        overview: s2.programOverview,
+        peos: s2.peos,
+        pos: s2.pos,
+        psos: s2.psos,
+        credit_def: {
+          L: s3.creditDefinition.lecture,
+          T: s3.creditDefinition.tutorial,
+          P: s3.creditDefinition.practical,
+        },
+        structure_table: s3.structureTable,
+        semesters: s3.semesters.map((sem) => ({
+          sem_no: sem.semNumber,
+          courses: sem.courses,
+        })),
+        prof_electives: s4.professionalElectives.map((g) => ({
+          sem: g.semester,
+          title: g.title,
+          courses: g.courses,
+        })),
+        open_electives: s4.openElectives.map((g) => ({
+          sem: g.semester,
+          title: g.title,
+          courses: g.courses,
+        })),
+      });
+    }
     setContentDirty(new Set());
     setAssignDirty(new Set());
   };
-
-  // ── CHANGE HANDLERS ──────────────────────────────────────────────────────
 
   const handleMetaChange = useCallback(
     (f, v) => setMetaData((p) => ({ ...p, [f]: v })),
@@ -1129,87 +1227,36 @@ const CreatePD = () => {
     [creatorProfile],
   );
 
-  // ── SAVE ─────────────────────────────────────────────────────────────────
+  // ── SAVE LOGIC ─────────────────────────────────────────────────────────────
 
   const handleSave = useCallback(
-    async (status = "Draft") => {
+    async (status = "draft", reviewerId = null) => {
       if (!metaData.programId) return toast.error("Select a program first");
       if (!metaData.isNew && !hasAny && status === metaData.status)
         return toast.success("No changes to save.");
+
       setLoading(true);
-      const workflowOnly = !metaData.isNew && isAssignOnly;
-      const sectionsToUpdate = metaData.isNew
-        ? ["all"]
-        : Array.from(new Set([...contentDirty, ...assignDirty]));
+
+      // Adapted to new unified schema
       const payload = {
         programId: metaData.programCode,
+        programName: metaData.programName,
+        schemeYear: metaData.schemeYear,
+        effectiveAy: metaData.effectiveAy,
+        totalCredits: metaData.totalCredits,
+        academicCredits: metaData.academicCredits,
         isNewProgram: metaData.isNew,
-        sectionsToUpdate,
-        isWorkflowUpdate: workflowOnly,
-        metaData: { ...metaData, status },
-        section1Data: {
-          department: pdData.details.department,
-          programName: pdData.details.program_name,
-          directorOfSchool: pdData.details.director,
-          headOfDepartment: pdData.details.hod,
-          awardTitle: pdData.award.title,
-          modeOfStudy: pdData.award.mode,
-          awardingInstitution: pdData.award.awarding_body,
-          jointAward: pdData.award.joint_award,
-          teachingInstitution: pdData.award.teaching_institution,
-          dateOfProgramSpecs: pdData.award.date_program_specs,
-          dateOfCourseApproval: pdData.award.date_approval,
-          nextReviewDate: pdData.award.next_review,
-          approvingRegulatingBody: pdData.award.approving_body,
-          accreditedBody: pdData.award.accredited_body,
-          gradeAwarded: pdData.award.accreditation_grade,
-          accreditationValidity: pdData.award.accreditation_validity,
-          programBenchmark: pdData.award.benchmark,
-          faculty: pdData.details.faculty,
-          school: pdData.details.school,
-        },
-        section2Data: {
-          programOverview: pdData.overview,
-          peos: pdData.peos,
-          pos: pdData.pos,
-          psos: pdData.psos,
-        },
-        section3Data: {
-          creditDefinition: {
-            lecture: pdData.credit_def.L,
-            tutorial: pdData.credit_def.T,
-            practical: pdData.credit_def.P,
-          },
-          structureTable: pdData.structure_table,
-          totalProgramCredits: metaData.totalCredits,
-          semesters: pdData.semesters.map((sem) => ({
-            semNumber: sem.sem_no,
-            courses: sem.courses,
-          })),
-        },
-        section4Data: {
-          professionalElectives: pdData.prof_electives.map((g) => ({
-            semester: g.sem,
-            title: g.title,
-            courses: g.courses,
-          })),
-          openElectives: pdData.open_electives.map((g) => ({
-            semester: g.sem,
-            title: g.title,
-            courses: g.courses,
-          })),
-        },
+        status: status,
+        pdData: pdData, // pass entire state
+        reviewerId: reviewerId,
       };
+
       try {
         const { data } = await axios.post("/api/creater/pd/save", payload, {
           headers: { createrToken },
         });
         if (data.success) {
-          workflowOnly
-            ? toast.success(
-                `Assignments saved — version v${data.version} unchanged`,
-              )
-            : toast.success(data.message);
+          toast.success(data.message);
           setMetaData((p) => ({
             ...p,
             isNew: false,
@@ -1239,18 +1286,22 @@ const CreatePD = () => {
   );
 
   const handleSaveAndNext = useCallback(async () => {
-    await handleSave("Draft");
+    await handleSave("draft");
     setActiveStep((p) => Math.min(4, p + 1));
   }, [handleSave]);
+
   const handlePreview = useCallback(() => {
     if (!metaData.programId) return toast.error("Select a program first");
-    navigate("/creator/preview", { state: { pdData, metaData } });
-  }, [metaData, pdData, navigate]);
+    setShowPreviewModal(true);
+  }, [metaData.programId]);
+
+  const handleSubmitReviewClick = () => {
+    if (!metaData.programId) return toast.error("Select a program first");
+    setShowReviewModal(true); // Open selection modal
+  };
 
   const saveBtnLabel = () =>
     loading ? "Saving…" : isAssignOnly ? "Save Assignments" : "Save Draft";
-
-  // ── STEP COMPLETIONS ──────────────────────────────────────────────────────
 
   const completions = [
     !!metaData.programId,
@@ -1266,7 +1317,6 @@ const CreatePD = () => {
 
   const renderStep1 = () => (
     <div className="space-y-5">
-      {/* Institution Banner */}
       {creatorProfile && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-blue-100 bg-blue-50/60">
           <Building2 size={15} className="text-blue-400 flex-shrink-0" />
@@ -1283,7 +1333,6 @@ const CreatePD = () => {
         </div>
       )}
 
-      {/* Program Selection */}
       <SectionCard
         icon={<GraduationCap size={16} className="text-blue-500" />}
         iconBg="bg-blue-50"
@@ -1400,7 +1449,6 @@ const CreatePD = () => {
           )}
         </div>
 
-        {/* Meta row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-gray-100">
           {[
             {
@@ -1457,7 +1505,6 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
-      {/* PDF Import */}
       <SectionCard
         icon={<UploadCloud size={16} className="text-violet-500" />}
         iconBg="bg-violet-50"
@@ -1512,7 +1559,6 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
-      {/* Program Details */}
       <SectionCard
         icon={<Users size={16} className="text-gray-400" />}
         iconBg="bg-gray-100"
@@ -1536,7 +1582,6 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
-      {/* Award Details */}
       <SectionCard
         icon={<Award size={16} className="text-amber-500" />}
         iconBg="bg-amber-50"
@@ -1582,7 +1627,6 @@ const CreatePD = () => {
         />
       </SectionCard>
 
-      {/* PEOs */}
       <SectionCard
         icon={<Target size={16} className="text-indigo-500" />}
         iconBg="bg-indigo-50"
@@ -1629,7 +1673,6 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
-      {/* POs */}
       <SectionCard
         icon={<BookOpen size={16} className="text-emerald-500" />}
         iconBg="bg-emerald-50"
@@ -1679,7 +1722,6 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
-      {/* PSOs */}
       <SectionCard
         icon={<Sparkles size={16} className="text-amber-500" />}
         iconBg="bg-amber-50"
@@ -1734,7 +1776,6 @@ const CreatePD = () => {
 
   const renderStep3 = () => (
     <div className="space-y-5">
-      {/* Credit Definition */}
       <SectionCard
         icon={<Settings size={16} className="text-gray-400" />}
         iconBg="bg-gray-100"
@@ -1766,7 +1807,6 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
-      {/* Structure Table */}
       <SectionCard
         icon={<Table size={16} className="text-blue-500" />}
         iconBg="bg-blue-50"
@@ -1877,7 +1917,6 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
-      {/* Semesters */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -2263,16 +2302,11 @@ const CreatePD = () => {
     <CreatorLayout>
       <style
         dangerouslySetInnerHTML={{
-          __html: `
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
-        * { font-family: 'DM Sans', sans-serif; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-      `,
+          __html: `@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap'); * { font-family: 'DM Sans', sans-serif; } .scrollbar-hide::-webkit-scrollbar { display: none; } .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }`,
         }}
       />
 
-      {/* ── Sidebar drawer ─────────────────────────────────────────────── */}
+      {/* Sidebar Modals */}
       {showSidebar && (
         <div
           className="fixed inset-0 z-40"
@@ -2295,8 +2329,6 @@ const CreatePD = () => {
               <X size={16} />
             </button>
           </div>
-
-          {/* Progress */}
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
@@ -2352,8 +2384,6 @@ const CreatePD = () => {
               ))}
             </div>
           </div>
-
-          {/* Version History */}
           <div className="p-4 flex-1 overflow-y-auto">
             <div className="flex items-center gap-2 mb-3">
               <History size={14} className="text-gray-400" />
@@ -2378,7 +2408,7 @@ const CreatePD = () => {
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-semibold text-gray-700">
-                        v{ver.pdVersion}
+                        v{ver.version_no || ver.pdVersion}
                       </span>
                       <span
                         className={`text-[10px] font-medium px-1.5 py-0.5 rounded uppercase ${ver.status === "Approved" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}
@@ -2387,7 +2417,9 @@ const CreatePD = () => {
                       </span>
                     </div>
                     <p className="text-[10px] text-gray-400">
-                      {new Date(ver.createdAt).toLocaleDateString()}
+                      {new Date(
+                        ver.createdAt || ver.created_at,
+                      ).toLocaleDateString()}
                     </p>
                   </div>
                 ))}
@@ -2397,12 +2429,11 @@ const CreatePD = () => {
         </div>
       )}
 
-      {/* ── Page layout ─────────────────────────────────────────────────── */}
+      {/* Main Container */}
       <div className="max-w-5xl mx-auto px-3 sm:px-4 lg:px-0 pb-10">
-        {/* ── Header ───────────────────────────────────────────────────── */}
+        {/* Header */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
-            {/* Title */}
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <BookMarked size={18} className="text-gray-400 flex-shrink-0" />
@@ -2443,7 +2474,6 @@ const CreatePD = () => {
               </div>
             </div>
 
-            {/* Actions */}
             <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
               <button
                 onClick={() => setShowSidebar(true)}
@@ -2471,7 +2501,7 @@ const CreatePD = () => {
                 <span className="hidden sm:inline">Preview</span>
               </button>
               <button
-                onClick={() => handleSave("Draft")}
+                onClick={() => handleSave("draft")}
                 disabled={loading}
                 className={[
                   "flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition-colors shadow-sm disabled:opacity-40",
@@ -2484,7 +2514,7 @@ const CreatePD = () => {
                 {saveBtnLabel()}
               </button>
               <button
-                onClick={() => handleSave("UnderReview")}
+                onClick={handleSubmitReviewClick}
                 disabled={loading}
                 className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-40"
               >
@@ -2493,8 +2523,6 @@ const CreatePD = () => {
               </button>
             </div>
           </div>
-
-          {/* Step bar */}
           <StepProgressBar
             activeStep={activeStep}
             onStepClick={setActiveStep}
@@ -2502,7 +2530,7 @@ const CreatePD = () => {
           />
         </div>
 
-        {/* ── Dirty Banner ──────────────────────────────────────────────── */}
+        {/* Dirty Warning */}
         {hasAny && (
           <div
             className={[
@@ -2527,7 +2555,7 @@ const CreatePD = () => {
           </div>
         )}
 
-        {/* ── Step Content ──────────────────────────────────────────────── */}
+        {/* Step Views */}
         <div className="min-h-[400px]">
           {activeStep === 1 && renderStep1()}
           {activeStep === 2 && renderStep2()}
@@ -2535,7 +2563,7 @@ const CreatePD = () => {
           {activeStep === 4 && renderStep4()}
         </div>
 
-        {/* ── Footer Navigation ─────────────────────────────────────────── */}
+        {/* Footer */}
         <div className="mt-6 flex flex-col-reverse sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
           <button
             onClick={() => setActiveStep((p) => Math.max(1, p - 1))}
@@ -2545,7 +2573,6 @@ const CreatePD = () => {
             <ArrowLeft size={16} strokeWidth={2} />
             Previous
           </button>
-
           <div className="flex items-center justify-center gap-2">
             {STEP_CONFIG.map((step) => (
               <button
@@ -2560,7 +2587,6 @@ const CreatePD = () => {
               />
             ))}
           </div>
-
           <div className="flex items-center gap-2">
             <button
               onClick={handleSaveAndNext}
@@ -2586,7 +2612,7 @@ const CreatePD = () => {
         </div>
       </div>
 
-      {/* ── Assign Creator Modal ──────────────────────────────────────────── */}
+      {/* Modals */}
       <SearchCreator
         isOpen={isAssignModalOpen}
         onClose={() => setIsAssignModalOpen(false)}
@@ -2608,6 +2634,27 @@ const CreatePD = () => {
               creator,
             );
           setIsAssignModalOpen(false);
+        }}
+      />
+
+      {showPreviewModal && (
+        <Preview
+          isModal={true}
+          onClose={() => setShowPreviewModal(false)}
+          passedPdData={pdData}
+          passedMetaData={metaData}
+        />
+      )}
+
+      {/* Submission Admin Review Modal */}
+      <ReviewSubmitModal
+        isOpen={showReviewModal}
+        onClose={() => setShowReviewModal(false)}
+        axios={axios}
+        createrToken={createrToken}
+        onConfirm={(adminId) => {
+          setShowReviewModal(false);
+          handleSave("under_review", adminId);
         }}
       />
     </CreatorLayout>

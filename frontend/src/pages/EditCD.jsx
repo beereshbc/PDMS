@@ -10,15 +10,24 @@ import { useAppContext } from "../context/AppContext";
 import {
   Save,
   Eye,
+  BookMarked,
+  BarChart3,
   Send,
   Plus,
   Trash2,
   FileText,
   BookOpen,
-  List,
   Layers,
+  Table,
+  Calendar,
+  Hash,
+  CreditCard,
+  Search,
+  X,
+  Clock,
+  CheckCircle,
   Settings,
-  File,
+  FolderOpen,
   History,
   RefreshCw,
   ArrowRight,
@@ -26,32 +35,24 @@ import {
   ChevronRight,
   UploadCloud,
   FileUp,
-  Search,
-  X,
-  CheckCircle,
-  Book,
-  Briefcase,
-  Table,
-  Award,
-  Users,
-  Download,
   Menu,
-  Clipboard,
-  Calculator,
-  FolderOpen,
-  ChevronDown,
-  Sparkles,
-  GraduationCap,
-  BarChart3,
-  BookMarked,
-  FlaskConical,
+  AlertTriangle,
+  Info,
+  Briefcase,
+  Award,
   Target,
   TrendingUp,
   Shield,
+  Clipboard,
+  GraduationCap,
+  Sparkles,
+  FlaskConical,
+  BookUser,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useLocation, useNavigate } from "react-router-dom";
 import JoditEditor from "jodit-react";
+import PreviewCD from "../components/PreviewCD"; // Your CD Preview component
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS & HELPERS
@@ -100,98 +101,7 @@ const cleanText = (str) => {
     .replace(/Attainment\s*(?:<br\s*\/?>)?\s*Level/gi, "Attainment Level");
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HTML TABLE BUILDERS
-// ─────────────────────────────────────────────────────────────────────────────
-
-const S = {
-  tbl: "border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;",
-  th: "border:1px solid #b0b8cc;padding:8px 10px;background:#d1d5db;text-align:center;font-weight:bold;",
-  th2: "border:1px solid #b0b8cc;padding:6px 8px;background:#d1d5db;text-align:center;font-weight:bold;font-size:12px;",
-  td: "border:1px solid #b0b8cc;padding:8px 10px;text-align:center;",
-  tdl: "border:1px solid #b0b8cc;padding:8px 10px;text-align:left;",
-  tdh: "border:1px solid #b0b8cc;padding:8px 10px;text-align:center;font-weight:bold;background:#f1f5f9;",
-};
-
-const buildCourseOutcomesHtml = (cos) => {
-  const list =
-    cos && cos.length > 0
-      ? cos
-      : Array.from({ length: 6 }, (_, i) => ({
-          code: `CO${i + 1}`,
-          description: "",
-        }));
-  const rows = list
-    .map(
-      (co) =>
-        `<tr><td style="${S.tdh}width:110px;">${cleanText(co.code) || ""}</td><td style="${S.tdl}">${cleanText(co.description) || ""}</td></tr>`,
-    )
-    .join("");
-  return `<table style="${S.tbl}"><thead><tr><th style="${S.th}width:110px;">Course Outcome</th><th style="${S.th}text-align:left;">Description</th></tr></thead><tbody>${rows}</tbody></table>`;
-};
-
-const buildOutcomeMapHtml = (matrix) => {
-  if (!matrix || matrix.length === 0) {
-    matrix = [
-      DEFAULT_OUTCOME_HEADERS,
-      ...Array.from({ length: 6 }, (_, i) => [
-        `CO${i + 1}`,
-        ...Array(15).fill(""),
-      ]),
-    ];
-  }
-  const headerCells = matrix[0]
-    .map((h) => `<th style="${S.th2}">${cleanText(h)}</th>`)
-    .join("");
-  const bodyRows = matrix
-    .slice(1)
-    .map((row) => {
-      const cells = row
-        .map(
-          (cell, ci) =>
-            `<td style="${ci === 0 ? S.tdh : S.td}">${cleanText(cell)}</td>`,
-        )
-        .join("");
-      return `<tr>${cells}</tr>`;
-    })
-    .join("");
-  return `<table style="${S.tbl}"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>`;
-};
-
-const buildAssessmentWeightHtml = (data) => {
-  if (!data || data.length === 0) data = DEFAULT_ASSESSMENT_WEIGHT();
-  const bodyRows = data
-    .map(
-      (row) => `<tr>
-    <td style="${S.tdh}">${cleanText(row.co)}</td>
-    <td style="${S.td}">${row.q1 || ""}</td><td style="${S.td}">${row.q2 || ""}</td><td style="${S.td}">${row.q3 || ""}</td>
-    <td style="${S.td}">${row.t1 || ""}</td><td style="${S.td}">${row.t2 || ""}</td><td style="${S.td}">${row.t3 || ""}</td>
-    <td style="${S.td}">${row.a1 || ""}</td><td style="${S.td}">${row.a2 || ""}</td>
-    <td style="${S.tdh}">${row.cie || ""}</td><td style="${S.td}">${row.see || ""}</td>
-  </tr>`,
-    )
-    .join("");
-  const sumOf = (key) => data.reduce((s, r) => s + (r[key] || 0), 0);
-  const [sQ1, sQ2, sQ3, sT1, sT2, sT3, sA1, sA2, sCIE, sSEE] = [
-    "q1",
-    "q2",
-    "q3",
-    "t1",
-    "t2",
-    "t3",
-    "a1",
-    "a2",
-    "cie",
-    "see",
-  ].map((k) => sumOf(k) || 0);
-  const footerRow = `<tr><td style="${S.tdh}"></td><td style="${S.tdh}">${sQ1 || 5}</td><td style="${S.tdh}">${sQ2 || 4}</td><td style="${S.tdh}">${sQ3 || 6}</td><td style="${S.tdh}">${sT1 || 7}</td><td style="${S.tdh}">${sT2 || 8}</td><td style="${S.tdh}">${sT3 || 10}</td><td style="${S.tdh}">${sA1 || 10}</td><td style="${S.tdh}">${sA2 || 10}</td><td style="${S.tdh}">${sCIE || 60}</td><td style="${S.tdh}">${sSEE || 40}</td></tr>`;
-  return `<table style="${S.tbl}"><thead><tr><th rowspan="2" style="${S.th}vertical-align:middle;">Cos with<br/>weightage</th><th colspan="3" style="${S.th}">Quiz = 15 Marks</th><th colspan="3" style="${S.th}">Test = 25 Marks</th><th colspan="2" style="${S.th}">Assignment = 20 Marks</th><th rowspan="2" style="${S.th}vertical-align:middle;">CIE<br/>=60</th><th rowspan="2" style="${S.th}vertical-align:middle;">SEE<br/>=40</th></tr><tr><th style="${S.th2}">Q1<br/>=5</th><th style="${S.th2}">Q2<br/>=4</th><th style="${S.th2}">Q3<br/>=6</th><th style="${S.th2}">T1<br/>=7</th><th style="${S.th2}">T2<br/>=8</th><th style="${S.th2}">T3<br/>=10</th><th style="${S.th2}">A1 = 10</th><th style="${S.th2}">A2 = 10</th></tr></thead><tbody>${bodyRows}</tbody><tfoot>${footerRow}</tfoot></table>`;
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DATA SANITIZER
-// ─────────────────────────────────────────────────────────────────────────────
-
+// Data Sanitizer
 const sanitizeCDData = (raw = {}) => {
   let matrix = raw.outcomeMap?.matrix || [];
   const hasValidHeaders =
@@ -205,6 +115,7 @@ const sanitizeCDData = (raw = {}) => {
       ]),
     ];
   }
+
   const rawAW = Array.isArray(raw.assessmentWeight) ? raw.assessmentWeight : [];
   const assessmentWeight = DEFAULT_ASSESSMENT_WEIGHT().map((def) => {
     const found = rawAW.find((r) => r?.co?.toUpperCase() === def.co);
@@ -233,20 +144,12 @@ const sanitizeCDData = (raw = {}) => {
       total: found.total ?? 0,
     };
   });
+
   const courseOutcomes = Array.isArray(raw.courseOutcomes)
     ? raw.courseOutcomes
     : Array.isArray(raw.cos)
       ? raw.cos
       : [];
-  const courseOutcomesHtml = raw.courseOutcomesHtml
-    ? cleanText(raw.courseOutcomesHtml)
-    : buildCourseOutcomesHtml(courseOutcomes);
-  const outcomeMapHtml = raw.outcomeMapHtml
-    ? cleanText(raw.outcomeMapHtml)
-    : buildOutcomeMapHtml(matrix);
-  const assessmentWeightHtml = raw.assessmentWeightHtml
-    ? cleanText(raw.assessmentWeightHtml)
-    : buildAssessmentWeightHtml(assessmentWeight);
   return {
     courseCode: cleanText(raw.courseCode) || "",
     courseTitle: cleanText(raw.courseTitle) || "",
@@ -267,9 +170,9 @@ const sanitizeCDData = (raw = {}) => {
     objectives: cleanText(raw.objectives),
     courseContent: cleanText(raw.courseContent || raw.modules),
     gradingCriterion: cleanText(raw.gradingCriterion),
-    courseOutcomesHtml,
-    outcomeMapHtml,
-    assessmentWeightHtml,
+    courseOutcomesHtml: raw.courseOutcomesHtml || "",
+    outcomeMapHtml: raw.outcomeMapHtml || "",
+    assessmentWeightHtml: raw.assessmentWeightHtml || "",
     courseOutcomes,
     outcomeMap: { matrix, raw: cleanText(raw.outcomeMap?.raw) },
     resources: {
@@ -333,10 +236,6 @@ const transformFetchedToFrontend = (fetched = {}) => {
   return sanitizeCDData({ ...d, ...d.identity });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DESIGN TOKENS
-// ─────────────────────────────────────────────────────────────────────────────
-
 const STEP_CONFIG = [
   {
     id: 1,
@@ -344,7 +243,6 @@ const STEP_CONFIG = [
     shortLabel: "Info",
     icon: Briefcase,
     color: "blue",
-    bg: "from-blue-500 to-blue-600",
   },
   {
     id: 2,
@@ -352,7 +250,6 @@ const STEP_CONFIG = [
     shortLabel: "Details",
     icon: BookMarked,
     color: "violet",
-    bg: "from-violet-500 to-violet-600",
   },
   {
     id: 3,
@@ -360,7 +257,6 @@ const STEP_CONFIG = [
     shortLabel: "Assess",
     icon: BarChart3,
     color: "emerald",
-    bg: "from-emerald-500 to-emerald-600",
   },
   {
     id: 4,
@@ -368,39 +264,26 @@ const STEP_CONFIG = [
     shortLabel: "Other",
     icon: Shield,
     color: "amber",
-    bg: "from-amber-500 to-amber-600",
   },
 ];
 
-const COLOR_MAP = {
-  blue: {
-    ring: "ring-blue-500",
-    badge: "bg-blue-50 text-blue-700 border-blue-200",
-    icon: "bg-blue-50 text-blue-600",
-    btn: "bg-blue-600 hover:bg-blue-700 text-white",
-  },
-  violet: {
-    ring: "ring-violet-500",
-    badge: "bg-violet-50 text-violet-700 border-violet-200",
-    icon: "bg-violet-50 text-violet-600",
-    btn: "bg-violet-600 hover:bg-violet-700 text-white",
-  },
-  emerald: {
-    ring: "ring-emerald-500",
-    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    icon: "bg-emerald-50 text-emerald-600",
-    btn: "bg-emerald-600 hover:bg-emerald-700 text-white",
-  },
-  amber: {
-    ring: "ring-amber-500",
-    badge: "bg-amber-50 text-amber-700 border-amber-200",
-    icon: "bg-amber-50 text-amber-600",
-    btn: "bg-amber-600 hover:bg-amber-700 text-white",
-  },
-};
+const identityFields = [
+  { label: "Course Code", key: "courseCode", required: true },
+  { label: "Course Title", key: "courseTitle", required: true },
+  { label: "Program Code", key: "programCode" },
+  { label: "Program Title", key: "programTitle" },
+  { label: "School Code", key: "schoolCode" },
+  { label: "School Title", key: "schoolTitle" },
+  { label: "Department Code", key: "departmentCode" },
+  { label: "Department", key: "department" },
+  { label: "Faculty Code", key: "facultyCode" },
+  { label: "Faculty Title", key: "facultyTitle" },
+  { label: "Offering Department", key: "offeringDepartment" },
+  { label: "Faculty Member", key: "facultyMember" },
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OPTIMIZED INPUT
+// REUSABLE UI COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
 const OptimizedInput = ({
@@ -419,7 +302,7 @@ const OptimizedInput = ({
       if (local !== value) onChange(local);
     }, debounceTime);
     return () => clearTimeout(t);
-  }, [local]);
+  }, [local, value, onChange, debounceTime]);
   return (
     <input
       {...rest}
@@ -429,19 +312,12 @@ const OptimizedInput = ({
         if (local !== value) onChange(e.target.value);
       }}
       className={[
-        "w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg",
-        "text-sm text-gray-800 placeholder-gray-400",
-        "focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400",
-        "transition-all duration-150",
+        `w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-150`,
         className,
       ].join(" ")}
     />
   );
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// RICH TEXT EDITOR WRAPPER
-// ─────────────────────────────────────────────────────────────────────────────
 
 const RichTextEditor = ({ value, onChange, placeholder, height = 220 }) => {
   const config = useMemo(
@@ -491,13 +367,8 @@ const RichTextEditor = ({ value, onChange, placeholder, height = 220 }) => {
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STEP PROGRESS BAR
-// ─────────────────────────────────────────────────────────────────────────────
-
 const StepProgressBar = React.memo(({ activeStep, onStepClick }) => (
   <div className="w-full">
-    {/* Mobile: compact pill tabs */}
     <div className="flex sm:hidden gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
       {STEP_CONFIG.map((step) => (
         <button
@@ -515,8 +386,6 @@ const StepProgressBar = React.memo(({ activeStep, onStepClick }) => (
         </button>
       ))}
     </div>
-
-    {/* Tablet+: full step indicator */}
     <div className="hidden sm:flex items-center gap-0 bg-white border border-gray-200 rounded-xl p-1.5 shadow-sm">
       {STEP_CONFIG.map((step, idx) => (
         <React.Fragment key={step.id}>
@@ -548,7 +417,6 @@ const StepProgressBar = React.memo(({ activeStep, onStepClick }) => (
               )}
             </span>
             <span className="hidden md:block truncate">{step.label}</span>
-            <span className="block md:hidden">{step.shortLabel}</span>
           </button>
           {idx < STEP_CONFIG.length - 1 && (
             <ChevronRight
@@ -562,10 +430,6 @@ const StepProgressBar = React.memo(({ activeStep, onStepClick }) => (
   </div>
 ));
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SECTION CARD WRAPPER
-// ─────────────────────────────────────────────────────────────────────────────
-
 const SectionCard = ({ children, className = "" }) => (
   <div
     className={`bg-white rounded-2xl border border-gray-100 shadow-sm ${className}`}
@@ -573,10 +437,6 @@ const SectionCard = ({ children, className = "" }) => (
     {children}
   </div>
 );
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SECTION HEADER
-// ─────────────────────────────────────────────────────────────────────────────
 
 const SectionHeader = ({ icon, iconBg, title, subtitle, action, compact }) => (
   <div
@@ -603,10 +463,6 @@ const SectionHeader = ({ icon, iconBg, title, subtitle, action, compact }) => (
   </div>
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FIELD LABEL
-// ─────────────────────────────────────────────────────────────────────────────
-
 const FieldLabel = ({ children, required }) => (
   <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">
     {children}
@@ -614,18 +470,8 @@ const FieldLabel = ({ children, required }) => (
   </label>
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RESOURCE LIST
-// ─────────────────────────────────────────────────────────────────────────────
-
-const ResourceList = ({
-  label,
-  accentClass,
-  items,
-  onChange,
-  className = "",
-}) => (
-  <div className={`space-y-2 ${className}`}>
+const ResourceList = ({ label, items, onChange }) => (
+  <div className="space-y-2">
     <div className="flex items-center justify-between">
       <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
         {label}
@@ -651,7 +497,7 @@ const ResourceList = ({
               arr[i] = e.target.value;
               onChange(arr);
             }}
-            className="flex-1 px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all placeholder-gray-300"
+            className="flex-1 px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all placeholder-gray-300"
             placeholder="Enter resource details…"
           />
           <button
@@ -672,7 +518,7 @@ const ResourceList = ({
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PASTE MODAL
+// COMPLEX EDITORS (Paste, Outcomes, Assessment)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PasteModal = ({
@@ -681,7 +527,6 @@ const PasteModal = ({
   placeholder,
   onClose,
   onConfirm,
-  accentColor = "indigo",
 }) => {
   const [raw, setRaw] = useState("");
   return (
@@ -729,42 +574,48 @@ const PasteModal = ({
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OUTCOME MAP EDITOR
-// ─────────────────────────────────────────────────────────────────────────────
-
-const OutcomeMapEditor = ({ matrix, onChange }) => {
+const OutcomeMapEditor = ({ matrix, onChange, markDirty }) => {
   const [showPaste, setShowPaste] = useState(false);
-
-  const setCell = (r, c, v) =>
+  const setCell = (r, c, v) => {
+    markDirty("outcomeMap");
     onChange(
       matrix.map((row, ri) =>
         ri === r ? row.map((cell, ci) => (ci === c ? v : cell)) : row,
       ),
     );
+  };
   const addRow = () => {
     if (!matrix.length) return;
+    markDirty("outcomeMap");
     const newRow = Array(matrix[0].length).fill("");
     newRow[0] = `CO${matrix.length}`;
     onChange([...matrix, newRow]);
   };
-  const addCol = () => onChange(matrix.map((row) => [...row, ""]));
+  const addCol = () => {
+    markDirty("outcomeMap");
+    onChange(matrix.map((row) => [...row, ""]));
+  };
   const delRow = (ri) => {
-    if (ri !== 0) onChange(matrix.filter((_, i) => i !== ri));
+    if (ri !== 0) {
+      markDirty("outcomeMap");
+      onChange(matrix.filter((_, i) => i !== ri));
+    }
   };
   const delCol = (ci) => {
-    if (ci !== 0) onChange(matrix.map((row) => row.filter((_, i) => i !== ci)));
+    if (ci !== 0) {
+      markDirty("outcomeMap");
+      onChange(matrix.map((row) => row.filter((_, i) => i !== ci)));
+    }
   };
 
   const handlePaste = (raw) => {
     if (!raw.trim()) return;
     const lines = raw.trim().split(/\r?\n/);
-    const newMatrix = lines.map((line) => {
-      const cols = line.includes("\t")
-        ? line.split("\t")
-        : line.split(/\s{2,}/);
-      return cols.map((c) => c.trim());
-    });
+    const newMatrix = lines.map((line) =>
+      line.includes("\t")
+        ? line.split("\t").map((c) => c.trim())
+        : line.split(/\s{2,}/).map((c) => c.trim()),
+    );
     if (newMatrix.length > 0) {
       let poIdx = 1,
         psoIdx = 1;
@@ -777,6 +628,7 @@ const OutcomeMapEditor = ({ matrix, onChange }) => {
       });
     }
     const maxLen = Math.max(...newMatrix.map((r) => r.length));
+    markDirty("outcomeMap");
     onChange(
       newMatrix.map((r) => [...r, ...Array(maxLen - r.length).fill("")]),
     );
@@ -792,15 +644,16 @@ const OutcomeMapEditor = ({ matrix, onChange }) => {
           No outcome map defined yet.
         </p>
         <button
-          onClick={() =>
+          onClick={() => {
+            markDirty("outcomeMap");
             onChange([
               DEFAULT_OUTCOME_HEADERS,
               ...Array.from({ length: 6 }, (_, i) => [
                 `CO${i + 1}`,
                 ...Array(15).fill(""),
               ]),
-            ])
-          }
+            ]);
+          }}
           className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 font-medium shadow-sm transition-colors"
         >
           Initialize default grid
@@ -885,7 +738,6 @@ const OutcomeMapEditor = ({ matrix, onChange }) => {
           </tbody>
         </table>
       </div>
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-2">
           <button
@@ -905,16 +757,14 @@ const OutcomeMapEditor = ({ matrix, onChange }) => {
           onClick={() => setShowPaste(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
         >
-          <Clipboard size={12} className="text-violet-500" /> Paste from Word /
-          Excel
+          <Clipboard size={12} className="text-violet-500" /> Paste Data
         </button>
       </div>
-
       {showPaste && (
         <PasteModal
           title="Paste Outcome Matrix"
-          description="Copy the table from MS Word, Excel, or PDF and paste below. Columns separated by tabs or double spaces."
-          placeholder={"COs\tPO1\tPO2\t...\nCO1\t1\t2\t..."}
+          description="Copy the table from MS Word/Excel and paste below. Columns separated by tabs."
+          placeholder={"COs\tPO1\tPO2\nCO1\t1\t2"}
           onClose={() => setShowPaste(false)}
           onConfirm={handlePaste}
         />
@@ -922,10 +772,6 @@ const OutcomeMapEditor = ({ matrix, onChange }) => {
     </div>
   );
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ASSESSMENT WEIGHT TABLE EDITOR
-// ─────────────────────────────────────────────────────────────────────────────
 
 const AssessmentWeightEditor = ({ data, onChange, markDirty }) => {
   const [showPaste, setShowPaste] = useState(false);
@@ -1141,14 +987,239 @@ const AssessmentWeightEditor = ({ data, onChange, markDirty }) => {
       {showPaste && (
         <PasteModal
           title="Paste Assessment Weights"
-          description="Paste rows starting with CO1, CO2… Supports both detailed (11-column) and aggregated (4-column) formats. CIE and Total are auto-calculated."
-          placeholder={
-            "CO1\t2\t4\t0\t30\t0\t6\t0\t30\t36\t42\t78\nCO2\t5\t5\t10\t20"
-          }
+          description="Paste rows starting with CO1, CO2… Supports detailed (11-col) and aggregated (4-col) formats."
+          placeholder={"CO1\t2\t4\t0\t30\t0\t6\t0\t30\t36\t42\t78"}
           onClose={() => setShowPaste(false)}
           onConfirm={handlePaste}
         />
       )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN SELECTION MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ReviewSubmitModal = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  axios,
+  createrToken,
+}) => {
+  const [admins, setAdmins] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedAdminId, setSelectedAdminId] = useState("");
+
+  useEffect(() => {
+    if (isOpen) {
+      const fetchAdmins = async () => {
+        setLoading(true);
+        try {
+          const { data } = await axios.get("/api/creater/cd/review-admins", {
+            headers: { createrToken },
+          });
+          if (data.success) setAdmins(data.admins);
+        } catch {
+          toast.error("Failed to load reviewers.");
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchAdmins();
+    }
+  }, [isOpen, axios, createrToken]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div>
+            <h3 className="text-base font-semibold text-gray-800">
+              Submit for Review
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Select an Admin / Reviewer
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:bg-gray-100 p-1.5 rounded-lg transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5 max-h-[300px] overflow-y-auto space-y-2">
+          {loading ? (
+            <div className="flex justify-center py-6">
+              <RefreshCw className="animate-spin text-gray-400" size={20} />
+            </div>
+          ) : admins.length === 0 ? (
+            <div className="text-center py-6 text-sm text-gray-400">
+              No active admins available.
+            </div>
+          ) : (
+            admins.map((admin) => (
+              <label
+                key={admin._id}
+                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selectedAdminId === admin._id ? "border-blue-500 bg-blue-50/50" : "border-gray-200 hover:border-blue-300"}`}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="radio"
+                    value={admin._id}
+                    checked={selectedAdminId === admin._id}
+                    onChange={(e) => setSelectedAdminId(e.target.value)}
+                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">
+                      {admin.name}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {admin.department || admin.email}
+                    </p>
+                  </div>
+                </div>
+              </label>
+            ))
+          )}
+        </div>
+        <div className="p-5 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50 rounded-b-2xl">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(selectedAdminId)}
+            disabled={!selectedAdminId}
+            className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            <Send size={15} /> Confirm Submit
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ASSIGNED COURSES MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+
+const AssignedCDsModal = ({
+  isOpen,
+  onClose,
+  axios,
+  createrToken,
+  onLoadAssigned,
+}) => {
+  const [assignedCourses, setAssignedCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (isOpen) {
+      const fetchAssigned = async () => {
+        setLoading(true);
+        try {
+          const { data } = await axios.get("/api/creater/cd/assigned", {
+            headers: { createrToken },
+          });
+          if (data.success) setAssignedCourses(data.assignedCourses);
+        } catch {
+          toast.error("Failed to load assigned courses.");
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchAssigned();
+    }
+  }, [isOpen, axios, createrToken]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+              <BookOpen size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-gray-800">
+                Assigned Courses
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Courses assigned to you by Program Coordinators.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:bg-gray-100 p-2 rounded-xl transition-colors"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-5 overflow-y-auto flex-1 bg-gray-50/50">
+          {loading ? (
+            <div className="flex justify-center py-10">
+              <RefreshCw className="animate-spin text-gray-400" size={24} />
+            </div>
+          ) : assignedCourses.length === 0 ? (
+            <div className="text-center py-10 text-gray-500 text-sm">
+              No courses assigned to you currently.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {assignedCourses.map((c, i) => (
+                <div
+                  key={i}
+                  className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-indigo-300 transition-colors shadow-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-3 mb-1">
+                      <span className="font-bold text-gray-800">
+                        {c.courseCode}
+                      </span>
+                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded uppercase">
+                        {c.type || "Theory"}
+                      </span>
+                    </div>
+                    <p className="text-sm font-semibold text-gray-700 truncate">
+                      {c.courseTitle}
+                    </p>
+                    <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                      <span className="font-medium text-gray-700">
+                        {c.programName}
+                      </span>
+                      <span>•</span>
+                      <span>{c.context}</span>
+                      <span>•</span>
+                      <span className="text-gray-400">
+                        Assigned by: {c.pdCreatorName}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onLoadAssigned(c)}
+                    className="flex items-center justify-center w-full sm:w-auto gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 shadow-sm transition-colors flex-shrink-0"
+                  >
+                    <FileText size={14} /> Start Drafting
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
@@ -1245,15 +1316,23 @@ const EditCD = () => {
   const location = useLocation();
   const { axios, createrToken } = useAppContext();
 
+  // ── 1. CORE STATE ─────────────────────────────────────────────────────────
   const [activeStep, setActiveStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  // Modals & UI States
+  const [showSidebar, setShowSidebar] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showAssignedModal, setShowAssignedModal] = useState(false);
+
+  // Data
   const [extractedCourses, setExtractedCourses] = useState([]);
   const [recentVersions, setRecentVersions] = useState([]);
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [cdHistoryList, setCdHistoryList] = useState([]);
   const [historySearch, setHistorySearch] = useState("");
-  const [showSidebar, setShowSidebar] = useState(false);
   const [dirtySections, setDirtySections] = useState(new Set());
 
   const fileInputRef = useRef(null);
@@ -1262,6 +1341,7 @@ const EditCD = () => {
     (section) => setDirtySections((prev) => new Set(prev).add(section)),
     [],
   );
+  const hasContent = dirtySections.size > 0;
 
   const [metaData, setMetaData] = useState({
     courseId: "",
@@ -1274,6 +1354,8 @@ const EditCD = () => {
   });
   const [cdData, setCdData] = useState(sanitizeCDData({}));
 
+  // ── 2. EFFECTS ─────────────────────────────────────────────────────────────
+
   useEffect(() => {
     const handler = (e) => {
       if (sidebarRef.current && !sidebarRef.current.contains(e.target))
@@ -1285,7 +1367,9 @@ const EditCD = () => {
 
   useEffect(() => {
     if (location.state?.loadId) fetchFullCD(location.state.loadId);
-  }, [location.state]);
+  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 3. API CALLS ───────────────────────────────────────────────────────────
 
   const fetchRecentVersions = async (courseCode) => {
     try {
@@ -1309,8 +1393,9 @@ const EditCD = () => {
             !uniqueMap.has(cd.courseCode) ||
             new Date(cd.updatedAt) >
               new Date(uniqueMap.get(cd.courseCode).updatedAt)
-          )
+          ) {
             uniqueMap.set(cd.courseCode, cd);
+          }
         });
         setCdHistoryList(Array.from(uniqueMap.values()));
       }
@@ -1435,51 +1520,118 @@ const EditCD = () => {
     setExtractedCourses([]);
   };
 
-  const handleSave = async (statusOverride) => {
-    if (!metaData.courseCode) return toast.error("Course Code is required.");
-    const status = statusOverride || metaData.status;
-    if (
-      !metaData.isNew &&
-      dirtySections.size === 0 &&
-      status === metaData.status
-    )
-      return toast.success("No changes to save.");
+  // ── 4. ACTION BUTTON HANDLERS ──────────────────────────────────────────────
+
+  const handleSave = useCallback(
+    async (statusOverride, reviewerId = null) => {
+      if (!metaData.courseCode) return toast.error("Course Code is required.");
+      const status = statusOverride || metaData.status;
+      if (!metaData.isNew && !hasContent && status === metaData.status)
+        return toast.success("No changes to save.");
+
+      setLoading(true);
+      const payload = {
+        courseCode: metaData.courseCode,
+        courseTitle: metaData.courseTitle,
+        programName: metaData.programName,
+        isNewCD: metaData.isNew,
+        status: status,
+        sectionsToUpdate: metaData.isNew ? ["all"] : Array.from(dirtySections),
+        cdData: transformForSave(cdData),
+        reviewerId: reviewerId,
+      };
+
+      try {
+        const { data } = await axios.post("/api/creater/cd/save", payload, {
+          headers: { createrToken },
+        });
+        if (data.success) {
+          toast.success(data.message);
+          setMetaData((p) => ({
+            ...p,
+            isNew: false,
+            versionNo: data.version,
+            status,
+          }));
+          fetchRecentVersions(metaData.courseCode);
+          setDirtySections(new Set());
+        } else toast.error(data.message);
+      } catch (err) {
+        console.error("Save Error:", err.response?.data || err);
+        toast.error(
+          err.response?.data?.message || "Save failed. Please check inputs.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [metaData, cdData, dirtySections, hasContent, axios, createrToken],
+  );
+
+  const handleSaveAndNext = useCallback(async () => {
+    await handleSave("Draft");
+    setActiveStep((p) => Math.min(4, p + 1));
+  }, [handleSave]);
+
+  const handlePreview = useCallback(() => {
+    if (!metaData.courseCode)
+      return toast.error("Course Code is required to preview.");
+    setShowPreviewModal(true);
+  }, [metaData.courseCode]);
+
+  const handleSubmitReviewClick = useCallback(() => {
+    if (!metaData.courseCode)
+      return toast.error("Course Code is required to submit.");
+    setShowReviewModal(true);
+  }, [metaData.courseCode]);
+
+  // Load Assigned Course
+  const handleLoadAssignedCourse = async (course) => {
+    setShowAssignedModal(false);
     setLoading(true);
-    const payload = {
-      courseCode: metaData.courseCode,
-      courseTitle: metaData.courseTitle,
-      programName: metaData.programName,
-      isNewCD: metaData.isNew,
-      status,
-      sectionsToUpdate: metaData.isNew ? ["all"] : Array.from(dirtySections),
-      cdData: transformForSave(cdData),
-    };
     try {
-      const { data } = await axios.post("/api/creater/cd/save", payload, {
-        headers: { createrToken },
-      });
-      if (data.success) {
-        toast.success(data.message);
-        setMetaData((p) => ({
-          ...p,
-          isNew: false,
-          versionNo: data.version,
-          status,
-        }));
-        fetchRecentVersions(metaData.courseCode);
-        setDirtySections(new Set());
-      } else toast.error(data.message);
-    } catch (_) {
-      toast.error("Save failed. Schema validation error likely.");
+      const { data } = await axios.get(
+        `/api/creater/cd/latest/${course.courseCode}`,
+        { headers: { createrToken } },
+      );
+      if (data.success && data.cd) {
+        populateForm(data.cd);
+        toast.success(`Loaded existing document for ${course.courseCode}`);
+        fetchRecentVersions(course.courseCode);
+      } else {
+        throw new Error("Not found");
+      }
+    } catch (error) {
+      setMetaData((p) => ({
+        ...p,
+        courseCode: course.courseCode,
+        courseTitle: course.courseTitle,
+        programName: course.programName,
+        programCode: course.programCode,
+        isNew: true,
+      }));
+      setCdData((p) => ({
+        ...p,
+        identity: {
+          ...p.identity,
+          courseCode: course.courseCode,
+          courseTitle: course.courseTitle,
+          programCode: course.programCode,
+          programTitle: course.programName,
+        },
+        credits: {
+          ...p.credits,
+          total: course.credits || 0,
+        },
+      }));
+      toast.success(`Ready to draft ${course.courseCode}`);
+      setDirtySections(new Set(["all"]));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSaveAndNext = async () => {
-    await handleSave("Draft");
-    setActiveStep((p) => Math.min(4, p + 1));
-  };
+  // ── 5. MUTATION HELPERS ────────────────────────────────────────────────────
 
   const upd = (field, val) => {
     markDirty("basic");
@@ -1493,7 +1645,6 @@ const EditCD = () => {
     markDirty("resources");
     setCdData((p) => ({ ...p, resources: { ...p.resources, [key]: arr } }));
   };
-
   const updTeaching = (idx, field, val) => {
     markDirty("teaching");
     setCdData((p) => {
@@ -1532,31 +1683,11 @@ const EditCD = () => {
   );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // IDENTITY FIELDS CONFIG
-  // ─────────────────────────────────────────────────────────────────────────
-
-  const identityFields = [
-    { label: "Course Code", key: "courseCode", required: true },
-    { label: "Course Title", key: "courseTitle", required: true },
-    { label: "Program Code", key: "programCode" },
-    { label: "Program Title", key: "programTitle" },
-    { label: "School Code", key: "schoolCode" },
-    { label: "School Title", key: "schoolTitle" },
-    { label: "Department Code", key: "departmentCode" },
-    { label: "Department", key: "department" },
-    { label: "Faculty Code", key: "facultyCode" },
-    { label: "Faculty Title", key: "facultyTitle" },
-    { label: "Offering Department", key: "offeringDepartment" },
-    { label: "Faculty Member", key: "facultyMember" },
-  ];
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER STEPS
+  // 6. RENDER STEPS
   // ─────────────────────────────────────────────────────────────────────────
 
   const renderStep1 = () => (
     <div className="space-y-5">
-      {/* Import Banner */}
       <SectionCard>
         <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -1597,7 +1728,6 @@ const EditCD = () => {
         </div>
       </SectionCard>
 
-      {/* Course Identity */}
       <SectionCard>
         <div className="p-5 pb-0">
           <SectionHeader
@@ -1640,7 +1770,6 @@ const EditCD = () => {
         </div>
       </SectionCard>
 
-      {/* Credits */}
       <SectionCard>
         <div className="p-5 pb-0">
           <SectionHeader
@@ -1745,7 +1874,6 @@ const EditCD = () => {
           />
         </div>
       </SectionCard>
-
       <SectionCard>
         <div className="p-5 pb-0">
           <SectionHeader
@@ -1756,18 +1884,16 @@ const EditCD = () => {
           />
         </div>
         <div className="px-5 pb-5">
-          <RichTextEditor
-            value={cdData.outcomeMapHtml}
+          <OutcomeMapEditor
+            matrix={cdData.outcomeMap.matrix}
             onChange={(m) => {
               markDirty("outcomeMap");
-              upd("outcomeMapHtml", m);
+              updN("outcomeMap", "matrix", m);
             }}
-            height={280}
-            placeholder="Paste outcome mapping table here…"
+            markDirty={markDirty}
           />
         </div>
       </SectionCard>
-
       <SectionCard>
         <div className="p-5 pb-0">
           <SectionHeader
@@ -1785,7 +1911,6 @@ const EditCD = () => {
           />
         </div>
       </SectionCard>
-
       <SectionCard>
         <div className="p-5 pb-0">
           <SectionHeader
@@ -1823,7 +1948,6 @@ const EditCD = () => {
 
   const renderStep3 = () => (
     <div className="space-y-5">
-      {/* Teaching Schedule */}
       <SectionCard>
         <div className="p-5 pb-0">
           <SectionHeader
@@ -1927,8 +2051,7 @@ const EditCD = () => {
                         size={24}
                         className="text-gray-200 mx-auto mb-2"
                       />
-                      No lectures yet. Click "Add Lecture" above or import a
-                      PDF.
+                      No lectures yet. Click "Add Lecture" above.
                     </td>
                   </tr>
                 )}
@@ -1937,8 +2060,6 @@ const EditCD = () => {
           </div>
         </div>
       </SectionCard>
-
-      {/* Assessment Weight */}
       <SectionCard>
         <div className="p-5 pb-0">
           <SectionHeader
@@ -1949,19 +2070,16 @@ const EditCD = () => {
           />
         </div>
         <div className="px-5 pb-5">
-          <RichTextEditor
-            value={cdData.assessmentWeightHtml}
-            onChange={(c) => {
+          <AssessmentWeightEditor
+            data={cdData.assessmentWeight}
+            onChange={(d) => {
               markDirty("assessmentWeight");
-              upd("assessmentWeightHtml", c);
+              upd("assessmentWeight", d);
             }}
-            height={320}
-            placeholder="Assessment weight table will appear here…"
+            markDirty={markDirty}
           />
         </div>
       </SectionCard>
-
-      {/* Grading */}
       <SectionCard>
         <div className="p-5 pb-0">
           <SectionHeader
@@ -1982,8 +2100,6 @@ const EditCD = () => {
           />
         </div>
       </SectionCard>
-
-      {/* Attainment */}
       <SectionCard>
         <div className="p-5 pb-0">
           <SectionHeader
@@ -2074,25 +2190,14 @@ const EditCD = () => {
   ];
 
   // ─────────────────────────────────────────────────────────────────────────
-  // RENDER
+  // MAIN RENDER
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <CreatorLayout>
       <style
         dangerouslySetInnerHTML={{
-          __html: `
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
-        .jodit-wysiwyg ul { list-style-type: none !important; padding-left: 20px !important; margin-bottom: 10px; }
-        .jodit-wysiwyg ul li { position: relative; margin-bottom: 6px; text-align: justify; }
-        .jodit-wysiwyg ul li::before { content: "●"; position: absolute; left: -18px; color: black; font-size: 1.1em; }
-        .jodit-wysiwyg ol { list-style-type: decimal !important; padding-left: 25px !important; margin-bottom: 10px; }
-        .jodit-wysiwyg li { margin-bottom: 6px; text-align: justify; }
-        .jodit-wysiwyg p { margin-bottom: 8px; text-align: justify; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-        * { font-family: 'DM Sans', sans-serif; }
-      `,
+          __html: `@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap'); .jodit-wysiwyg ul { list-style-type: none !important; padding-left: 20px !important; margin-bottom: 10px; } .jodit-wysiwyg ul li { position: relative; margin-bottom: 6px; text-align: justify; } .jodit-wysiwyg ul li::before { content: "●"; position: absolute; left: -18px; color: black; font-size: 1.1em; } .jodit-wysiwyg ol { list-style-type: decimal !important; padding-left: 25px !important; margin-bottom: 10px; } .jodit-wysiwyg li { margin-bottom: 6px; text-align: justify; } .jodit-wysiwyg p { margin-bottom: 8px; text-align: justify; } .scrollbar-hide::-webkit-scrollbar { display: none; } .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; } * { font-family: 'DM Sans', sans-serif; }`,
         }}
       />
 
@@ -2165,6 +2270,15 @@ const EditCD = () => {
         />
       )}
 
+      {/* ── Assigned Courses Modal (NEW) ─────────────────────────────────── */}
+      <AssignedCDsModal
+        isOpen={showAssignedModal}
+        onClose={() => setShowAssignedModal(false)}
+        axios={axios}
+        createrToken={createrToken}
+        onLoadAssigned={handleLoadAssignedCourse}
+      />
+
       {/* ── Sidebar Overlay ─────────────────────────────────── */}
       {showSidebar && (
         <div
@@ -2192,8 +2306,6 @@ const EditCD = () => {
               <X size={16} />
             </button>
           </div>
-
-          {/* Progress */}
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center justify-between mb-3">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
@@ -2237,8 +2349,6 @@ const EditCD = () => {
               ))}
             </div>
           </div>
-
-          {/* Version History */}
           <div className="p-4 flex-1 overflow-y-auto">
             <div className="flex items-center gap-2 mb-3">
               <History size={14} className="text-gray-400" />
@@ -2265,7 +2375,9 @@ const EditCD = () => {
                       <span className="text-xs font-semibold text-gray-700 group-hover:text-gray-900">
                         v{ver.cdVersion}
                       </span>
-                      <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded uppercase">
+                      <span
+                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded uppercase ${ver.status === "Approved" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}
+                      >
                         {ver.status}
                       </span>
                     </div>
@@ -2280,12 +2392,11 @@ const EditCD = () => {
         </div>
       )}
 
-      {/* ── Page Layout ─────────────────────────────────────────────────── */}
+      {/* Main Container */}
       <div className="max-w-5xl mx-auto px-3 sm:px-4 lg:px-0 pb-10">
-        {/* ── Page Header ─────────────────────────────────────────────────── */}
+        {/* Header */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
-            {/* Title Block */}
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <GraduationCap
@@ -2308,7 +2419,7 @@ const EditCD = () => {
                     <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md uppercase tracking-widest border border-gray-200">
                       v{metaData.versionNo}
                     </span>
-                    {dirtySections.size > 0 && (
+                    {hasContent && (
                       <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
                         Unsaved changes
                       </span>
@@ -2322,8 +2433,16 @@ const EditCD = () => {
               </div>
             </div>
 
-            {/* Action Buttons */}
             <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+              {/* NEW Assigned CDs Button */}
+              <button
+                onClick={() => setShowAssignedModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 shadow-sm transition-colors"
+              >
+                <BookUser size={14} />{" "}
+                <span className="hidden sm:inline">Assigned CDs</span>
+              </button>
+
               <button
                 onClick={() => {
                   fetchCreatorHistory();
@@ -2353,11 +2472,7 @@ const EditCD = () => {
                 <span className="hidden sm:inline">Fetch Latest</span>
               </button>
               <button
-                onClick={() =>
-                  navigate("/creator/preview-cd", {
-                    state: { cdData: transformForSave(cdData), metaData },
-                  })
-                }
+                onClick={handlePreview}
                 disabled={!metaData.courseCode}
                 className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors disabled:opacity-40"
               >
@@ -2376,17 +2491,34 @@ const EditCD = () => {
                 )}
                 Save Draft
               </button>
+              <button
+                onClick={handleSubmitReviewClick}
+                disabled={loading || !metaData.courseCode}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-40"
+              >
+                <Send size={14} />
+                Submit
+              </button>
             </div>
           </div>
-
-          {/* Step Progress */}
           <StepProgressBar
             activeStep={activeStep}
             onStepClick={setActiveStep}
           />
         </div>
 
-        {/* ── Step Content ─────────────────────────────────────────────────── */}
+        {hasContent && (
+          <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl border text-xs mb-5 bg-yellow-50 border-yellow-200 text-yellow-700">
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            <p className="font-medium">
+              Unsaved content in:{" "}
+              {Array.from(dirtySections)
+                .map((s) => s.replace("section", "Section "))
+                .join(", ")}
+            </p>
+          </div>
+        )}
+
         <div className="min-h-[400px]">
           {activeStep === 1 && renderStep1()}
           {activeStep === 2 && renderStep2()}
@@ -2394,7 +2526,6 @@ const EditCD = () => {
           {activeStep === 4 && renderStep4()}
         </div>
 
-        {/* ── Step Navigation ─────────────────────────────────────────────── */}
         <div className="mt-6 flex flex-col-reverse sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
           <button
             onClick={() => setActiveStep((p) => Math.max(1, p - 1))}
@@ -2403,7 +2534,6 @@ const EditCD = () => {
           >
             <ArrowLeft size={16} strokeWidth={2} /> Previous
           </button>
-
           <div className="flex items-center justify-center gap-2">
             {STEP_CONFIG.map((step) => (
               <button
@@ -2413,7 +2543,6 @@ const EditCD = () => {
               />
             ))}
           </div>
-
           <div className="flex items-center gap-2">
             <button
               onClick={handleSaveAndNext}
@@ -2437,6 +2566,28 @@ const EditCD = () => {
           </div>
         </div>
       </div>
+
+      {/* ── Document Preview Modal ──────────────────────────────────────────── */}
+      {showPreviewModal && (
+        <PreviewCD
+          isModal={true}
+          onClose={() => setShowPreviewModal(false)}
+          passedCdData={transformForSave(cdData)}
+          passedMetaData={metaData}
+        />
+      )}
+
+      {/* Submission Admin Review Modal */}
+      <ReviewSubmitModal
+        isOpen={showReviewModal}
+        onClose={() => setShowReviewModal(false)}
+        axios={axios}
+        createrToken={createrToken}
+        onConfirm={(adminId) => {
+          setShowReviewModal(false);
+          handleSave("UnderReview", adminId);
+        }}
+      />
     </CreatorLayout>
   );
 };

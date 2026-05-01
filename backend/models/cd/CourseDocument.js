@@ -38,6 +38,16 @@ const CourseDocumentSchema = new mongoose.Schema(
       default: "Draft",
     },
 
+    // <--- NEW: Added Review/Rejection message fields for Admin workflows
+    rejectionMessage: {
+      type: String,
+      default: "",
+    },
+    reviewComment: {
+      type: String,
+      default: "",
+    },
+
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Creater",

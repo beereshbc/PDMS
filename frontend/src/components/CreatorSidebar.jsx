@@ -1,24 +1,29 @@
 import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   FilePlus,
-  FilePenLine, // Added for Edit CD
+  FilePenLine,
   History,
   LogOut,
   FileText,
   Menu,
   DockIcon,
 } from "lucide-react";
+import { useAppContext } from "../context/AppContext"; // Make sure this path matches your folder structure
 
 const CreatorSidebar = () => {
   const location = useLocation();
   const currentPath = location.pathname;
+  const navigate = useNavigate();
+
+  // Bring in the setter from your context to clear global state
+  const { setCreaterToken } = useAppContext();
 
   // State to manage sidebar expansion
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Optional: Auto-collapse on small screens
+  // Auto-collapse on small screens
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 1024) {
@@ -29,6 +34,18 @@ const CreatorSidebar = () => {
     handleResize(); // Check on mount
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // --- Logout Function ---
+  const handleLogout = () => {
+    // 1. Remove the token from localStorage
+    localStorage.removeItem("createrToken");
+
+    // 2. Clear the token from the React context state
+    setCreaterToken(null);
+
+    // 3. Redirect the user to the login screen
+    navigate("/login");
+  };
 
   const menuItems = [
     {
@@ -44,7 +61,7 @@ const CreatorSidebar = () => {
     {
       name: "Edit CD",
       path: "/creator/edit-cd",
-      icon: FilePenLine, // Navigates to the new Edit CD page
+      icon: FilePenLine,
     },
     {
       name: "PD History",
@@ -134,6 +151,7 @@ const CreatorSidebar = () => {
       {/* Logout Section */}
       <div className="p-3 border-t border-gray-100">
         <button
+          onClick={handleLogout}
           title={!isExpanded ? "Logout" : ""}
           className={`flex items-center text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors w-full ${
             isExpanded ? "justify-start px-4 py-3 gap-3" : "justify-center py-3"

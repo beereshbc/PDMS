@@ -1,20 +1,18 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import AdminLayout from "../components/AdminLayout";
 import {
   Layers,
   Search,
-  CheckCircle2,
-  AlertCircle,
   FileWarning,
-  FileText,
   Download,
+  FileText,
   Loader2,
-  Clock,
-  ChevronRight,
   BarChart3,
+  ChevronRight,
 } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
 import { toast } from "react-hot-toast";
+import CompilerPrintView from "../components/CompilerPrintView";
 
 const STATUS_CONFIG = {
   Approved: { badge: "bg-green-100 text-green-700", dot: "bg-green-500" },
@@ -22,91 +20,123 @@ const STATUS_CONFIG = {
     badge: "bg-amber-100 text-amber-700",
     dot: "bg-amber-400 animate-pulse",
   },
-  Missing: { badge: "bg-red-50   text-red-500", dot: "bg-red-300" },
+  Missing: { badge: "bg-red-50 text-red-500", dot: "bg-red-300" },
 };
 
 const ProgressBar = ({ pct }) => (
   <div className="w-full bg-stone-100 rounded-full h-2 overflow-hidden">
     <div
-      className={`h-2 rounded-full transition-all duration-700 ${
-        pct === 100 ? "bg-green-500" : pct >= 60 ? "bg-amber-500" : "bg-red-400"
-      }`}
+      className={`h-2 rounded-full transition-all duration-700 ${pct === 100 ? "bg-green-500" : pct >= 60 ? "bg-amber-500" : "bg-red-400"}`}
       style={{ width: `${pct}%` }}
     />
   </div>
 );
 
 const CurriculumCompiler = () => {
-  const { axios } = useAppContext();
+  const { axios, adminToken } = useAppContext();
 
   const [programs, setPrograms] = useState([]);
   const [selectedPd, setSelectedPd] = useState(null);
   const [readiness, setReadiness] = useState(null);
+
   const [loadingList, setLoadingList] = useState(true);
   const [checking, setChecking] = useState(false);
+  const [compiling, setCompiling] = useState(false);
+
   const [searchTerm, setSearch] = useState("");
 
-  // FIXED: was /api/admin/reviews/pds (returns UnderReview only).
-  // Now uses dedicated /api/admin/approved/pds endpoint.
+  // Ref and state for printing
+  const printRef = useRef(null);
+  const [compiledBookData, setCompiledBookData] = useState(null);
+
   const fetchApprovedPrograms = async () => {
     setLoadingList(true);
     try {
-      const { data } = await axios.get("/api/admin/approved/pds");
-      if (data.success) {
-        setPrograms(data.pds);
-      } else {
-        toast.error(data.message || "Failed to load approved programs");
-      }
+      const { data } = await axios.get("/api/admin/approved/pds", {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      if (data.success) setPrograms(data.pds);
     } catch (err) {
-      toast.error(
-        err?.response?.data?.message || "Failed to load approved programs",
-      );
+      toast.error("Failed to load approved programs");
     } finally {
       setLoadingList(false);
     }
   };
 
   useEffect(() => {
-    fetchApprovedPrograms();
-  }, []);
+    if (adminToken) fetchApprovedPrograms();
+  }, [adminToken]);
 
   const checkReadiness = async (pd) => {
     setSelectedPd(pd);
     setReadiness(null);
     setChecking(true);
+    setCompiledBookData(null); // Reset print data when changing programs
     try {
       const { data } = await axios.get(
         `/api/admin/compiler/readiness/${pd._id}`,
+        {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        },
       );
       if (data.success) {
         setReadiness(data.analysis);
-      } else {
-        toast.error(data.message || "Readiness check failed");
       }
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Error analyzing curriculum");
+      toast.error("Error analyzing curriculum");
     } finally {
       setChecking(false);
     }
   };
 
+  // ── COMPILE & PRINT WORKFLOW ──
+  const handleCompileAndPrint = async () => {
+    if (pct < 100) return toast.error("Curriculum is not 100% complete!");
+
+    setCompiling(true);
+    const toastId = toast.loading("Compiling the Curriculum Book...");
+    try {
+      const { data } = await axios.get(
+        `/api/admin/compiler/compile/${selectedPd._id}`,
+        {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        },
+      );
+
+      if (data.success) {
+        setCompiledBookData(data.compiledBook);
+        toast.success("Compiled Successfully! Preparing PDF...", {
+          id: toastId,
+        });
+
+        // Wait briefly for React to render the hidden print component
+        setTimeout(() => {
+          window.print();
+          setCompiling(false);
+        }, 800);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to compile curriculum book.", { id: toastId });
+      setCompiling(false);
+    }
+  };
+
   const filtered = programs.filter(
     (pd) =>
-      pd.programName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pd.programCode?.toLowerCase().includes(searchTerm.toLowerCase()),
+      pd.program_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      pd.program_id?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   const pct = readiness?.completionPercentage || 0;
-
-  // Flatten all courses from semesters
   const allCourses = readiness?.semesters?.flatMap((s) => s.courses) || [];
   const countByStatus = (st) =>
     allCourses.filter((c) => c.status === st).length;
 
   return (
     <AdminLayout>
-      <div className="space-y-8 max-w-7xl">
-        {/* ── HEADER ──────────────────────────────────────────────────── */}
+      <div className="space-y-8 max-w-7xl pb-10">
+        {/* Header */}
         <div className="flex items-start gap-4">
           <div className="p-3 bg-amber-100 text-amber-800 rounded-2xl">
             <Layers size={26} />
@@ -116,7 +146,7 @@ const CurriculumCompiler = () => {
               Curriculum Compiler
             </h1>
             <p className="text-stone-500 text-sm mt-1">
-              Assemble approved course documents into a final Program Book.
+              Assemble approved course documents into a final Program Book PDF.
             </p>
           </div>
         </div>
@@ -143,7 +173,7 @@ const CurriculumCompiler = () => {
                 />
                 <input
                   type="text"
-                  placeholder="Search…"
+                  placeholder="Search program…"
                   value={searchTerm}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-8 pr-4 py-2 bg-white border border-stone-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-200"
@@ -155,7 +185,7 @@ const CurriculumCompiler = () => {
               [...Array(3)].map((_, i) => (
                 <div
                   key={i}
-                  className="animate-pulse h-16 bg-stone-100 rounded-2xl"
+                  className="animate-pulse h-16 bg-white border border-stone-100 rounded-2xl"
                 />
               ))
             ) : filtered.length === 0 ? (
@@ -184,12 +214,12 @@ const CurriculumCompiler = () => {
                     <div className="flex items-center justify-between">
                       <div className="min-w-0">
                         <p className="font-bold text-sm truncate">
-                          {pd.programName || pd.programCode}
+                          {pd.program_name || pd.program_id}
                         </p>
                         <p
                           className={`text-[11px] font-semibold tracking-tight mt-0.5 ${sel ? "text-amber-200" : "text-stone-400"}`}
                         >
-                          {pd.programCode} · v{pd.pdVersion} · {pd.schemeYear}
+                          {pd.program_id} · v{pd.version_no} · {pd.scheme_year}
                         </p>
                       </div>
                       <ChevronRight
@@ -205,7 +235,6 @@ const CurriculumCompiler = () => {
 
           {/* ── RIGHT: Analysis panel ────────────────────────────────── */}
           <div className="lg:col-span-2">
-            {/* Empty state */}
             {!selectedPd && (
               <div className="h-full min-h-[420px] flex flex-col items-center justify-center bg-stone-50 border-2 border-dashed border-stone-200 rounded-[2.5rem] p-12 text-center">
                 <div className="w-20 h-20 bg-stone-100 rounded-full flex items-center justify-center text-stone-300 mb-5">
@@ -215,15 +244,14 @@ const CurriculumCompiler = () => {
                   Select a Program to Analyze
                 </h3>
                 <p className="text-stone-400 text-sm max-w-xs mt-2 leading-relaxed">
-                  We will check if every course defined in the program has an
-                  approved Course Document.
+                  We will check if every course defined in the program has a
+                  fully approved Course Document ready for printing.
                 </p>
               </div>
             )}
 
-            {/* Loading */}
             {selectedPd && checking && (
-              <div className="h-full min-h-[420px] flex items-center justify-center bg-white rounded-[2.5rem] border border-stone-200 p-12">
+              <div className="h-full min-h-[420px] flex items-center justify-center bg-white rounded-[2.5rem] border border-stone-200 p-12 shadow-sm">
                 <div className="flex flex-col items-center gap-4">
                   <div className="relative w-16 h-16">
                     <div className="w-16 h-16 rounded-full border-4 border-amber-100 border-t-amber-700 animate-spin" />
@@ -244,11 +272,10 @@ const CurriculumCompiler = () => {
               </div>
             )}
 
-            {/* Results */}
             {selectedPd && !checking && readiness && (
-              <div className="bg-white rounded-[2.5rem] border border-stone-200 shadow-sm overflow-hidden animate-in fade-in duration-400">
-                {/* Report header */}
-                <div className="p-7 border-b border-stone-100 bg-stone-50/50">
+              <div className="bg-white rounded-[2.5rem] border border-stone-200 shadow-sm overflow-hidden animate-in fade-in duration-400 flex flex-col h-[calc(100vh-140px)] min-h-[600px]">
+                {/* Fixed Top Status Header */}
+                <div className="p-7 border-b border-stone-100 bg-stone-50/50 flex-shrink-0">
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
@@ -260,21 +287,18 @@ const CurriculumCompiler = () => {
                       <h3 className="text-xl font-black text-stone-900">
                         {readiness.programName || readiness.programCode}
                       </h3>
-                      <p className="text-stone-400 text-sm">
+                      <p className="text-stone-400 text-sm font-medium mt-0.5">
                         {readiness.programCode}
                       </p>
                     </div>
                     <div className="text-right">
                       <p
-                        className={`text-4xl font-black tabular-nums ${pct === 100 ? "text-green-600" : pct >= 60 ? "text-amber-700" : "text-red-500"}`}
+                        className={`text-4xl font-black tabular-nums tracking-tighter ${pct === 100 ? "text-green-600" : pct >= 60 ? "text-amber-700" : "text-red-500"}`}
                       >
                         {pct}%
                       </p>
                       <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
-                        Complete
-                      </p>
-                      <p className="text-xs text-stone-500 mt-1">
-                        {readiness.totalApproved}/{readiness.totalRequired}
+                        Ready
                       </p>
                     </div>
                   </div>
@@ -282,60 +306,31 @@ const CurriculumCompiler = () => {
                   <div className="mt-5">
                     <ProgressBar pct={pct} />
                     <div className="flex justify-between text-[11px] text-stone-400 font-medium mt-1.5">
-                      <span>{readiness.totalApproved} approved</span>
+                      <span className="text-green-600 font-bold">
+                        {readiness.totalApproved} approved
+                      </span>
                       <span>
-                        {readiness.totalRequired - readiness.totalApproved}{" "}
-                        remaining
+                        {readiness.totalRequired} total courses required
                       </span>
                     </div>
                   </div>
-
-                  {/* Status chips */}
-                  <div className="flex flex-wrap gap-2 mt-4">
-                    {[
-                      {
-                        label: "Approved",
-                        count: countByStatus("Approved"),
-                        cls: "bg-green-50 text-green-700 border border-green-100",
-                      },
-                      {
-                        label: "Pending",
-                        count: countByStatus("Pending"),
-                        cls: "bg-amber-50 text-amber-700 border border-amber-100",
-                      },
-                      {
-                        label: "Missing",
-                        count: countByStatus("Missing"),
-                        cls: "bg-red-50 text-red-500 border border-red-100",
-                      },
-                    ]
-                      .filter(({ count }) => count > 0)
-                      .map(({ label, count, cls }) => (
-                        <span
-                          key={label}
-                          className={`text-xs font-bold px-3 py-1 rounded-full ${cls}`}
-                        >
-                          {count} {label}
-                        </span>
-                      ))}
-                  </div>
                 </div>
 
-                {/* Semester course grid */}
-                <div className="p-7 space-y-7 max-h-[440px] overflow-y-auto">
+                {/* Scrollable Course Grid */}
+                <div className="p-7 space-y-7 overflow-y-auto flex-1 bg-stone-50/30">
                   {readiness.semesters?.map((sem) => (
                     <div key={sem.number}>
                       <div className="flex items-center gap-3 mb-3">
                         <h4 className="text-sm font-black text-stone-800 uppercase tracking-wide">
                           Semester {sem.number}
                         </h4>
-                        <div className="flex-1 h-px bg-stone-100" />
-                        <span className="text-xs text-stone-400">
+                        <div className="flex-1 h-px bg-stone-200" />
+                        <span className="text-[10px] font-bold text-stone-400 bg-white border border-stone-200 px-2 py-0.5 rounded-full">
                           {sem.courses?.length} courses
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         {sem.courses?.map((course) => {
                           const S =
                             STATUS_CONFIG[course.status] ||
@@ -343,31 +338,33 @@ const CurriculumCompiler = () => {
                           return (
                             <div
                               key={course.code}
-                              className="flex items-center justify-between p-3 rounded-xl border border-stone-100 bg-stone-50/40 hover:border-amber-200 hover:bg-amber-50/20 transition-colors group"
+                              className="flex items-center justify-between p-3 rounded-xl border border-stone-200 bg-white hover:border-amber-300 hover:shadow-sm transition-all group"
                             >
-                              <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="flex items-center gap-3 min-w-0">
                                 <div
-                                  className={`w-2 h-2 rounded-full flex-shrink-0 ${S.dot}`}
+                                  className={`w-2 h-2 rounded-full flex-shrink-0 shadow-sm ${S.dot}`}
                                 />
                                 <div className="min-w-0">
-                                  <p className="text-xs font-bold text-stone-800 truncate group-hover:text-amber-900 transition-colors">
-                                    {course.title}
-                                  </p>
-                                  <p className="text-[10px] text-stone-400 font-mono">
+                                  <p className="text-xs font-bold text-stone-800 truncate group-hover:text-amber-900">
                                     {course.code}
                                   </p>
-                                  {course.version && (
-                                    <p className="text-[10px] text-green-600 font-semibold">
-                                      v{course.version}
-                                    </p>
-                                  )}
+                                  <p className="text-[10px] text-stone-500 truncate w-32">
+                                    {course.title}
+                                  </p>
                                 </div>
                               </div>
-                              <span
-                                className={`text-[9px] font-black px-2 py-0.5 rounded-lg uppercase flex-shrink-0 ml-2 ${S.badge}`}
-                              >
-                                {course.status}
-                              </span>
+                              <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
+                                <span
+                                  className={`text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider border border-white/50 ${S.badge}`}
+                                >
+                                  {course.status}
+                                </span>
+                                {course.version && (
+                                  <span className="text-[9px] font-bold text-stone-400 font-mono">
+                                    v{course.version}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           );
                         })}
@@ -376,29 +373,33 @@ const CurriculumCompiler = () => {
                   ))}
                 </div>
 
-                {/* Compile footer */}
-                <div className="p-7 bg-stone-50/60 border-t border-stone-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-2 text-stone-500 text-xs italic">
-                    <FileText size={14} />
-                    Final book will include{" "}
-                    <strong className="not-italic">
-                      {readiness.totalApproved}
-                    </strong>{" "}
-                    Course Document{readiness.totalApproved !== 1 ? "s" : ""}
+                {/* Fixed Bottom Compile Bar */}
+                <div className="p-5 bg-white border-t border-stone-200 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] flex flex-col sm:flex-row items-center justify-between gap-4 flex-shrink-0">
+                  <div className="flex items-center gap-2.5 text-stone-600 text-sm bg-stone-50 px-4 py-2 rounded-xl border border-stone-100">
+                    <FileText size={16} className="text-amber-600" />
+                    Book contains <strong>1 PD</strong> and{" "}
+                    <strong>{readiness.totalApproved} CDs</strong>.
                   </div>
 
                   <button
-                    disabled={pct < 100}
-                    className={`flex items-center gap-2 px-8 py-3 rounded-2xl font-bold transition-all text-sm ${
+                    onClick={handleCompileAndPrint}
+                    disabled={pct < 100 || compiling}
+                    className={`flex items-center justify-center gap-2 px-8 py-3 rounded-xl font-bold transition-all text-sm w-full sm:w-auto ${
                       pct === 100
-                        ? "bg-amber-800 text-white hover:bg-amber-900 shadow-lg shadow-amber-900/20 active:scale-95"
-                        : "bg-stone-200 text-stone-400 cursor-not-allowed"
+                        ? "bg-amber-800 text-white hover:bg-amber-900 shadow-xl shadow-amber-900/20 active:scale-95"
+                        : "bg-stone-100 text-stone-400 border border-stone-200 cursor-not-allowed"
                     }`}
                   >
-                    {pct === 100
-                      ? "Compile Final Book"
-                      : `${100 - pct}% more needed`}
-                    <Download size={16} />
+                    {compiling ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Download size={16} />
+                    )}
+                    {compiling
+                      ? "Compiling..."
+                      : pct === 100
+                        ? "Compile & Download PDF"
+                        : `${readiness.totalRequired - readiness.totalApproved} Courses Missing`}
                   </button>
                 </div>
               </div>
@@ -406,6 +407,11 @@ const CurriculumCompiler = () => {
           </div>
         </div>
       </div>
+
+      {/* Hidden Print Component */}
+      {compiledBookData && (
+        <CompilerPrintView ref={printRef} bookData={compiledBookData} />
+      )}
     </AdminLayout>
   );
 };

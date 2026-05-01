@@ -1,4 +1,3 @@
-// models/PD.js
 import mongoose from "mongoose";
 
 const PDSchema = new mongoose.Schema({
@@ -41,6 +40,11 @@ const PDSchema = new mongoose.Schema({
   change_summary: {
     type: String,
   },
+  review_comment: {
+    // <--- NEW: Added field for Admin Review Comments
+    type: String,
+    default: "",
+  },
 
   // Complete PD Data (JSON structure)
   pd_data: {
@@ -60,7 +64,7 @@ const PDSchema = new mongoose.Schema({
   },
   approved_by: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "User", // Admin/Director
+    ref: "Admin", // Admin/Director
   },
 
   // Timestamps
@@ -90,9 +94,8 @@ PDSchema.index(
 );
 
 // Update timestamp on save
-PDSchema.pre("save", function (next) {
+PDSchema.pre("save", function () {
   this.updated_at = Date.now();
-  next();
 });
 
 const PD = mongoose.model("PD", PDSchema);

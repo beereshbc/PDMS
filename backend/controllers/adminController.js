@@ -4,41 +4,66 @@ import Admin from "../models/Admin.js";
 import Creater from "../models/Creater.js";
 import ProgramDocument from "../models/pd/ProgramDocument.js";
 import CourseDocument from "../models/cd/CourseDocument.js";
+import PD from "../models/pd/PD.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER: Resolve the admin's jurisdiction into a list of Creater ObjectIds.
-//
-// Strategy:
-//   1. Build a Creater query from the admin's own institutional fields
-//      (faculty, school, department). Only non-empty fields are used.
-//   2. Return { createdBy: { $in: [id1, id2, …] } } for use in PD/CD queries.
-//   3. If the admin has NO institutional fields set (super-admin), return {}
-//      so every document is visible.
-//
-// This way ProgramDocument / CourseDocument carry zero institutional data —
-// access is entirely determined by who created the document.
 // ─────────────────────────────────────────────────────────────────────────────
+
+const buildFormattedCD = (cd) => {
+  const s1 = cd.section1_identity || {};
+  const s2 = cd.section2_outcomes || {};
+  const s3 = cd.section3_syllabus || {};
+  const s4 = cd.section4_resources || {};
+
+  return {
+    courseCode: cd.courseCode,
+    courseTitle: cd.courseTitle,
+    programName: cd.programName,
+    cdVersion: cd.cdVersion,
+    status: cd.status,
+    ...(s1.identity || {}),
+    identity: s1.identity || {},
+    credits: s1.credits || {},
+    aimsSummary: s2.aimsSummary || "",
+    objectives: s2.objectives || "",
+    courseOutcomes: s2.courseOutcomes || [],
+    courseOutcomesHtml: s2.courseOutcomesHtml || "",
+    outcomeMap: s2.outcomeMap || {},
+    outcomeMapHtml: s2.outcomeMapHtml || "",
+    courseContent: s3.courseContent || "",
+    teaching: s3.teaching || [],
+    resources: s4.resources || {
+      textBooks: [],
+      references: [],
+      otherResources: [],
+    },
+    assessmentWeight: s4.assessmentWeight || [],
+    assessmentWeightHtml: s4.assessmentWeightHtml || "",
+    gradingCriterion: s4.gradingCriterion || "",
+    attainmentCalculations: s4.attainmentCalculations || {
+      recordingMarks: "",
+      settingTargets: "",
+    },
+    otherDetails: s4.otherDetails || {
+      assignmentDetails: "",
+      academicIntegrity: "",
+    },
+  };
+};
+
 const getJurisdictionFilter = async (admin) => {
-  // Build the institutional match against the Creater collection
   const createrQuery = {};
   if (admin.faculty) createrQuery.faculty = admin.faculty;
   if (admin.school) createrQuery.school = admin.school;
   if (admin.department) createrQuery.department = admin.department;
 
-  // No restrictions set → super-admin scope (sees everything)
   if (Object.keys(createrQuery).length === 0) return {};
 
-  // Find every creator whose institutional profile matches the admin's area
   const creators = await Creater.find(createrQuery).select("_id");
+  if (creators.length === 0) return { createdBy: { $in: [] } };
 
-  if (creators.length === 0) {
-    // Admin's jurisdiction exists but no creators belong to it yet — return
-    // a filter that matches nothing rather than everything.
-    return { createdBy: { $in: [] } };
-  }
-
-  const creatorIds = creators.map((c) => c._id);
-  return { createdBy: { $in: creatorIds } };
+  return { createdBy: { $in: creators.map((c) => c._id) } };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,10 +95,9 @@ export const registerAdmin = async (req, res) => {
 
     const existing = await Admin.findOne({ email: email.toLowerCase().trim() });
     if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: "Admin email already registered",
-      });
+      return res
+        .status(409)
+        .json({ success: false, message: "Admin email already registered" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -109,37 +133,30 @@ export const loginAdmin = async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and password are required",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and password are required" });
     }
 
     const admin = await Admin.findOne({ email: email.toLowerCase().trim() });
-    if (!admin) {
+    if (!admin)
       return res
         .status(401)
         .json({ success: false, message: "Invalid credentials" });
-    }
-
-    if (admin.blocked) {
+    if (admin.blocked)
       return res
         .status(403)
         .json({ success: false, message: "Admin account is blocked." });
-    }
-
-    if (admin.status !== "active") {
+    if (admin.status !== "active")
       return res
         .status(403)
         .json({ success: false, message: "Account pending approval." });
-    }
 
     const isMatch = await bcrypt.compare(password, admin.password);
-    if (!isMatch) {
+    if (!isMatch)
       return res
         .status(401)
         .json({ success: false, message: "Invalid credentials" });
-    }
 
     admin.last_login = new Date();
     await admin.save();
@@ -147,7 +164,6 @@ export const loginAdmin = async (req, res) => {
     const token = jwt.sign(
       { id: admin._id, role: admin.role },
       process.env.JWT_SECRET,
-      { expiresIn: "24h" },
     );
 
     res.json({
@@ -158,7 +174,6 @@ export const loginAdmin = async (req, res) => {
         email: admin.email,
         name: admin.name,
         role: admin.role,
-        // Sent to frontend so it can show the admin's scope in the UI
         jurisdiction: {
           faculty: admin.faculty || null,
           school: admin.school || null,
@@ -175,10 +190,9 @@ export const loginAdmin = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. DASHBOARD & STATISTICS
 // ─────────────────────────────────────────────────────────────────────────────
-
 export const getAdminDashboardStats = async (req, res) => {
   try {
-    // Resolve creator-based jurisdiction filter once, reuse for all queries
+    const adminId = req.admin._id;
     const filter = await getJurisdictionFilter(req.admin);
 
     const [
@@ -188,20 +202,16 @@ export const getAdminDashboardStats = async (req, res) => {
       recentPDs,
       recentCDs,
     ] = await Promise.all([
-      ProgramDocument.countDocuments({ status: "UnderReview", ...filter }),
+      PD.countDocuments({ status: "under_review", approved_by: adminId }),
       CourseDocument.countDocuments({ status: "UnderReview", ...filter }),
-      ProgramDocument.countDocuments({ status: "Approved", ...filter }),
-
-      // Populate section1_info to get programName (no longer on PD root)
-      ProgramDocument.find({
-        status: { $in: ["Approved", "UnderReview", "Draft"] },
-        ...filter,
+      PD.countDocuments({ status: "approved", approved_by: adminId }),
+      PD.find({
+        status: { $in: ["approved", "under_review", "draft"] },
+        approved_by: adminId,
       })
-        .sort({ updatedAt: -1 })
+        .sort({ updated_at: -1 })
         .limit(4)
-        .select("programCode status updatedAt pdVersion")
-        .populate("section1_info", "programName"),
-
+        .select("program_id program_name status updated_at version_no"),
       CourseDocument.find({
         status: { $in: ["Approved", "UnderReview", "Draft"] },
         ...filter,
@@ -211,14 +221,13 @@ export const getAdminDashboardStats = async (req, res) => {
         .select("courseCode courseTitle status updatedAt cdVersion"),
     ]);
 
-    // Normalize recentPDs so the activity feed always has a .programName field
     const normalizedPDs = recentPDs.map((pd) => ({
       _id: pd._id,
-      programCode: pd.programCode,
-      programName: pd.section1_info?.programName || pd.programCode,
+      programCode: pd.program_id,
+      programName: pd.program_name,
       status: pd.status,
-      updatedAt: pd.updatedAt,
-      pdVersion: pd.pdVersion,
+      updatedAt: pd.updated_at,
+      pdVersion: pd.version_no,
     }));
 
     const recentActivity = [...normalizedPDs, ...recentCDs]
@@ -240,32 +249,17 @@ export const getAdminDashboardStats = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 3. REVIEW LISTS
-// ─────────────────────────────────────────────────────────────────────────────
-
 export const getPendingPDs = async (req, res) => {
   try {
-    const filter = await getJurisdictionFilter(req.admin);
+    const adminId = req.admin._id;
+    const pds = await PD.find({ status: "under_review", approved_by: adminId })
+      .populate(
+        "created_by",
+        "name email designation department school faculty",
+      )
+      .sort({ updated_at: -1 });
 
-    const pds = await ProgramDocument.find({ status: "UnderReview", ...filter })
-      .populate("createdBy", "name email designation faculty school department")
-      .populate("section1_info", "programName department faculty school")
-      .sort({ updatedAt: -1 });
-
-    // Attach programName + institutional info from section1_info to the root
-    // so the frontend doesn't need to deep-dive into populated refs
-    const enriched = pds.map((pd) => {
-      const obj = pd.toObject();
-      obj.programName = pd.section1_info?.programName || pd.programCode;
-      obj.department =
-        pd.section1_info?.department || pd.createdBy?.department || "";
-      obj.faculty = pd.section1_info?.faculty || pd.createdBy?.faculty || "";
-      obj.school = pd.section1_info?.school || pd.createdBy?.school || "";
-      return obj;
-    });
-
-    res.status(200).json({ success: true, pds: enriched });
+    res.status(200).json({ success: true, pds });
   } catch (error) {
     console.error("getPendingPDs:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -278,72 +272,57 @@ export const getPendingCDs = async (req, res) => {
 
     const cds = await CourseDocument.find({ status: "UnderReview", ...filter })
       .populate("createdBy", "name email designation faculty school department")
+      .populate("section1_identity")
+      .populate("section2_outcomes")
+      .populate("section3_syllabus")
+      .populate("section4_resources")
       .sort({ updatedAt: -1 });
 
-    res.status(200).json({ success: true, cds });
+    const formattedCDs = cds.map((cd) => {
+      const formatted = buildFormattedCD(cd);
+      formatted._id = cd._id;
+      formatted.createdBy = cd.createdBy;
+      formatted.createdAt = cd.createdAt;
+      formatted.updatedAt = cd.updatedAt;
+      return formatted;
+    });
+
+    res.status(200).json({ success: true, cds: formattedCDs });
   } catch (error) {
     console.error("getPendingCDs:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// Approved PDs — used by CurriculumCompiler
 export const getApprovedPDs = async (req, res) => {
   try {
-    const filter = await getJurisdictionFilter(req.admin);
-
-    const pds = await ProgramDocument.find({ status: "Approved", ...filter })
-      .populate("createdBy", "name email")
-      .populate("section1_info", "programName")
-      .sort({ updatedAt: -1 });
-
-    const enriched = pds.map((pd) => {
-      const obj = pd.toObject();
-      obj.programName = pd.section1_info?.programName || pd.programCode;
-      return obj;
-    });
-
-    res.status(200).json({ success: true, pds: enriched });
+    const adminId = req.admin._id;
+    const pds = await PD.find({ status: "approved", approved_by: adminId })
+      .populate("created_by", "name email")
+      .sort({ updated_at: -1 });
+    res.status(200).json({ success: true, pds });
   } catch (error) {
     console.error("getApprovedPDs:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 4. DETAIL FETCHING (Deep Populate)
-// ─────────────────────────────────────────────────────────────────────────────
-
 export const getPDDetail = async (req, res) => {
   try {
-    const filter = await getJurisdictionFilter(req.admin);
+    const adminId = req.admin._id;
+    const pd = await PD.findOne({
+      _id: req.params.id,
+      approved_by: adminId,
+    }).populate(
+      "created_by",
+      "name email faculty school department designation",
+    );
 
-    const pd = await ProgramDocument.findOne({ _id: req.params.id, ...filter })
-      .populate("section1_info")
-      .populate("section2_objectives")
-      .populate("section3_structure")
-      .populate("section4_electives")
-      .populate(
-        "createdBy",
-        "name email faculty school department designation",
-      );
-
-    if (!pd) {
-      return res.status(404).json({
-        success: false,
-        message: "PD not found or access denied",
-      });
-    }
-
-    // Attach programName to root for convenience
-    const result = pd.toObject();
-    result.programName = pd.section1_info?.programName || pd.programCode;
-    result.faculty = pd.section1_info?.faculty || pd.createdBy?.faculty || "";
-    result.school = pd.section1_info?.school || pd.createdBy?.school || "";
-    result.department =
-      pd.section1_info?.department || pd.createdBy?.department || "";
-
-    res.status(200).json({ success: true, pd: result });
+    if (!pd)
+      return res
+        .status(404)
+        .json({ success: false, message: "PD not found or access denied" });
+    res.status(200).json({ success: true, pd });
   } catch (error) {
     console.error("getPDDetail:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -379,33 +358,31 @@ export const getCDDetail = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. REVIEW ACTIONS (Approve / Reject)
+// 5. REVIEW ACTIONS (Approve / Reject) - UPDATED TO SAVE COMMENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const processPDReview = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, rejectionMessage } = req.body;
+    const adminId = req.admin._id;
 
-    // Verify the document is within this admin's jurisdiction before mutating
-    const filter = await getJurisdictionFilter(req.admin);
-
-    const updatedPD = await ProgramDocument.findOneAndUpdate(
-      { _id: id, ...filter },
+    const updatedPD = await PD.findOneAndUpdate(
+      { _id: id, approved_by: adminId },
       {
-        status,
-        rejectionMessage: status === "Draft" ? rejectionMessage || "" : "",
-        approvalDate: status === "Approved" ? new Date() : null,
-        approvedBy: status === "Approved" ? req.admin._id : null,
+        status: status,
+        // Optional: you can populate change_summary just for history modal viewing
+        change_summary: rejectionMessage || "",
+        review_comment: rejectionMessage || "", // Save comment in db
+        approved_at: status === "approved" ? new Date() : null,
       },
       { new: true },
     );
 
-    if (!updatedPD) {
+    if (!updatedPD)
       return res
         .status(403)
         .json({ success: false, message: "Unauthorized or not found" });
-    }
 
     res.status(200).json({
       success: true,
@@ -421,7 +398,7 @@ export const processPDReview = async (req, res) => {
 export const processCDReview = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, rejectionMessage } = req.body;
+    const { status, rejectionMessage } = req.body; // status: "Approved" or "Draft"
 
     const filter = await getJurisdictionFilter(req.admin);
 
@@ -429,7 +406,8 @@ export const processCDReview = async (req, res) => {
       { _id: id, ...filter },
       {
         status,
-        rejectionMessage: status === "Draft" ? rejectionMessage || "" : "",
+        rejectionMessage: rejectionMessage || "",
+        reviewComment: rejectionMessage || "", // Save comment in db
         approvalDate: status === "Approved" ? new Date() : null,
         approvedBy: status === "Approved" ? req.admin._id : null,
       },
@@ -444,7 +422,7 @@ export const processCDReview = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `CD ${status} successfully`,
+      message: `Course Document ${status === "Approved" ? "Approved" : "Returned for Revision"} successfully.`,
       data: updatedCD,
     });
   } catch (error) {
@@ -454,17 +432,15 @@ export const processCDReview = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. CURRICULUM COMPILER — READINESS CHECK
+// 6. CURRICULUM COMPILER & VERSIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const checkProgramReadiness = async (req, res) => {
   try {
     const { programId } = req.params;
-    const filter = await getJurisdictionFilter(req.admin);
+    const adminId = req.admin._id;
 
-    const pd = await ProgramDocument.findOne({ _id: programId, ...filter })
-      .populate("section1_info", "programName")
-      .populate("section3_structure");
+    const pd = await PD.findOne({ _id: programId, approved_by: adminId });
 
     if (!pd) {
       return res.status(404).json({
@@ -473,8 +449,7 @@ export const checkProgramReadiness = async (req, res) => {
       });
     }
 
-    const semesters = pd.section3_structure?.semesters || [];
-
+    const semesters = pd.pd_data?.semesters || [];
     let totalCourses = 0;
     let approvedCount = 0;
 
@@ -514,7 +489,7 @@ export const checkProgramReadiness = async (req, res) => {
           }),
         );
 
-        return { number: sem.number, courses: courseResults };
+        return { number: sem.sem_no, courses: courseResults };
       }),
     );
 
@@ -524,9 +499,8 @@ export const checkProgramReadiness = async (req, res) => {
     res.status(200).json({
       success: true,
       analysis: {
-        programCode: pd.programCode,
-        // Resolved from section1_info since it's no longer on the PD root
-        programName: pd.section1_info?.programName || pd.programCode,
+        programCode: pd.program_id,
+        programName: pd.program_name,
         completionPercentage,
         totalApproved: approvedCount,
         totalRequired: totalCourses,
@@ -535,6 +509,310 @@ export const checkProgramReadiness = async (req, res) => {
     });
   } catch (error) {
     console.error("checkProgramReadiness:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getPDVersionsForAdmin = async (req, res) => {
+  try {
+    const { programId } = req.params;
+    const adminId = req.admin._id;
+
+    const versions = await PD.find({
+      program_id: programId,
+      approved_by: adminId,
+    })
+      .populate("created_by", "name email")
+      .select(
+        "version_no status created_at updated_at program_name program_id pd_data change_summary review_comment scheme_year effective_ay",
+      )
+      .sort({ created_at: -1 });
+
+    res.status(200).json({ success: true, versions });
+  } catch (error) {
+    console.error("getPDVersionsForAdmin:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getCDVersionsForAdmin = async (req, res) => {
+  try {
+    const { courseCode } = req.params;
+    const filter = await getJurisdictionFilter(req.admin);
+
+    const versions = await CourseDocument.find({ courseCode, ...filter })
+      .populate("createdBy", "name email")
+      .populate("section1_identity")
+      .populate("section2_outcomes")
+      .populate("section3_syllabus")
+      .populate("section4_resources")
+      .sort({ createdAt: -1 });
+
+    const formattedVersions = versions.map((cd) => {
+      const formatted = buildFormattedCD(cd);
+      formatted._id = cd._id;
+      formatted.createdBy = cd.createdBy;
+      formatted.createdAt = cd.createdAt;
+      formatted.updatedAt = cd.updatedAt;
+      // Supply review message for the version history popup
+      formatted.change_summary = cd.reviewComment || cd.rejectionMessage || "";
+      return formatted;
+    });
+
+    res.status(200).json({ success: true, versions: formattedVersions });
+  } catch (error) {
+    console.error("getCDVersionsForAdmin:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: FETCH CDs GROUPED BY PROGRAM DOCUMENT
+// ─────────────────────────────────────────────────────────────────────────────
+export const getGroupedCDReviews = async (req, res) => {
+  try {
+    const adminId = req.admin._id;
+    const filter = await getJurisdictionFilter(req.admin);
+
+    // 1. Get all PDs for this admin
+    const pds = await PD.find({
+      approved_by: adminId,
+      status: { $in: ["approved", "under_review", "draft"] },
+    }).select("program_id program_name pd_data version_no status");
+
+    // 2. Get all CDs in admin's jurisdiction
+    const allCDs = await CourseDocument.find(filter)
+      .populate("createdBy", "name email")
+      .populate("section1_identity")
+      .populate("section2_outcomes")
+      .populate("section3_syllabus")
+      .populate("section4_resources")
+      .sort({ createdAt: -1 });
+
+    // Deduplicate CDs: Keep only the latest version of each courseCode
+    const latestCDsMap = new Map();
+    allCDs.forEach((cd) => {
+      if (
+        !latestCDsMap.has(cd.courseCode) ||
+        new Date(cd.updatedAt) >
+          new Date(latestCDsMap.get(cd.courseCode).updatedAt)
+      ) {
+        latestCDsMap.set(cd.courseCode, cd);
+      }
+    });
+
+    const groupedData = [];
+    const processedCourseCodes = new Set();
+
+    // 3. Map CDs into their respective PDs
+    for (const pd of pds) {
+      const pdCourses = [];
+      let stats = {
+        approved: 0,
+        underReview: 0,
+        draft: 0,
+        missing: 0,
+        total: 0,
+      };
+
+      const addCourseToPD = (courseObj, context) => {
+        const code = courseObj.code;
+        stats.total += 1;
+        processedCourseCodes.add(code);
+
+        const cd = latestCDsMap.get(code);
+        if (cd) {
+          if (cd.status === "Approved") stats.approved++;
+          else if (cd.status === "UnderReview") stats.underReview++;
+          else stats.draft++;
+
+          pdCourses.push({
+            courseCode: code,
+            courseTitle: courseObj.title || cd.courseTitle,
+            context,
+            cdData: buildFormattedCD(cd),
+            status: cd.status,
+            cdVersion: cd.cdVersion,
+            updatedAt: cd.updatedAt,
+            createdBy: cd.createdBy,
+            _id: cd._id,
+          });
+        } else {
+          stats.missing++;
+          pdCourses.push({
+            courseCode: code,
+            courseTitle: courseObj.title,
+            context,
+            cdData: null,
+            status: "Missing",
+            cdVersion: "-",
+            updatedAt: null,
+            createdBy: null,
+            _id: null,
+          });
+        }
+      };
+
+      pd.pd_data?.semesters?.forEach((sem) =>
+        sem.courses?.forEach((c) => addCourseToPD(c, `Semester ${sem.sem_no}`)),
+      );
+      pd.pd_data?.prof_electives?.forEach((grp) =>
+        grp.courses?.forEach((c) => addCourseToPD(c, `Prof. Elective`)),
+      );
+      pd.pd_data?.open_electives?.forEach((grp) =>
+        grp.courses?.forEach((c) => addCourseToPD(c, `Open Elective`)),
+      );
+
+      groupedData.push({
+        pdId: pd._id,
+        programCode: pd.program_id,
+        programName: pd.program_name,
+        pdVersion: pd.version_no,
+        pdStatus: pd.status,
+        stats,
+        courses: pdCourses,
+      });
+    }
+
+    // 4. Handle "Orphan" CDs
+    const orphanCourses = [];
+    let orphanStats = {
+      approved: 0,
+      underReview: 0,
+      draft: 0,
+      missing: 0,
+      total: 0,
+    };
+
+    latestCDsMap.forEach((cd, code) => {
+      if (!processedCourseCodes.has(code)) {
+        orphanStats.total++;
+        if (cd.status === "Approved") orphanStats.approved++;
+        else if (cd.status === "UnderReview") orphanStats.underReview++;
+        else orphanStats.draft++;
+
+        orphanCourses.push({
+          courseCode: code,
+          courseTitle: cd.courseTitle,
+          context: "Unassigned",
+          cdData: buildFormattedCD(cd),
+          status: cd.status,
+          cdVersion: cd.cdVersion,
+          updatedAt: cd.updatedAt,
+          createdBy: cd.createdBy,
+          _id: cd._id,
+        });
+      }
+    });
+
+    if (orphanCourses.length > 0) {
+      groupedData.push({
+        pdId: "orphan",
+        programCode: "OTHER",
+        programName: "Unassigned / Standalone Courses",
+        pdVersion: "-",
+        pdStatus: "mixed",
+        stats: orphanStats,
+        courses: orphanCourses,
+      });
+    }
+
+    res.status(200).json({ success: true, groupedData });
+  } catch (error) {
+    console.error("getGroupedCDReviews:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const compileCurriculumBook = async (req, res) => {
+  try {
+    const { programId } = req.params;
+    const adminId = req.admin._id;
+
+    // 1. Fetch the Program Document
+    const pd = await PD.findOne({
+      _id: programId,
+      approved_by: adminId,
+    }).populate("created_by", "name email");
+    if (!pd) {
+      return res.status(404).json({
+        success: false,
+        message: "Program Document not found or unauthorized.",
+      });
+    }
+
+    // 2. Extract all course codes from the PD structure
+    const courseCodes = [];
+    const pdData = pd.pd_data || {};
+
+    pdData.semesters?.forEach((sem) =>
+      sem.courses?.forEach((c) => courseCodes.push(c.code)),
+    );
+    pdData.prof_electives?.forEach((grp) =>
+      grp.courses?.forEach((c) => courseCodes.push(c.code)),
+    );
+    pdData.open_electives?.forEach((grp) =>
+      grp.courses?.forEach((c) => courseCodes.push(c.code)),
+    );
+
+    // 3. Fetch all APPROVED Course Documents for those codes
+    const cds = await CourseDocument.find({
+      courseCode: { $in: courseCodes },
+      status: "Approved",
+    })
+      .populate("section1_identity")
+      .populate("section2_outcomes")
+      .populate("section3_syllabus")
+      .populate("section4_resources");
+
+    // 4. Format them
+    const formattedCDs = cds.map((cd) => buildFormattedCD(cd));
+
+    // Sort CDs to roughly match the order they appear in the PD semesters
+    formattedCDs.sort(
+      (a, b) =>
+        courseCodes.indexOf(a.courseCode) - courseCodes.indexOf(b.courseCode),
+    );
+
+    res.status(200).json({
+      success: true,
+      compiledBook: {
+        programData: {
+          program_id: pd.program_id,
+          program_name: pd.program_name,
+          scheme_year: pd.scheme_year,
+          version_no: pd.version_no,
+          effective_ay: pd.effective_ay,
+          total_credits: pd.total_credits,
+          pd_data: pd.pd_data,
+        },
+        courses: formattedCDs,
+      },
+    });
+  } catch (error) {
+    console.error("compileCurriculumBook error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to compile the curriculum book.",
+    });
+  }
+};
+
+// Add this inside adminController.js
+export const getAllPDsForAdmin = async (req, res) => {
+  try {
+    const adminId = req.admin._id;
+    // Fetch ALL PDs assigned to or approved by this admin
+    const pds = await PD.find({ approved_by: adminId })
+      .populate(
+        "created_by",
+        "name email designation department school faculty",
+      )
+      .sort({ updated_at: -1 });
+
+    res.status(200).json({ success: true, pds });
+  } catch (error) {
+    console.error("getAllPDsForAdmin:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

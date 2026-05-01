@@ -1,152 +1,77 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import CreatorLayout from "../components/CreatorLayout";
 import { useAppContext } from "../context/AppContext";
 import {
   Search,
-  FileText,
   Calendar,
   Clock,
   Eye,
   Edit,
-  Filter,
-  Printer,
-  ChevronRight,
   Plus,
   Loader2,
   GraduationCap,
   BookMarked,
   RefreshCw,
   X,
-  CheckCircle,
+  ChevronLeft,
+  CheckCircle2,
   AlertCircle,
+  History,
+  CreditCard,
   Hash,
+  MessageSquare,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
+import Preview from "../components/Preview";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
-
-const getStatusColor = (status) => {
-  switch (status) {
-    case "Approved":
+const getStatusStyle = (status) => {
+  switch (status?.toLowerCase()) {
+    case "approved":
       return "bg-emerald-50 text-emerald-700 border-emerald-200";
-    case "UnderReview":
-      return "bg-yellow-50 text-yellow-700 border-yellow-200";
-    case "Draft":
-      return "bg-gray-100 text-gray-600 border-gray-200";
-    case "Rejected":
+    case "under_review":
+      return "bg-orange-50 text-orange-700 border-orange-200";
+    case "rejected":
       return "bg-red-50 text-red-700 border-red-200";
     default:
-      return "bg-gray-100 text-gray-500 border-gray-200";
+      return "bg-stone-100 text-stone-600 border-stone-200"; // draft
   }
 };
 
-const getStatusDot = (status) => {
-  switch (status) {
-    case "Approved":
-      return "bg-emerald-500";
-    case "UnderReview":
-      return "bg-yellow-500";
-    case "Draft":
-      return "bg-gray-400";
-    case "Rejected":
-      return "bg-red-500";
+const getStatusLabel = (status) => {
+  switch (status?.toLowerCase()) {
+    case "approved":
+      return "Approved";
+    case "under_review":
+      return "In Review";
+    case "rejected":
+      return "Returned";
     default:
-      return "bg-gray-300";
+      return "Draft";
   }
 };
 
-const STATUS_OPTIONS = ["All", "Draft", "UnderReview", "Approved", "Rejected"];
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENTS
-// ─────────────────────────────────────────────────────────────────────────────
-
-const SectionCard = ({
-  icon,
-  iconBg,
-  title,
-  subtitle,
-  action,
-  children,
-  noPad,
-}) => (
-  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-    <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100">
-      <div className="flex items-start gap-3 min-w-0">
-        <div
-          className={`p-2 rounded-lg flex-shrink-0 ${iconBg || "bg-gray-100"}`}
-        >
-          {icon}
-        </div>
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-gray-800 leading-snug">
-            {title}
-          </h3>
-          {subtitle && (
-            <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
-          )}
-        </div>
-      </div>
-      {action && (
-        <div className="flex-shrink-0 flex items-center gap-2">{action}</div>
-      )}
-    </div>
-    <div className={noPad ? "" : "p-5"}>{children}</div>
-  </div>
-);
-
-const StatusPill = ({ value, active, onClick }) => {
-  const colors = {
-    All: active
-      ? "bg-gray-900 text-white border-gray-900"
-      : "bg-white text-gray-500 border-gray-200 hover:border-gray-300",
-    Draft: active
-      ? "bg-gray-600 text-white border-gray-600"
-      : "bg-white text-gray-500 border-gray-200 hover:border-gray-400",
-    UnderReview: active
-      ? "bg-yellow-500 text-white border-yellow-500"
-      : "bg-white text-yellow-600 border-yellow-200 hover:border-yellow-400",
-    Approved: active
-      ? "bg-emerald-500 text-white border-emerald-500"
-      : "bg-white text-emerald-600 border-emerald-200 hover:border-emerald-400",
-    Rejected: active
-      ? "bg-red-500 text-white border-red-500"
-      : "bg-white text-red-500 border-red-200 hover:border-red-400",
-  };
-  const labels = {
-    All: "All",
-    Draft: "Draft",
-    UnderReview: "In Review",
-    Approved: "Approved",
-    Rejected: "Rejected",
-  };
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-150 ${colors[value]}`}
-    >
-      {labels[value]}
-    </button>
-  );
-};
+const STATUS_OPTIONS = ["All", "draft", "under_review", "approved", "rejected"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
-
 const HistoryPD = () => {
   const { axios, createrToken } = useAppContext();
   const navigate = useNavigate();
 
-  const [documents, setDocuments] = useState([]);
-  const [filteredDocs, setFilteredDocs] = useState([]);
+  const [groupedData, setGroupedData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+
+  // Inspector & Modal States
+  const [selectedProgram, setSelectedProgram] = useState(null);
+  const [previewData, setPreviewData] = useState(null);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchHistory = useCallback(
@@ -158,338 +83,431 @@ const HistoryPD = () => {
           headers: { createrToken },
         });
         if (data.success) {
-          setDocuments(data.pds);
-          setFilteredDocs(data.pds);
+          setGroupedData(data.groupedData);
+          // If a program is open, update its specific data
+          if (selectedProgram) {
+            const updatedProg = data.groupedData.find(
+              (p) => p.programCode === selectedProgram.programCode,
+            );
+            setSelectedProgram(updatedProg || null);
+          }
         }
       } catch (err) {
-        console.error("History fetch error:", err);
         toast.error("Failed to load history");
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [axios, createrToken],
+    [axios, createrToken, selectedProgram],
   );
 
   useEffect(() => {
     fetchHistory();
-  }, [fetchHistory]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createrToken]);
 
-  // ── Filter ────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    let temp = [...documents];
+  // ── Filter & Search ───────────────────────────────────────────────────────
+  const filteredDocs = useMemo(() => {
+    let temp = [...groupedData];
     if (statusFilter !== "All") {
-      temp = temp.filter((d) => d.status === statusFilter);
+      temp = temp.filter((d) => d.latestStatus === statusFilter);
     }
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       temp = temp.filter(
         (d) =>
           d.programCode.toLowerCase().includes(q) ||
-          (d.section1_info?.programName || "").toLowerCase().includes(q),
+          (d.programName || "").toLowerCase().includes(q),
       );
     }
-    setFilteredDocs(temp);
-  }, [searchTerm, statusFilter, documents]);
-
-  // ── Status counts ─────────────────────────────────────────────────────────
-  const counts = STATUS_OPTIONS.reduce((acc, s) => {
-    acc[s] =
-      s === "All"
-        ? documents.length
-        : documents.filter((d) => d.status === s).length;
-    return acc;
-  }, {});
+    return temp;
+  }, [groupedData, statusFilter, searchTerm]);
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleEdit = (id) =>
     navigate("/creator/create-pd", { state: { loadId: id } });
-  const handlePreview = (id) =>
-    navigate("/creator/preview", { state: { loadId: id } });
-  const handlePrint = (id) =>
-    navigate("/creator/preview", { state: { loadId: id, autoPrint: true } });
+
+  const handlePreview = (version, program) => {
+    setPreviewData({
+      pdData: version.pdData,
+      metaData: {
+        programCode: program.programCode,
+        programName: program.programName,
+        schemeYear: program.schemeYear,
+        versionNo: version.versionNo,
+        status: version.status,
+      },
+    });
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // RENDER
+  // RENDER: INSPECTOR PANEL (When a Program is Selected)
   // ─────────────────────────────────────────────────────────────────────────
+  if (selectedProgram) {
+    return (
+      <CreatorLayout>
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 lg:px-0 pb-16 space-y-6">
+          <button
+            onClick={() => setSelectedProgram(null)}
+            className="flex items-center gap-2 text-stone-500 hover:text-blue-700 font-semibold transition-colors group text-sm"
+          >
+            <ChevronLeft
+              size={18}
+              className="group-hover:-translate-x-0.5 transition-transform"
+            />
+            Back to Programs Dashboard
+          </button>
 
+          <div className="bg-white border border-stone-200 rounded-3xl p-8 shadow-sm">
+            <div className="flex flex-col md:flex-row justify-between items-start gap-6">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    {selectedProgram.programCode}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider border ${getStatusStyle(selectedProgram.latestStatus)}`}
+                  >
+                    {getStatusLabel(selectedProgram.latestStatus)}
+                  </span>
+                </div>
+                <h1 className="text-3xl font-black text-stone-900 leading-tight tracking-tight">
+                  {selectedProgram.programName || "Untitled Program"}
+                </h1>
+                <div className="flex items-center gap-4 mt-4 text-sm font-semibold text-stone-500">
+                  <span className="flex items-center gap-1.5">
+                    <Calendar size={15} className="text-blue-500" /> Scheme:{" "}
+                    {selectedProgram.schemeYear}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Clock size={15} className="text-blue-500" /> AY:{" "}
+                    {selectedProgram.effectiveAy}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <CreditCard size={15} className="text-blue-500" />{" "}
+                    {selectedProgram.totalCredits} Credits
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex-shrink-0">
+                <button
+                  onClick={() => handleEdit(selectedProgram.versions[0]._id)}
+                  className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-md shadow-blue-600/20 transition-all active:scale-95"
+                >
+                  <Edit size={16} /> Edit / Create New Draft
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Version History Timeline */}
+          <div className="bg-white border border-stone-200 rounded-3xl overflow-hidden shadow-sm">
+            <div className="px-8 py-5 border-b border-stone-100 bg-stone-50/50 flex items-center justify-between">
+              <h3 className="text-base font-bold text-stone-800 flex items-center gap-2">
+                <History size={18} className="text-blue-600" /> Version History
+              </h3>
+              <span className="text-xs font-bold text-stone-400 uppercase tracking-widest bg-white border border-stone-200 px-3 py-1 rounded-full shadow-sm">
+                {selectedProgram.versions.length} records
+              </span>
+            </div>
+
+            <div className="p-8 space-y-4">
+              {selectedProgram.versions.map((version, idx) => (
+                <div key={version._id} className="relative flex gap-6 group">
+                  {/* Timeline Line */}
+                  {idx !== selectedProgram.versions.length - 1 && (
+                    <div className="absolute left-[15px] top-8 bottom-[-16px] w-px bg-stone-200 group-hover:bg-blue-200 transition-colors" />
+                  )}
+
+                  {/* Timeline Dot */}
+                  <div className="relative z-10 flex-shrink-0">
+                    <div
+                      className={`w-8 h-8 rounded-full border-4 border-white flex items-center justify-center shadow-sm ${idx === 0 ? "bg-blue-500 text-white" : "bg-stone-200 text-stone-500"}`}
+                    >
+                      {idx === 0 ? (
+                        <CheckCircle2 size={14} />
+                      ) : (
+                        <Hash size={12} />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Content Card */}
+                  <div
+                    className={`flex-1 bg-white border rounded-2xl p-6 transition-all ${idx === 0 ? "border-blue-200 shadow-md ring-1 ring-blue-50" : "border-stone-100 hover:border-stone-300 shadow-sm"}`}
+                  >
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="font-extrabold text-stone-800 text-lg">
+                            Version {version.versionNo}
+                          </span>
+                          {idx === 0 && (
+                            <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded uppercase tracking-widest">
+                              Latest
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-stone-400 font-medium">
+                          Saved on{" "}
+                          {new Date(version.updatedAt).toLocaleString("en-IN", {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-[10px] font-bold px-3 py-1.5 rounded-md border uppercase tracking-wider shadow-sm ${getStatusStyle(version.status)}`}
+                      >
+                        {getStatusLabel(version.status)}
+                      </span>
+                    </div>
+
+                    {/* Highly Styled Review Comment */}
+                    {version.changeSummary && (
+                      <div
+                        className={`mb-5 p-4 rounded-xl border ${version.status?.toLowerCase() === "approved" ? "bg-emerald-50/50 border-emerald-100" : "bg-orange-50/50 border-orange-100"}`}
+                      >
+                        <p
+                          className={`text-[11px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5 ${version.status?.toLowerCase() === "approved" ? "text-emerald-700" : "text-orange-700"}`}
+                        >
+                          {version.status?.toLowerCase() === "approved" ? (
+                            <CheckCircle2 size={14} />
+                          ) : (
+                            <MessageSquare size={14} />
+                          )}
+                          Reviewer Comment
+                        </p>
+                        <p
+                          className={`text-sm font-medium leading-relaxed ${version.status?.toLowerCase() === "approved" ? "text-emerald-900" : "text-orange-900"}`}
+                        >
+                          "{version.changeSummary}"
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        onClick={() => handlePreview(version, selectedProgram)}
+                        className="flex items-center gap-1.5 px-5 py-2.5 bg-stone-50 text-stone-700 rounded-xl text-xs font-bold hover:bg-stone-100 transition-colors border border-stone-200"
+                      >
+                        <Eye size={15} /> Preview Document
+                      </button>
+                      <button
+                        onClick={() => handleEdit(version._id)}
+                        className="flex items-center gap-1.5 px-5 py-2.5 bg-white text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-50 transition-colors border border-blue-200"
+                      >
+                        <Edit size={15} /> Restore & Edit
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Document Preview Modal ──────────────────────────────────────────── */}
+        {previewData && (
+          <Preview
+            isModal={true}
+            onClose={() => setPreviewData(null)}
+            passedPdData={previewData.pdData}
+            passedMetaData={previewData.metaData}
+          />
+        )}
+      </CreatorLayout>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER: MAIN DASHBOARD
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <CreatorLayout>
       <style
         dangerouslySetInnerHTML={{
-          __html: `
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
-        * { font-family: 'DM Sans', sans-serif; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-      `,
+          __html: ` @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap'); * { font-family: 'DM Sans', sans-serif; } `,
         }}
       />
 
       <div className="max-w-6xl mx-auto px-3 sm:px-4 lg:px-0 pb-10 space-y-6">
-        {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <GraduationCap size={18} className="text-gray-400" />
-              <h1 className="text-lg font-semibold text-gray-800 tracking-tight">
-                PD History
+              <GraduationCap size={20} className="text-stone-400" />
+              <h1 className="text-2xl font-black text-stone-900 tracking-tight">
+                Program Documents
               </h1>
             </div>
-            <p className="text-xs text-gray-400 font-medium">
-              All versions of Program Documents —{" "}
-              <span className="text-gray-600 font-semibold">
-                {documents.length}
-              </span>{" "}
-              total
+            <p className="text-sm text-stone-500 font-medium">
+              Manage and inspect your drafted and approved curriculum
+              frameworks.
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => fetchHistory(true)}
               disabled={refreshing}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 shadow-sm transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-stone-600 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 shadow-sm transition-colors disabled:opacity-50"
             >
               <RefreshCw
-                size={13}
+                size={15}
                 className={refreshing ? "animate-spin" : ""}
-              />
+              />{" "}
               Refresh
             </button>
             <Link
               to="/creator/create-pd"
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-gray-900 text-white rounded-xl hover:bg-gray-800 shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-5 py-2 text-sm font-bold bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md shadow-blue-600/20 transition-all active:scale-95"
             >
-              <Plus size={14} />
-              New PD
+              <Plus size={16} /> New Program
             </Link>
           </div>
         </div>
 
-        {/* ── Search + Filter Bar ─────────────────────────────────────────── */}
-        <SectionCard
-          icon={<Filter size={15} className="text-gray-400" />}
-          iconBg="bg-gray-100"
-          title="Filter Documents"
-          subtitle="Search by program code or name, then filter by status"
-        >
-          {/* Search */}
-          <div className="relative mb-4">
-            <Search
-              className="absolute left-3 top-2.5 text-gray-300"
-              size={16}
-            />
-            <input
-              type="text"
-              placeholder="Search by program code or name…"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-9 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all placeholder-gray-300"
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm("")}
-                className="absolute right-3 top-2.5 text-gray-300 hover:text-gray-500 transition-colors"
-              >
-                <X size={16} />
-              </button>
-            )}
-          </div>
-
-          {/* Status Pills */}
-          <div className="flex flex-wrap gap-2">
-            {STATUS_OPTIONS.map((s) => (
-              <StatusPill
-                key={s}
-                value={s}
-                active={statusFilter === s}
-                onClick={() => setStatusFilter(s)}
+        <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-4">
+          <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+            <div className="relative w-full md:w-96">
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400"
+                size={16}
               />
-            ))}
-            {statusFilter !== "All" && (
-              <button
-                onClick={() => setStatusFilter("All")}
-                className="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                Clear filter
-              </button>
-            )}
+              <input
+                type="text"
+                placeholder="Search program code or name…"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-9 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:bg-white transition-all placeholder-stone-400"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 bg-stone-100 p-1 rounded-xl w-full md:w-auto overflow-x-auto scrollbar-hide">
+              {STATUS_OPTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${statusFilter === s ? "bg-white text-stone-800 shadow-sm" : "text-stone-500 hover:text-stone-700"}`}
+                >
+                  {s === "All" ? "All" : getStatusLabel(s)}
+                </button>
+              ))}
+            </div>
           </div>
+        </div>
 
-          {/* Result Count */}
-          {(searchTerm || statusFilter !== "All") && (
-            <p className="text-xs text-gray-400 mt-3 font-medium">
-              Showing{" "}
-              <span className="text-gray-700 font-semibold">
-                {filteredDocs.length}
-              </span>{" "}
-              of{" "}
-              <span className="text-gray-700 font-semibold">
-                {documents.length}
-              </span>{" "}
-              documents
-            </p>
-          )}
-        </SectionCard>
-
-        {/* ── Documents Table ─────────────────────────────────────────────── */}
-        <SectionCard
-          icon={<BookMarked size={15} className="text-blue-500" />}
-          iconBg="bg-blue-50"
-          title="Program Documents"
-          subtitle={`${filteredDocs.length} result${filteredDocs.length !== 1 ? "s" : ""}`}
-          noPad
-        >
+        <div className="bg-white border border-stone-200 rounded-2xl shadow-sm overflow-hidden">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <Loader2 className="animate-spin text-blue-500" size={28} />
-              <p className="text-xs text-gray-400">Loading documents…</p>
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <Loader2 className="animate-spin text-blue-500" size={32} />
+              <p className="text-sm font-medium text-stone-500">
+                Fetching workspace...
+              </p>
             </div>
           ) : filteredDocs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <div className="p-4 bg-gray-50 rounded-2xl">
-                <GraduationCap size={32} className="text-gray-200" />
+            <div className="flex flex-col items-center justify-center py-20 gap-4 text-center px-4">
+              <div className="p-5 bg-stone-50 rounded-full border border-stone-100">
+                <BookMarked size={36} className="text-stone-300" />
               </div>
-              <p className="text-sm font-medium text-gray-600">
-                No documents found
-              </p>
-              <p className="text-xs text-gray-400 text-center max-w-xs">
-                {searchTerm || statusFilter !== "All"
-                  ? "Try adjusting your search or filter."
-                  : "Create your first Program Document to get started."}
-              </p>
-              {!searchTerm && statusFilter === "All" && (
-                <Link
-                  to="/creator/create-pd"
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-gray-900 text-white rounded-xl hover:bg-gray-800 mt-1 transition-colors"
-                >
-                  <Plus size={13} /> Create PD
-                </Link>
-              )}
+              <div>
+                <p className="text-base font-bold text-stone-700">
+                  No Programs Found
+                </p>
+                <p className="text-sm text-stone-500 max-w-sm mt-1">
+                  {searchTerm || statusFilter !== "All"
+                    ? "Try adjusting your search criteria or clearing filters."
+                    : "You haven't created any Program Documents yet. Click 'New Program' to get started."}
+                </p>
+              </div>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse whitespace-nowrap">
                 <thead>
-                  <tr className="bg-gray-50/80 border-b border-gray-100">
+                  <tr className="bg-stone-50/80 border-b border-stone-100">
                     {[
-                      "Program Information",
-                      "Ver / Scheme",
-                      "Status",
-                      "Updated",
-                      "Actions",
+                      "Program Details",
+                      "Scheme & Credits",
+                      "Latest Status",
+                      "Last Updated",
+                      "",
                     ].map((h, i) => (
                       <th
                         key={i}
-                        className={`px-5 py-3.5 text-[10px] font-semibold text-gray-500 uppercase tracking-widest ${
-                          i === 4 ? "text-right" : ""
-                        }`}
+                        className={`px-6 py-4 text-[10px] font-black text-stone-400 uppercase tracking-widest ${i === 4 ? "text-right" : ""}`}
                       >
                         {h}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
+                <tbody className="divide-y divide-stone-50">
                   {filteredDocs.map((doc) => (
                     <tr
-                      key={doc._id}
-                      className="hover:bg-gray-50/60 transition-colors group"
+                      key={doc.programCode}
+                      onClick={() => setSelectedProgram(doc)}
+                      className="hover:bg-blue-50/30 transition-colors group cursor-pointer"
                     >
-                      {/* Program Info */}
-                      <td className="px-5 py-4">
+                      <td className="px-6 py-5">
                         <div className="flex flex-col">
-                          <span className="font-semibold text-gray-800 text-sm">
+                          <span className="font-bold text-stone-800 text-[15px] group-hover:text-blue-700 transition-colors mb-0.5">
                             {doc.programCode}
                           </span>
-                          <span className="text-xs text-gray-400 truncate max-w-[220px] mt-0.5">
-                            {doc.section1_info?.programName ||
-                              "Untitled Program"}
+                          <span className="text-xs font-semibold text-stone-500 truncate max-w-[280px]">
+                            {doc.programName || "Untitled Program"}
                           </span>
                         </div>
                       </td>
-
-                      {/* Version / Scheme */}
-                      <td className="px-5 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[11px] font-semibold bg-blue-50 text-blue-600 border border-blue-100 px-2 py-0.5 rounded w-fit">
-                            v{doc.pdVersion}
+                      <td className="px-6 py-5">
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[10px] font-bold bg-stone-100 text-stone-600 border border-stone-200 px-2 py-0.5 rounded uppercase w-fit tracking-wider shadow-sm">
+                            v{doc.latestVersion}
                           </span>
-                          <span className="text-[11px] text-gray-400 flex items-center gap-1">
-                            <Calendar size={11} className="text-gray-300" />
+                          <span className="text-xs font-semibold text-stone-500 flex items-center gap-1.5">
+                            <Calendar size={13} className="text-stone-400" />{" "}
                             {doc.schemeYear}
                           </span>
                         </div>
                       </td>
-
-                      {/* Status */}
-                      <td className="px-5 py-4">
+                      <td className="px-6 py-5">
                         <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${getStatusColor(doc.status)}`}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider shadow-sm border ${getStatusStyle(doc.latestStatus)}`}
                         >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${getStatusDot(doc.status)}`}
-                          />
-                          {doc.status === "UnderReview"
-                            ? "In Review"
-                            : doc.status}
+                          {getStatusLabel(doc.latestStatus)}
                         </span>
                       </td>
-
-                      {/* Updated */}
-                      <td className="px-5 py-4">
-                        <span className="text-xs text-gray-400 flex items-center gap-1.5">
-                          <Clock size={12} className="text-gray-300" />
+                      <td className="px-6 py-5">
+                        <span className="text-xs font-semibold text-stone-500 flex items-center gap-1.5">
+                          <Clock size={13} className="text-stone-400" />
                           {new Date(doc.updatedAt).toLocaleDateString("en-IN", {
-                            day: "numeric",
+                            day: "2-digit",
                             month: "short",
                             year: "numeric",
                           })}
                         </span>
                       </td>
-
-                      {/* Actions */}
-                      <td className="px-5 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handlePrint(doc._id)}
-                            title="Print"
-                            className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors"
-                          >
-                            <Printer size={15} />
-                          </button>
-                          <button
-                            onClick={() => handlePreview(doc._id)}
-                            title="Preview"
-                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
-                          >
-                            <Eye size={15} />
-                          </button>
-                          <button
-                            onClick={() => handleEdit(doc._id)}
-                            title="Edit"
-                            className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
-                          >
-                            <Edit size={15} />
-                          </button>
-                        </div>
+                      <td className="px-6 py-5 text-right">
+                        <button className="flex items-center justify-end gap-1.5 px-5 py-2.5 text-xs font-bold text-blue-600 bg-blue-50 rounded-xl opacity-0 group-hover:opacity-100 transition-all ml-auto hover:bg-blue-100 border border-blue-100 shadow-sm">
+                          <Eye size={15} /> Inspect
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-
-              {/* Footer count */}
-              <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50">
-                <p className="text-[11px] text-gray-400 font-medium">
-                  {filteredDocs.length} document
-                  {filteredDocs.length !== 1 ? "s" : ""} shown
-                </p>
-              </div>
             </div>
           )}
-        </SectionCard>
+        </div>
       </div>
     </CreatorLayout>
   );
