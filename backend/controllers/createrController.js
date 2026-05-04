@@ -7,6 +7,8 @@ import Section2_Objectives from "../models/pd/Section2_Objectives.js";
 import Section3_Structure from "../models/pd/Section3_Structure.js";
 import Section4_Electives from "../models/pd/Section4_Electives.js";
 
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 // --- REQUIRED IMPORTS FOR FILE PARSING ---
 import { spawn } from "child_process";
 import path from "path";
@@ -576,5 +578,182 @@ export const getAdminsForReview = async (req, res) => {
     res
       .status(500)
       .json({ success: false, message: "Failed to fetch admins." });
+  }
+};
+
+export const enhanceFieldWithAI = async (req, res) => {
+  try {
+    const { prompt, currentContent, fieldName } = req.body;
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        message: "Gemini API key is not configured.",
+      });
+    }
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+    // FIX: Changed "gemini-1.5-flash-latest" to "gemini-1.5-flash"
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3-flash-preview",
+    });
+
+    const systemPrompt = `
+You are an expert academic curriculum assistant helping a professor format a Program Document.
+The user is working on the section: "${fieldName}".
+
+User's Instructions: "${prompt}"
+
+Current Content (if any):
+${currentContent || "(No existing content)"}
+
+TASK:
+Apply the user's instructions to the content.
+
+CRITICAL RULE:
+Return ONLY valid HTML (<p>, <ul>, <li>, <table>, etc).
+NO markdown, NO explanation, NO extra text.
+`;
+
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: systemPrompt }],
+        },
+      ],
+    });
+
+    let enhancedText = result.response.text();
+
+    // Clean markdown artifacts
+    enhancedText = enhancedText
+      .replace(/```html\n?/gi, "")
+      .replace(/```\n?/gi, "")
+      .trim();
+
+    return res.status(200).json({
+      success: true,
+      enhancedContent: enhancedText,
+    });
+  } catch (error) {
+    console.error("AI Enhancer Error Details:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to generate AI content.",
+    });
+  }
+};
+
+// Add this inside createrController.js
+
+export const enhanceSectionWithAI = async (req, res) => {
+  try {
+    const { sectionName, sectionData } = req.body;
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res
+        .status(500)
+        .json({ success: false, message: "Gemini API key is not configured." });
+    }
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+
+    const systemPrompt = `
+You are an expert academic curriculum editor.
+The user has extracted data from a PDF for the section: "${sectionName}".
+This data might contain OCR errors, unwanted garbage text (like page numbers or weird symbols), or grammatical mistakes.
+
+TASK:
+1. Clean up and fix all grammatical errors and typos.
+2. Remove any obvious garbage text or OCR artifacts.
+3. Ensure a highly professional, academic tone.
+4. CRITICAL: You must return the EXACT SAME JSON structure, with the exact same keys. Only modify the string values.
+
+Input Data (JSON):
+${JSON.stringify(sectionData, null, 2)}
+
+CRITICAL RULE:
+Return ONLY a valid JSON object. DO NOT wrap it in markdown code blocks like \`\`\`json. Just output the raw JSON string.
+`;
+
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
+    });
+
+    let enhancedText = result.response.text();
+
+    // Clean markdown artifacts just in case Gemini includes them
+    enhancedText = enhancedText
+      .replace(/```json\n?/gi, "")
+      .replace(/```\n?/gi, "")
+      .trim();
+
+    const parsedData = JSON.parse(enhancedText);
+
+    return res.status(200).json({ success: true, enhancedData: parsedData });
+  } catch (error) {
+    console.error("AI Section Enhancer Error Details:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to polish section data." });
+  }
+};
+
+export const parseTableWithAI = async (req, res) => {
+  try {
+    const { prompt, rawData, tableType } = req.body;
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res
+        .status(500)
+        .json({ success: false, message: "Gemini API key is not configured." });
+    }
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+    // Using JSON mode to guarantee structured output
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3-flash-preview",
+      generationConfig: { responseMimeType: "application/json" },
+    });
+
+    let schemaInstruction = "";
+    if (tableType === "outcomeMap") {
+      schemaInstruction = `Return a 2D JSON array of strings. The first array MUST be headers starting with "CO/PO", followed by POs and PSOs (e.g., ["CO/PO", "PO1", "PO2", "PSO1"]). Subsequent arrays represent rows (e.g., ["CO1", "3", "2", ""]). Leave blank if no mapping exists.`;
+    } else if (tableType === "assessmentWeight") {
+      schemaInstruction = `Return a JSON array of objects. Each object represents a row. Keys MUST strictly be: "co" (string), "q1", "q2", "q3", "t1", "t2", "t3", "a1", "a2", "see", "cie", "total". All values except "co" must be numbers. Calculate cie and total if missing.`;
+    } else if (tableType === "teaching") {
+      schemaInstruction = `Return a JSON array of objects. Keys MUST strictly be: "number" (string/number), "topic" (string), "slides" (string URL or blank), "videos" (string URL or blank).`;
+    }
+
+    const systemPrompt = `
+You are a highly advanced data parsing assistant.
+The user wants to format raw text/data into a structured table for an academic syllabus.
+
+Target Table Type: ${tableType}
+
+User's Custom Instructions: "${prompt || "Parse the provided data perfectly into the required schema."}"
+
+Raw Data / Pasted Table:
+${rawData || "(No raw data provided, generate from instructions)"}
+
+CRITICAL INSTRUCTION:
+${schemaInstruction}
+Extract the data accurately, infer missing columns if requested by the user's prompt, and output ONLY valid JSON.
+`;
+
+    const result = await model.generateContent(systemPrompt);
+    const parsedJson = JSON.parse(result.response.text());
+
+    return res.status(200).json({ success: true, parsedData: parsedJson });
+  } catch (error) {
+    console.error("AI Table Parser Error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to parse table with AI." });
   }
 };
