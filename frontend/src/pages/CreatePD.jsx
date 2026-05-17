@@ -2431,7 +2431,7 @@ const CreatePD = () => {
 
             <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
               <button
-                onClick={() => navigate("/creator/history-pd")}
+                onClick={() => navigate("/creator/pd-history")}
                 className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
               >
                 <FolderOpen size={14} />

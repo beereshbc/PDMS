@@ -20,6 +20,7 @@ import {
   Layers3,
   ChevronRight,
   Calendar,
+  BookUser,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
@@ -357,6 +358,7 @@ const CreatorDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // States
   const [pdStats, setPdStats] = useState({
     total: 0,
     drafts: 0,
@@ -364,6 +366,7 @@ const CreatorDashboard = () => {
     approved: 0,
   });
   const [recentPDs, setRecentPDs] = useState([]);
+
   const [cdStats, setCdStats] = useState({
     total: 0,
     drafts: 0,
@@ -372,19 +375,22 @@ const CreatorDashboard = () => {
   });
   const [recentCDs, setRecentCDs] = useState([]);
 
+  const [assignedCDs, setAssignedCDs] = useState([]); // NEW: Assigned Courses
+
   // ── Fetch all dashboard data ──────────────────────────────────────────────
   const fetchAll = useCallback(
     async (silent = false) => {
       if (silent) setRefreshing(true);
       else setLoading(true);
       try {
-        const [pdRes, cdRes] = await Promise.all([
+        const [pdRes, cdRes, assignRes] = await Promise.all([
           axios.get("/api/creater/dashboard-stats", {
             headers: { createrToken },
           }),
           axios.get("/api/creater/cd/dashboard-stats", {
             headers: { createrToken },
           }),
+          axios.get("/api/creater/cd/assigned", { headers: { createrToken } }), // Fetch Assigned!
         ]);
         if (pdRes.data.success) {
           setPdStats(pdRes.data.stats);
@@ -393,6 +399,9 @@ const CreatorDashboard = () => {
         if (cdRes.data.success) {
           setCdStats(cdRes.data.stats);
           setRecentCDs(cdRes.data.recentDocs || []);
+        }
+        if (assignRes.data.success) {
+          setAssignedCDs(assignRes.data.assignedCourses || []);
         }
       } catch (err) {
         console.error("Dashboard fetch error:", err);
@@ -409,7 +418,7 @@ const CreatorDashboard = () => {
     fetchAll();
   }, [fetchAll]);
 
-  // ── PD navigation handlers ────────────────────────────────────────────────
+  // ── Handlers ────────────────────────────────────────────────
   const handlePDEdit = (id) =>
     navigate("/creator/create-pd", { state: { loadId: id } });
   const handlePDPreview = (id) =>
@@ -417,13 +426,105 @@ const CreatorDashboard = () => {
   const handlePDPrint = (id) =>
     navigate("/creator/preview", { state: { loadId: id, autoPrint: true } });
 
-  // ── CD navigation handlers ────────────────────────────────────────────────
   const handleCDEdit = (id) =>
-    navigate("/creator/create-cd", { state: { loadId: id } });
+    navigate("/creator/edit-cd", { state: { loadId: id } });
   const handleCDPreview = (id) =>
     navigate("/creator/preview-cd", { state: { loadId: id } });
   const handleCDPrint = (id) =>
     navigate("/creator/preview-cd", { state: { loadId: id, autoPrint: true } });
+
+  // Load an assigned course by injecting it directly into Local Storage and redirecting
+  const handleStartAssignedDraft = (course) => {
+    const DEFAULT_OUTCOME_HEADERS = [
+      "CO\\PO",
+      "PO1",
+      "PO2",
+      "PO3",
+      "PO4",
+      "PO5",
+      "PO6",
+      "PO7",
+      "PO8",
+      "PO9",
+      "PO10",
+      "PO11",
+      "PO12",
+      "PSO1",
+      "PSO2",
+      "PSO3",
+    ];
+
+    // Create a perfectly safe, blank skeleton CD
+    const safeSkeletonData = {
+      courseCode: course.courseCode || "",
+      courseTitle: course.courseTitle || "",
+      programCode: course.programCode || "",
+      programTitle: course.programName || "",
+      schoolCode: "",
+      schoolTitle: "",
+      departmentCode: "",
+      department: "",
+      facultyCode: "",
+      facultyTitle: "",
+      offeringDepartment: "",
+      facultyMember: "",
+      semesterDuration: "",
+      totalHours: 0,
+      credits: { L: 0, T: 0, P: 0, total: course.credits || 0 },
+      aimsSummary: "",
+      objectives: "",
+      courseContent: "",
+      gradingCriterion: "",
+      courseOutcomesHtml: "",
+      outcomeMapHtml: "",
+      assessmentWeightHtml: "",
+      courseOutcomes: [],
+      outcomeMap: {
+        matrix: [
+          DEFAULT_OUTCOME_HEADERS,
+          ...Array.from({ length: 6 }, (_, i) => [
+            `CO${i + 1}`,
+            ...Array(15).fill(""),
+          ]),
+        ],
+        raw: "",
+      },
+      resources: { textBooks: [], references: [], otherResources: [] },
+      teaching: [],
+      assessmentWeight: Array.from({ length: 6 }, (_, i) => ({
+        co: `CO${i + 1}`,
+        q1: 0,
+        q2: 0,
+        q3: 0,
+        t1: 0,
+        t2: 0,
+        t3: 0,
+        a1: 0,
+        a2: 0,
+        see: 0,
+        cie: 0,
+        total: 0,
+      })),
+      attainmentCalculations: { recordingMarks: "", settingTargets: "" },
+      otherDetails: { assignmentDetails: "", academicIntegrity: "" },
+    };
+
+    const safeMeta = {
+      courseId: course.courseCode,
+      courseCode: course.courseCode,
+      courseTitle: course.courseTitle,
+      programName: course.programName,
+      versionNo: "1.0.0",
+      status: "Draft",
+      isNew: true,
+    };
+
+    localStorage.setItem("cd_draft_meta", JSON.stringify(safeMeta));
+    localStorage.setItem("cd_draft_data", JSON.stringify(safeSkeletonData));
+    localStorage.setItem("cd_draft_dirty", JSON.stringify(["all"]));
+
+    navigate("/creator/edit-cd");
+  };
 
   // ── Combined totals ───────────────────────────────────────────────────────
   const combined = {
@@ -451,12 +552,7 @@ const CreatorDashboard = () => {
     <CreatorLayout>
       <style
         dangerouslySetInnerHTML={{
-          __html: `
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
-        * { font-family: 'DM Sans', sans-serif; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-      `,
+          __html: ` @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap'); * { font-family: 'DM Sans', sans-serif; } .scrollbar-hide::-webkit-scrollbar { display: none; } .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; } `,
         }}
       />
 
@@ -483,25 +579,77 @@ const CreatorDashboard = () => {
               <RefreshCw
                 size={13}
                 className={refreshing ? "animate-spin" : ""}
-              />
+              />{" "}
               Refresh
             </button>
             <Link
-              to="/creator/create-cd"
+              to="/creator/edit-cd"
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 shadow-sm transition-colors"
             >
-              <BookOpen size={14} className="text-violet-500" />
-              New CD
+              <BookOpen size={14} className="text-violet-500" /> New CD
             </Link>
             <Link
               to="/creator/create-pd"
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-gray-900 text-white rounded-xl hover:bg-gray-800 shadow-sm transition-colors"
             >
-              <Plus size={14} />
-              New PD
+              <Plus size={14} /> New PD
             </Link>
           </div>
         </div>
+
+        {/* ── NEW: Assigned Tasks Section ─────────────────────────────────── */}
+        {assignedCDs.length > 0 && (
+          <div className="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl shadow-md p-1">
+            <div className="bg-white rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-indigo-50/30">
+                <div className="flex items-center gap-2">
+                  <BookUser size={18} className="text-indigo-600" />
+                  <h3 className="text-sm font-bold text-gray-800">
+                    Your Assigned Courses
+                  </h3>
+                </div>
+                <span className="text-xs font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
+                  {assignedCDs.length} Pending
+                </span>
+              </div>
+              <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[300px] overflow-y-auto">
+                {assignedCDs.map((c, i) => (
+                  <div
+                    key={i}
+                    className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-indigo-300 hover:shadow-md transition-all group"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-bold text-gray-800 text-sm group-hover:text-indigo-700 transition-colors">
+                          {c.courseCode}
+                        </span>
+                        <span className="text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded uppercase">
+                          {c.type || "Theory"}
+                        </span>
+                      </div>
+                      <p className="text-xs font-semibold text-gray-600 truncate mb-1.5">
+                        {c.courseTitle}
+                      </p>
+                      <div className="flex items-center gap-2 text-[10px] text-gray-500 font-medium">
+                        <span className="truncate max-w-[120px]">
+                          {c.programName}
+                        </span>
+                        <span>•</span>
+                        <span>{c.context}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleStartAssignedDraft(c)}
+                      className="flex items-center justify-center w-full sm:w-auto gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-sm transition-colors flex-shrink-0"
+                    >
+                      <FileText size={14} /> Start Drafting
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Combined Stats Strip ────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -662,7 +810,6 @@ const CreatorDashboard = () => {
           subtitle="Last 5 updated documents — switch between PD and CD"
           action={
             <div className="flex items-center gap-2">
-              {/* Tab toggle */}
               <div className="flex items-center bg-gray-100 rounded-xl p-1 gap-1">
                 <TabBtn
                   active={activeTab === "pd"}
@@ -679,7 +826,6 @@ const CreatorDashboard = () => {
                   <BookOpen size={12} /> CD
                 </TabBtn>
               </div>
-              {/* View All */}
               <Link
                 to={
                   activeTab === "pd"
@@ -778,3 +924,4 @@ const CreatorDashboard = () => {
 };
 
 export default CreatorDashboard;
+33;

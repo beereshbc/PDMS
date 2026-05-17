@@ -161,7 +161,7 @@ export const searchCreaters = async (req, res) => {
     }
     const creaters = await Creater.find(query)
       .select("name email discipline _id")
-      .limit(20);
+      .limit(50);
     const formattedCreaters = creaters.map((c) => ({
       id: c._id,
       name: c.name || "Unknown Name",
@@ -755,5 +755,91 @@ Extract the data accurately, infer missing columns if requested by the user's pr
     return res
       .status(500)
       .json({ success: false, message: "Failed to parse table with AI." });
+  }
+};
+
+// Add this inside createrController.js
+
+export const getAssignedCDs = async (req, res) => {
+  try {
+    const creatorId = req.id; // From your auth middleware
+
+    // Find all PDs where this creator is assigned to a course
+    const pds = await PD.find({
+      $or: [
+        { "pd_data.semesters.courses.assigneeId": creatorId },
+        { "pd_data.prof_electives.courses.assigneeId": creatorId },
+        { "pd_data.open_electives.courses.assigneeId": creatorId },
+      ],
+    }).populate("created_by", "name");
+
+    let assignedCourses = [];
+
+    pds.forEach((pd) => {
+      const pName = pd.program_name;
+      const pCode = pd.program_id;
+      const creatorName = pd.created_by?.name || "Admin";
+
+      // 1. Check Semesters
+      pd.pd_data?.semesters?.forEach((sem) => {
+        sem.courses?.forEach((c) => {
+          if (c.assigneeId === creatorId) {
+            assignedCourses.push({
+              courseCode: c.code,
+              courseTitle: c.title,
+              programName: pName,
+              programCode: pCode,
+              type: c.type || "Theory",
+              credits: c.credits,
+              context: `Semester ${sem.sem_no}`,
+              pdCreatorName: creatorName,
+            });
+          }
+        });
+      });
+
+      // 2. Check Professional Electives
+      pd.pd_data?.prof_electives?.forEach((grp, gi) => {
+        grp.courses?.forEach((c) => {
+          if (c.assigneeId === creatorId) {
+            assignedCourses.push({
+              courseCode: c.code,
+              courseTitle: c.title,
+              programName: pName,
+              programCode: pCode,
+              type: "Professional Elective",
+              credits: c.credits,
+              context: grp.title || `PE Group ${gi + 1}`,
+              pdCreatorName: creatorName,
+            });
+          }
+        });
+      });
+
+      // 3. Check Open Electives
+      pd.pd_data?.open_electives?.forEach((grp, gi) => {
+        grp.courses?.forEach((c) => {
+          if (c.assigneeId === creatorId) {
+            assignedCourses.push({
+              courseCode: c.code,
+              courseTitle: c.title,
+              programName: pName,
+              programCode: pCode,
+              type: "Open Elective",
+              credits: c.credits,
+              context: grp.title || `OE Group ${gi + 1}`,
+              pdCreatorName: creatorName,
+            });
+          }
+        });
+      });
+    });
+
+    res.json({ success: true, assignedCourses });
+  } catch (error) {
+    console.error("Error fetching assigned CDs:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch assigned courses." });
   }
 };

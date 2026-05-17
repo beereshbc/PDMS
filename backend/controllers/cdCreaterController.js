@@ -595,32 +595,42 @@ export const getCDCreatorHistory = async (req, res) => {
 export const getAssignedCDs = async (req, res) => {
   try {
     const creatorId = req.id;
+
+    // Fetch all PDs where this creator is assigned, sorted by newest first
     const pds = await PD.find({
       $or: [
         { "pd_data.semesters.courses.assigneeId": creatorId },
         { "pd_data.prof_electives.courses.assigneeId": creatorId },
         { "pd_data.open_electives.courses.assigneeId": creatorId },
       ],
-    }).populate("created_by", "name email");
+    })
+      .populate("created_by", "name email")
+      .sort({ created_at: -1 });
 
-    const assignedCourses = [];
+    // Use a Map to ensure we only get the LATEST assignment per unique Course Code
+    const assignedCoursesMap = new Map();
+
     pds.forEach((pd) => {
       const checkAndPush = (course, contextInfo) => {
         if (course.assigneeId === creatorId) {
-          assignedCourses.push({
-            courseCode: course.code,
-            courseTitle: course.title,
-            credits: course.credits,
-            type: course.type || "Theory",
-            programCode: pd.program_id,
-            programName: pd.program_name,
-            pdVersion: pd.version_no,
-            pdCreatorName: pd.created_by?.name || "Unknown",
-            pdCreatorEmail: pd.created_by?.email || "Unknown",
-            context: contextInfo,
-          });
+          // If we haven't seen this courseCode yet, add it (since we sorted by newest PD first)
+          if (!assignedCoursesMap.has(course.code)) {
+            assignedCoursesMap.set(course.code, {
+              courseCode: course.code,
+              courseTitle: course.title,
+              credits: course.credits,
+              type: course.type || "Theory",
+              programCode: pd.program_id,
+              programName: pd.program_name,
+              pdVersion: pd.version_no,
+              pdCreatorName: pd.created_by?.name || "Unknown",
+              pdCreatorEmail: pd.created_by?.email || "Unknown",
+              context: contextInfo,
+            });
+          }
         }
       };
+
       pd.pd_data?.semesters?.forEach((sem) =>
         sem.courses?.forEach((c) => checkAndPush(c, `Semester ${sem.sem_no}`)),
       );
@@ -636,10 +646,124 @@ export const getAssignedCDs = async (req, res) => {
       );
     });
 
-    res.json({ success: true, assignedCourses });
+    res.json({
+      success: true,
+      assignedCourses: Array.from(assignedCoursesMap.values()),
+    });
   } catch (error) {
+    console.error("Error fetching assigned CDs:", error);
     res
       .status(500)
       .json({ success: false, message: "Failed to fetch assigned courses." });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. UNIVERSAL AI TABLE & LIST PARSER
+// ─────────────────────────────────────────────────────────────────────────────
+export const parseTableWithAI = async (req, res) => {
+  try {
+    const { prompt, rawData, tableType } = req.body;
+    if (!process.env.GEMINI_API_KEY)
+      return res
+        .status(500)
+        .json({ success: false, message: "Gemini API key missing." });
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      generationConfig: { responseMimeType: "application/json" },
+    });
+
+    let schemaInstruction = "";
+    if (tableType === "outcomeMap")
+      schemaInstruction = `Return a 2D JSON array of strings. First array MUST be headers starting with "CO/PO".`;
+    else if (tableType === "assessmentWeight")
+      schemaInstruction = `Return a JSON array of objects. Keys MUST strictly be: "co", "q1", "q2", "q3", "t1", "t2", "t3", "a1", "a2", "see", "cie", "total". Values must be numbers except "co".`;
+    else if (tableType === "teaching")
+      schemaInstruction = `Return a JSON array of objects. Keys MUST strictly be: "number", "topic", "slides", "videos".`;
+    else if (tableType === "list")
+      schemaInstruction = `Return a JSON array of strings. Each string represents a single item in the list (e.g. a textbook name or reference link).`;
+
+    const systemPrompt = `You are a data parsing assistant. Target Type: ${tableType}
+Instructions: "${prompt || "Parse the provided data perfectly into the schema."}"
+Raw Data: \n${rawData}
+CRITICAL: ${schemaInstruction} Output ONLY valid JSON.`;
+
+    const result = await model.generateContent(systemPrompt);
+    const parsedJson = JSON.parse(result.response.text());
+
+    return res.status(200).json({ success: true, parsedData: parsedJson });
+  } catch (error) {
+    console.error("AI Table Parser Error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to parse data." });
+  }
+};
+export const enhanceFieldWithAI = async (req, res) => {
+  try {
+    const { prompt, currentContent, fieldName } = req.body;
+    if (!process.env.GEMINI_API_KEY)
+      return res
+        .status(500)
+        .json({ success: false, message: "Gemini API key is not configured." });
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+
+    const systemPrompt = `You are an expert academic curriculum assistant editing: "${fieldName}".
+User's Instructions: "${prompt}"
+Current Content: ${currentContent || "(No existing content)"}
+TASK: Apply the instructions. Return ONLY valid HTML (<p>, <ul>, <li>, <table>, etc). NO markdown wrappers like \`\`\`html.`;
+
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
+    });
+    let enhancedText = result.response
+      .text()
+      .replace(/```html\n?/gi, "")
+      .replace(/```\n?/gi, "")
+      .trim();
+
+    return res
+      .status(200)
+      .json({ success: true, enhancedContent: enhancedText });
+  } catch (error) {
+    console.error("AI Enhancer Error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to generate AI content." });
+  }
+};
+
+export const enhanceSectionWithAI = async (req, res) => {
+  try {
+    const { sectionName, sectionData } = req.body;
+    if (!process.env.GEMINI_API_KEY)
+      return res
+        .status(500)
+        .json({ success: false, message: "Gemini API key missing." });
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3-flash-preview",
+      generationConfig: { responseMimeType: "application/json" },
+    });
+
+    const systemPrompt = `You are an academic curriculum editor fixing OCR/PDF extraction errors for section: "${sectionName}".
+Input Data (JSON): ${JSON.stringify(sectionData)}
+TASK: Clean grammar, fix typos, remove garbage page numbers/symbols. Keep tone professional.
+CRITICAL: Return the EXACT same JSON structure and keys. Only modify string values.`;
+
+    const result = await model.generateContent(systemPrompt);
+    const parsedData = JSON.parse(result.response.text());
+
+    return res.status(200).json({ success: true, enhancedData: parsedData });
+  } catch (error) {
+    console.error("AI Section Enhancer Error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to polish section data." });
   }
 };

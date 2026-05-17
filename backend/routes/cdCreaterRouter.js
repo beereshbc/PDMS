@@ -8,7 +8,10 @@ import {
   getCDDashboardStats,
   getCDCreatorHistory,
   getAdminsForReview,
-  getAssignedCDs, // <-- NEW
+  getAssignedCDs,
+  enhanceFieldWithAI, // <-- NEW
+  enhanceSectionWithAI, // <-- NEW
+  parseTableWithAI, // <-- NEW
 } from "../controllers/cdCreaterController.js";
 import authCreater from "../middlewares/createrAuth.js";
 import upload from "../middlewares/multer.js";
@@ -22,13 +25,15 @@ cdCreaterRouter.post("/save", createOrUpdateCD);
 cdCreaterRouter.get("/history", getCDCreatorHistory);
 cdCreaterRouter.get("/dashboard-stats", getCDDashboardStats);
 cdCreaterRouter.get("/review-admins", getAdminsForReview);
-
-// <-- NEW: Fetch courses assigned to this creator in PDs
 cdCreaterRouter.get("/assigned", getAssignedCDs);
-
 cdCreaterRouter.get("/versions/:courseCode", getRecentVersions);
 cdCreaterRouter.get("/fetch/:id", getCDById);
 cdCreaterRouter.get("/latest/:courseCode", getLatestCD);
+
+// ── NEW: AI Endpoints for CD Editor ───────────────────────────────────────
+cdCreaterRouter.post("/ai-enhance", enhanceFieldWithAI);
+cdCreaterRouter.post("/ai-enhance-section", enhanceSectionWithAI);
+cdCreaterRouter.post("/ai-parse-table", parseTableWithAI);
 
 // Wrapped Multer upload to gracefully handle File size/type errors
 cdCreaterRouter.post(

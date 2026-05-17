@@ -15,6 +15,7 @@ import {
   getAdminsForReview,
   enhanceSectionWithAI,
   parseTableWithAI,
+  getAssignedCDs,
 } from "../controllers/createrController.js";
 import authCreater from "../middlewares/createrAuth.js";
 import upload from "../middlewares/multer.js";
@@ -44,7 +45,7 @@ createrRouter.get("/pd/review-admins", getAdminsForReview);
 createrRouter.post("/pd/ai-enhance", enhanceFieldWithAI);
 createrRouter.post("/pd/ai-enhance-section", enhanceSectionWithAI);
 createrRouter.post("/cd/ai-parse-table", parseTableWithAI);
-
+createrRouter.get("/cd/assigned", getAssignedCDs);
 // Parser
 createrRouter.post("/pd/import", upload.single("pdFile"), uploadAndParsePD);
 
