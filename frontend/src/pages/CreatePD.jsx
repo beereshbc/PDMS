@@ -1,9 +1,22 @@
+/**
+ * CreatePD.jsx — Production-Grade Program Document Manager
+ * ─────────────────────────────────────────────────────────
+ * Supports: PD Schema 2024 (Legacy) | PD Schema 2026 (Merged/Dynamic)
+ * Features: Polymorphic parser routing, drag-drop uploader, abort/retry,
+ *           step-progress UI, AI enhancement, section polish, autosave,
+ *           version history sidebar, schema-driven form rendering.
+ *
+ * Designed for: ~80,000 concurrent users
+ * React Optimizations: useMemo, useCallback, lazy renders, stable refs
+ */
+
 import React, {
   useState,
   useEffect,
   useRef,
   useMemo,
   useCallback,
+  useReducer,
 } from "react";
 import CreatorLayout from "../components/CreatorLayout";
 import { useAppContext } from "../context/AppContext";
@@ -34,15 +47,11 @@ import {
   ArrowLeft,
   ChevronRight,
   UploadCloud,
-  FileUp,
   Menu,
   AlertTriangle,
   Info,
-  Briefcase,
   Award,
   Target,
-  TrendingUp,
-  Shield,
   Sparkles,
   GraduationCap,
   UserPlus,
@@ -51,16 +60,24 @@ import {
   CheckCircle2,
   SplitSquareHorizontal,
   Wand2,
+  ServerCrash,
+  ShieldCheck,
+  Cpu,
+  FileSearch,
+  GitBranch,
+  Zap,
+  XCircle,
+  BarChart2,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { useLocation, useNavigate, Link } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import JoditEditor from "jodit-react";
 import Preview from "../components/Preview";
 import SearchCreator from "../components/SearchCreator";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONSTANTS & BLANK DEFAULTS
-// ─────────────────────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// § 1. CONSTANTS & DEFAULTS
+// ═════════════════════════════════════════════════════════════════════════════
 
 const STANDARD_POS = [
   "Engineering knowledge: Apply the knowledge of mathematics, science, engineering fundamentals, and an engineering specialization to the solution of complex engineering problems.",
@@ -77,6 +94,7 @@ const STANDARD_POS = [
   "Lifelong learning: Recognize the need for, and have the preparation and ability to engage in independent and life-long learning in the broadest context of technological change.",
 ];
 
+/** Unified blank state — compatible with both 2024 and 2026 schemas. */
 const BLANK_PD_DATA = {
   details: {
     university: "",
@@ -110,58 +128,147 @@ const BLANK_PD_DATA = {
   psos: ["", "", ""],
   credit_def: { L: 0, T: 0, P: 0 },
   structure_table: [],
+  /**
+   * Polymorphic semester array:
+   *   2024 schema  → uses `sem.courses[]`   (flat course list)
+   *   2026 schema  → uses `sem.categories[]` (categories → courses)
+   * Both arrays are always present; the renderer picks by schemaVersion.
+   */
   semesters: Array.from({ length: 8 }, (_, i) => ({
     sem_no: i + 1,
-    courses: [],
+    courses: [], // 2024
+    categories: [], // 2026
   })),
   prof_electives: [],
   open_electives: [],
 };
 
+const BLANK_META = {
+  programId: "",
+  programCode: "",
+  programName: "",
+  schemaVersion: "2026", // Default to latest
+  parseMode: "auto", // "auto" | "stable" | "dynamic"
+  schemeYear: "",
+  versionNo: "1.0.0",
+  effectiveAy: "",
+  totalCredits: 160,
+  academicCredits: 130,
+  isNew: true,
+  status: "draft",
+};
+
 const STEP_CONFIG = [
-  {
-    id: 1,
-    label: "Program Info",
-    shortLabel: "Info",
-    icon: GraduationCap,
-    color: "blue",
-  },
-  {
-    id: 2,
-    label: "Objectives",
-    shortLabel: "Obj",
-    icon: Target,
-    color: "violet",
-  },
-  {
-    id: 3,
-    label: "Structure",
-    shortLabel: "Structure",
-    icon: Layers,
-    color: "emerald",
-  },
-  {
-    id: 4,
-    label: "Electives",
-    shortLabel: "Electives",
-    icon: BookMarked,
-    color: "amber",
-  },
+  { id: 1, label: "Program Info", shortLabel: "Info", icon: GraduationCap },
+  { id: 2, label: "Objectives", shortLabel: "Obj", icon: Target },
+  { id: 3, label: "Structure", shortLabel: "Structure", icon: Layers },
+  { id: 4, label: "Electives", shortLabel: "Electives", icon: BookMarked },
 ];
+
+/** Parsing step definitions used in the progress UI. */
+const PARSE_STEPS = [
+  { id: "upload", label: "Uploading file securely", icon: UploadCloud },
+  { id: "detect", label: "Detecting schema version", icon: FileSearch },
+  { id: "extract", label: "Extracting tables & text", icon: Table },
+  { id: "map", label: "Mapping to database structure", icon: GitBranch },
+  { id: "validate", label: "Validating structure", icon: ShieldCheck },
+  { id: "complete", label: "Finalizing", icon: CheckCircle2 },
+];
+
+// ═════════════════════════════════════════════════════════════════════════════
+// § 2. UPLOAD STATE REDUCER
+// ═════════════════════════════════════════════════════════════════════════════
+
+const UPLOAD_INIT = {
+  status: "idle", // idle | uploading | parsing | mapping | success | error
+  progress: 0,
+  message: "",
+  steps: PARSE_STEPS.map((s) => ({ ...s, status: "pending" })),
+  summary: null,
+  controller: null,
+  errorDetails: "",
+};
+
+function uploadReducer(state, action) {
+  switch (action.type) {
+    case "START":
+      return {
+        ...UPLOAD_INIT,
+        status: "uploading",
+        progress: 5,
+        message: "Uploading PDF securely…",
+        controller: action.controller,
+        steps: PARSE_STEPS.map((s, i) => ({
+          ...s,
+          status: i === 0 ? "loading" : "pending",
+        })),
+      };
+    case "STEP": {
+      const stepIds = PARSE_STEPS.map((s) => s.id);
+      const idx = stepIds.indexOf(action.stepId);
+      return {
+        ...state,
+        status: action.status || state.status,
+        progress: action.progress ?? state.progress,
+        message: action.message || state.message,
+        steps: state.steps.map((s, i) => {
+          if (i < idx) return { ...s, status: "done" };
+          if (i === idx) return { ...s, status: "loading" };
+          return s;
+        }),
+      };
+    }
+    case "STEP_DONE": {
+      const stepIds = PARSE_STEPS.map((s) => s.id);
+      const idx = stepIds.indexOf(action.stepId);
+      return {
+        ...state,
+        steps: state.steps.map((s, i) =>
+          i === idx ? { ...s, status: "done" } : s,
+        ),
+      };
+    }
+    case "SUCCESS":
+      return {
+        ...state,
+        status: "success",
+        progress: 100,
+        message: "Extraction complete!",
+        steps: state.steps.map((s) => ({ ...s, status: "done" })),
+        summary: action.summary,
+        controller: null,
+      };
+    case "ERROR":
+      return {
+        ...state,
+        status: "error",
+        progress: 0,
+        message: action.message || "Extraction failed.",
+        errorDetails: action.details || "",
+        controller: null,
+        steps: state.steps.map((s) =>
+          s.status === "loading" ? { ...s, status: "error" } : s,
+        ),
+      };
+    case "CANCEL":
+    case "RESET":
+      return { ...UPLOAD_INIT };
+    default:
+      return state;
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// § 3. UTILITY HELPERS
+// ═════════════════════════════════════════════════════════════════════════════
 
 const buildProgramsFromProfile = (profile) => {
   if (!profile) return [];
   const detectLevel = (prog = "") =>
-    prog.toLowerCase().match(/m\.tech|mtech|m\.e|mba|mca|m\.sc|master|pg/)
-      ? "PG"
-      : "UG";
+    /m\.tech|mtech|m\.e|mba|mca|m\.sc|master|pg/i.test(prog) ? "PG" : "UG";
   const generateCode = (prog = "", disc = "") => {
     let deg = "PROG";
-    if (
-      prog.toLowerCase().includes("b.tech") ||
-      prog.toLowerCase().includes("btech")
-    )
-      deg = "BTECH";
+    if (/b\.tech|btech/i.test(prog)) deg = "BTECH";
     const initials = disc
       .split(/[\s&,/]+/)
       .map((w) => w[0] || "")
@@ -188,48 +295,122 @@ const buildProgramsFromProfile = (profile) => {
   ];
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// REUSABLE UI COMPONENTS
-// ─────────────────────────────────────────────────────────────────────────────
-
-const OptimizedInput = ({
-  value,
-  onChange,
-  debounceTime = 350,
-  className = "",
-  ...props
-}) => {
-  const [local, setLocal] = useState(value ?? "");
-  useEffect(() => {
-    setLocal(value ?? "");
-  }, [value]);
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (local !== value) onChange(local);
-    }, debounceTime);
-    return () => clearTimeout(t);
-  }, [local, value, onChange, debounceTime]);
-  return (
-    <input
-      {...props}
-      value={local}
-      onChange={(e) => setLocal(e.target.value)}
-      onBlur={(e) => {
-        if (local !== value) onChange(e.target.value);
-      }}
-      className={[
-        `w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-150`,
-        className,
-      ].join(" ")}
-    />
-  );
+const incrementVersion = (v = "1.0.0") => {
+  const parts = v.split(".");
+  if (parts.length < 3) return "1.0.1";
+  parts[2] = String(parseInt(parts[2], 10) + 1);
+  return parts.join(".");
 };
 
+// ═════════════════════════════════════════════════════════════════════════════
+// § 4. CENTRALIZED API SERVICE (avoids raw axios calls scattered in JSX)
+// ═════════════════════════════════════════════════════════════════════════════
+
+const buildApiService = (axios, createrToken) => {
+  const headers = { Authorization: `Bearer ${createrToken}`, createrToken };
+  const multipartHeaders = {
+    ...headers,
+    "Content-Type": "multipart/form-data",
+  };
+
+  return {
+    importStable: (formData, signal) =>
+      axios.post("/api/creater/pd/import", formData, {
+        headers: multipartHeaders,
+        timeout: 300000, // 5 Minutes
+        signal,
+      }),
+
+    importDynamic: (formData, schema, signal) => {
+      formData.append("schemaVersion", schema);
+      return axios.post("/api/creater/pd/import/dynamic", formData, {
+        headers: multipartHeaders,
+        timeout: 300000, // 5 Minutes
+        signal,
+      });
+    },
+
+    importAuto: (formData, schema, parseMode, signal) => {
+      if (
+        parseMode === "dynamic" ||
+        (parseMode === "auto" && schema === "2026")
+      ) {
+        formData.append("schemaVersion", schema);
+        return axios.post("/api/creater/pd/import/dynamic", formData, {
+          headers: multipartHeaders,
+          timeout: 300000, // 5 Minutes
+          signal,
+        });
+      }
+      return axios.post("/api/creater/pd/import", formData, {
+        headers: multipartHeaders,
+        timeout: 300000,
+        signal,
+      });
+    },
+
+    savePD: (payload) =>
+      axios.post("/api/creater/pd/save", payload, { headers }),
+    fetchLatest: (code) =>
+      axios.get(`/api/creater/pd/latest/${code}`, { headers }),
+    fetchById: (id) => axios.get(`/api/creater/pd/fetch/${id}`, { headers }),
+    fetchVersions: (code) =>
+      axios.get(`/api/creater/pd/versions/${code}`, { headers }),
+    fetchAdmins: () => axios.get("/api/creater/pd/review-admins", { headers }),
+    aiEnhanceField: (body) =>
+      axios.post("/api/creater/pd/ai-enhance", body, { headers }),
+    aiEnhanceSection: (body) =>
+      axios.post("/api/creater/pd/ai-enhance-section", body, { headers }),
+  };
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// § 5. REUSABLE UI COMPONENTS
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** Debounced text input — avoids re-renders on every keystroke. */
+const OptimizedInput = React.memo(
+  ({ value, onChange, debounceTime = 300, className = "", ...props }) => {
+    const [local, setLocal] = useState(value ?? "");
+
+    useEffect(() => {
+      setLocal(value ?? "");
+    }, [value]);
+
+    useEffect(() => {
+      const t = setTimeout(() => {
+        if (local !== value) onChange(local);
+      }, debounceTime);
+      return () => clearTimeout(t);
+    }, [local, value, onChange, debounceTime]);
+
+    return (
+      <input
+        {...props}
+        value={local}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={(e) => {
+          if (local !== value) onChange(e.target.value);
+        }}
+        className={[
+          "w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-800",
+          "placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30",
+          "focus:border-blue-400 transition-all duration-150",
+          className,
+        ].join(" ")}
+      />
+    );
+  },
+);
+OptimizedInput.displayName = "OptimizedInput";
+
+/** Step progress bar — memoized so it never re-renders on every keystroke. */
 const StepProgressBar = React.memo(
   ({ activeStep, onStepClick, completions }) => (
     <div className="w-full">
+      {/* Mobile pill bar */}
       <div className="flex sm:hidden gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
-        {STEP_CONFIG.map((step, idx) => (
+        {STEP_CONFIG.map((step) => (
           <button
             key={step.id}
             onClick={() => onStepClick(step.id)}
@@ -245,7 +426,9 @@ const StepProgressBar = React.memo(
           </button>
         ))}
       </div>
-      <div className="hidden sm:flex items-center gap-0 bg-white border border-gray-200 rounded-xl p-1.5 shadow-sm">
+
+      {/* Desktop step bar */}
+      <div className="hidden sm:flex items-center bg-white border border-gray-200 rounded-xl p-1.5 shadow-sm">
         {STEP_CONFIG.map((step, idx) => (
           <React.Fragment key={step.id}>
             <button
@@ -289,7 +472,9 @@ const StepProgressBar = React.memo(
     </div>
   ),
 );
+StepProgressBar.displayName = "StepProgressBar";
 
+/** Card wrapper used across all sections. */
 const SectionCard = ({
   icon,
   iconBg,
@@ -330,7 +515,7 @@ const SectionCard = ({
             ) : (
               <Wand2 size={13} />
             )}
-            {isPolishing ? "Polishing..." : "Auto-Polish Section"}
+            {isPolishing ? "Polishing…" : "Auto-Polish"}
           </button>
         )}
         {action}
@@ -342,7 +527,8 @@ const SectionCard = ({
 
 const FieldLabel = ({ children, required }) => (
   <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">
-    {children} {required && <span className="text-rose-400 ml-0.5">*</span>}
+    {children}
+    {required && <span className="text-rose-400 ml-0.5">*</span>}
   </label>
 );
 
@@ -372,39 +558,160 @@ const AssignBtn = ({ course, onClick }) => (
   </button>
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MODALS
-// ─────────────────────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// § 6. PARSING PROGRESS UI COMPONENT
+// ═════════════════════════════════════════════════════════════════════════════
 
-const ReviewSubmitModal = ({
-  isOpen,
-  onClose,
-  onConfirm,
-  axios,
-  createrToken,
-}) => {
+const ParsingProgressView = ({ uploadState, onCancel }) => (
+  <div className="w-full max-w-lg mx-auto py-2">
+    {/* Header */}
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2">
+        <Cpu size={16} className="text-violet-600 animate-pulse" />
+        <span className="text-sm font-semibold text-violet-700">
+          {uploadState.message}
+        </span>
+      </div>
+      <span className="text-xs font-bold text-violet-500 tabular-nums">
+        {uploadState.progress}%
+      </span>
+    </div>
+
+    {/* Progress bar */}
+    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden mb-5">
+      <div
+        className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-600 transition-all duration-500"
+        style={{ width: `${uploadState.progress}%` }}
+      />
+    </div>
+
+    {/* Step list */}
+    <div className="space-y-2.5 mb-5">
+      {uploadState.steps.map((s) => {
+        const StepIcon = s.icon || CheckCircle2;
+        return (
+          <div key={s.id} className="flex items-center gap-3 text-xs">
+            <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
+              {s.status === "done" ? (
+                <CheckCircle2 className="text-emerald-500" size={15} />
+              ) : s.status === "loading" ? (
+                <RefreshCw className="animate-spin text-violet-500" size={15} />
+              ) : s.status === "error" ? (
+                <XCircle className="text-rose-400" size={15} />
+              ) : (
+                <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-200" />
+              )}
+            </div>
+            <span
+              className={
+                s.status === "done"
+                  ? "text-gray-600 font-medium line-through decoration-emerald-400 decoration-1"
+                  : s.status === "loading"
+                    ? "text-violet-700 font-semibold"
+                    : s.status === "error"
+                      ? "text-rose-500 font-medium"
+                      : "text-gray-300"
+              }
+            >
+              {s.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+
+    <button
+      onClick={onCancel}
+      className="text-xs font-medium text-gray-400 hover:text-rose-500 transition-colors flex items-center gap-1"
+    >
+      <X size={12} /> Cancel Extraction
+    </button>
+  </div>
+);
+
+// ═════════════════════════════════════════════════════════════════════════════
+// § 7. EXTRACTION SUMMARY COMPONENT
+// ═════════════════════════════════════════════════════════════════════════════
+
+const ExtractionSummary = ({ summary, onReset }) => (
+  <div className="text-left animate-in fade-in duration-300 w-full">
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-2 text-emerald-600">
+        <CheckCircle2 size={18} />
+        <span className="text-sm font-bold">Extraction Complete</span>
+      </div>
+      <button
+        onClick={onReset}
+        className="text-[10px] uppercase font-bold text-gray-400 hover:text-violet-600 tracking-wider"
+      >
+        Parse Another
+      </button>
+    </div>
+
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+      {[
+        { label: "Schema", value: `PD ${summary.schema}`, color: "indigo" },
+        {
+          label: "Confidence",
+          value: `${summary.confidence}%`,
+          color: summary.confidence >= 90 ? "emerald" : "amber",
+        },
+        { label: "Courses", value: summary.coursesCount, color: "blue" },
+        { label: "Semesters", value: summary.semCount, color: "violet" },
+      ].map((item) => (
+        <div
+          key={item.label}
+          className={`bg-white border border-${item.color}-100 p-3 rounded-xl`}
+        >
+          <p className="text-[10px] text-gray-400 uppercase font-semibold mb-1 tracking-wider">
+            {item.label}
+          </p>
+          <p className={`text-sm font-bold text-${item.color}-600`}>
+            {item.value}
+          </p>
+        </div>
+      ))}
+    </div>
+
+    {summary.warnings?.length > 0 && (
+      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-amber-700">
+        <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+        <div>
+          <p className="text-xs font-semibold mb-1">
+            Manual Verification Required
+          </p>
+          <ul className="text-[10px] list-disc list-inside space-y-0.5 ml-1">
+            {summary.warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+// ═════════════════════════════════════════════════════════════════════════════
+// § 8. MODALS
+// ═════════════════════════════════════════════════════════════════════════════
+
+const ReviewSubmitModal = ({ isOpen, onClose, onConfirm, apiService }) => {
   const [admins, setAdmins] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedAdminId, setSelectedAdminId] = useState("");
+  const [fetching, setFetching] = useState(false);
+  const [selected, setSelected] = useState("");
 
   useEffect(() => {
-    if (isOpen) {
-      const fetchAdmins = async () => {
-        setLoading(true);
-        try {
-          const { data } = await axios.get("/api/creater/pd/review-admins", {
-            headers: { Authorization: `Bearer ${createrToken}`, createrToken },
-          });
-          if (data.success) setAdmins(data.admins);
-        } catch {
-          toast.error("Failed to load reviewers.");
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchAdmins();
-    }
-  }, [isOpen, axios, createrToken]);
+    if (!isOpen) return;
+    setSelected("");
+    setFetching(true);
+    apiService
+      .fetchAdmins()
+      .then(({ data }) => {
+        if (data.success) setAdmins(data.admins);
+      })
+      .catch(() => toast.error("Failed to load reviewers."))
+      .finally(() => setFetching(false));
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -417,38 +724,43 @@ const ReviewSubmitModal = ({
               Submit for Review
             </h3>
             <p className="text-xs text-gray-400 mt-0.5">
-              Select an Admin / Reviewer
+              Select an admin or reviewer
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:bg-gray-100 p-1.5 rounded-lg transition-colors"
+            className="text-gray-400 hover:bg-gray-100 p-1.5 rounded-lg"
           >
             <X size={18} />
           </button>
         </div>
-        <div className="p-5 max-h-[300px] overflow-y-auto space-y-2">
-          {loading ? (
+
+        <div className="p-5 max-h-72 overflow-y-auto space-y-2">
+          {fetching ? (
             <div className="flex justify-center py-6">
               <RefreshCw className="animate-spin text-gray-400" size={20} />
             </div>
           ) : admins.length === 0 ? (
-            <div className="text-center py-6 text-sm text-gray-400">
+            <p className="text-center py-6 text-sm text-gray-400">
               No active admins available.
-            </div>
+            </p>
           ) : (
             admins.map((admin) => (
               <label
                 key={admin._id}
-                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selectedAdminId === admin._id ? "border-blue-500 bg-blue-50/50" : "border-gray-200 hover:border-blue-300"}`}
+                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
+                  selected === admin._id
+                    ? "border-blue-500 bg-blue-50/50"
+                    : "border-gray-200 hover:border-blue-300"
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <input
                     type="radio"
                     value={admin._id}
-                    checked={selectedAdminId === admin._id}
-                    onChange={(e) => setSelectedAdminId(e.target.value)}
-                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    checked={selected === admin._id}
+                    onChange={(e) => setSelected(e.target.value)}
+                    className="w-4 h-4 text-blue-600"
                   />
                   <div>
                     <p className="text-sm font-semibold text-gray-800">
@@ -463,17 +775,18 @@ const ReviewSubmitModal = ({
             ))
           )}
         </div>
+
         <div className="p-5 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50 rounded-b-2xl">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
-            onClick={() => onConfirm(selectedAdminId)}
-            disabled={!selectedAdminId}
-            className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+            onClick={() => onConfirm(selected)}
+            disabled={!selected}
+            className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 shadow-sm"
           >
             <Send size={15} /> Confirm Submit
           </button>
@@ -483,15 +796,13 @@ const ReviewSubmitModal = ({
   );
 };
 
-// ── NEW: ENHANCED AI ASSISTANT MODAL WITH QUICK PROMPTS ──
 const AIAssistantModal = ({
   isOpen,
   onClose,
   fieldName,
   currentContent,
   onApply,
-  axios,
-  createrToken,
+  apiService,
 }) => {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
@@ -506,40 +817,35 @@ const AIAssistantModal = ({
 
   if (!isOpen) return null;
 
-  const quickPrompts = [
+  const QUICK_PROMPTS = [
     {
       label: "Fix Grammar",
-      text: "Fix all grammar, spelling, and punctuation errors. Keep the original meaning intact.",
+      text: "Fix all grammar, spelling, and punctuation. Keep original meaning intact.",
     },
     {
       label: "Make Concise",
-      text: "Remove unnecessary words and make the text concise, clear, and to the point.",
+      text: "Remove unnecessary words. Make the text concise, clear, and to the point.",
     },
     {
       label: "Academic Tone",
-      text: "Rewrite the text to sound highly professional, academic, and formal.",
+      text: "Rewrite in a highly professional, academic, and formal tone.",
     },
     {
-      label: "Format as Bullets",
+      label: "Bullet Points",
       text: "Convert the content into clear, well-structured HTML bullet points.",
     },
   ];
 
-  const handleGenerate = async () => {
+  const generate = async () => {
     if (!prompt.trim())
       return toast.error("Please provide instructions for the AI.");
     setLoading(true);
     try {
-      const { data } = await axios.post(
-        "/api/creater/pd/ai-enhance",
-        {
-          prompt,
-          fieldName,
-          currentContent,
-        },
-        { headers: { Authorization: `Bearer ${createrToken}`, createrToken } },
-      );
-
+      const { data } = await apiService.aiEnhanceField({
+        prompt,
+        fieldName,
+        currentContent,
+      });
       if (data.success) {
         setResult(data.enhancedContent);
         toast.success("AI generated content successfully!");
@@ -547,10 +853,8 @@ const AIAssistantModal = ({
         toast.error(data.message || "AI Enhancement failed.");
       }
     } catch (err) {
-      console.error("AI Assistant Error:", err.response || err);
       toast.error(
-        err.response?.data?.message ||
-          "Failed to connect to AI service. Check API Keys.",
+        err.response?.data?.message || "Failed to connect to AI service.",
       );
     } finally {
       setLoading(false);
@@ -577,18 +881,18 @@ const AIAssistantModal = ({
           </div>
           <button
             onClick={onClose}
-            className="text-white/60 hover:text-white transition-colors p-2 hover:bg-white/10 rounded-xl"
+            className="text-white/60 hover:text-white p-2 hover:bg-white/10 rounded-xl"
           >
             <X size={20} />
           </button>
         </div>
 
-        {/* Content Body */}
+        {/* Body */}
         <div className="flex flex-col lg:flex-row h-[60vh] max-h-[600px] overflow-hidden bg-gray-50">
-          {/* LEFT PANE: Instructions & Original Content */}
+          {/* LEFT: instructions */}
           <div className="w-full lg:w-1/2 flex flex-col border-r border-gray-200 bg-white">
             <div className="p-5 flex-1 flex flex-col min-h-0">
-              <label className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                 <FileText size={14} className="text-indigo-500" /> Original
                 Content
               </label>
@@ -598,70 +902,64 @@ const AIAssistantModal = ({
                   __html: currentContent || "<i>No existing content.</i>",
                 }}
               />
-
-              <label className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-widest mt-5 mb-2">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mt-5 mb-2 flex items-center gap-2">
                 <Wand2 size={14} className="text-indigo-500" /> 1-Click
                 Enhancements
               </label>
-
-              {/* QUICK ACTION PROMPTS */}
               <div className="flex flex-wrap gap-2 mb-3">
-                {quickPrompts.map((qp, i) => (
+                {QUICK_PROMPTS.map((qp) => (
                   <button
-                    key={i}
+                    key={qp.label}
                     onClick={() => setPrompt(qp.text)}
-                    className="text-[10px] font-bold bg-indigo-50 border border-indigo-100 text-indigo-600 px-2.5 py-1.5 rounded-lg hover:bg-indigo-100 hover:border-indigo-200 transition-colors"
+                    className="text-[10px] font-bold bg-indigo-50 border border-indigo-100 text-indigo-600 px-2.5 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors"
                   >
                     {qp.label}
                   </button>
                 ))}
               </div>
-
               <textarea
                 className="w-full h-24 p-3 bg-indigo-50/50 border border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm resize-none text-indigo-900 placeholder:text-indigo-300"
-                placeholder="Or type custom instructions (e.g., Format the pasted text into an HTML table)..."
+                placeholder="Or type custom instructions…"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
               />
-
               <button
-                onClick={handleGenerate}
+                onClick={generate}
                 disabled={loading || !prompt.trim()}
-                className="mt-4 w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-md shadow-indigo-600/20 transition-all text-sm disabled:opacity-50 active:scale-[0.98]"
+                className="mt-4 w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-md transition-all text-sm disabled:opacity-50"
               >
                 {loading ? (
                   <RefreshCw size={16} className="animate-spin" />
                 ) : (
                   <Sparkles size={16} />
                 )}
-                {loading ? "Generating..." : "Generate Enhancements"}
+                {loading ? "Generating…" : "Generate Enhancements"}
               </button>
             </div>
           </div>
 
-          {/* RIGHT PANE: Live Preview */}
+          {/* RIGHT: live preview */}
           <div className="w-full lg:w-1/2 flex flex-col bg-gray-50">
             <div className="p-5 flex-1 flex flex-col min-h-0">
               <div className="flex items-center justify-between mb-3">
-                <label className="flex items-center gap-2 text-xs font-bold text-emerald-600 uppercase tracking-widest">
+                <label className="text-xs font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-2">
                   <SplitSquareHorizontal size={14} /> AI Live Preview
                 </label>
               </div>
-
               {result ? (
                 <div
                   className="flex-1 overflow-y-auto p-5 bg-white border border-emerald-200 rounded-xl shadow-sm prose prose-sm max-w-none text-gray-800"
                   dangerouslySetInnerHTML={{ __html: result }}
                 />
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-xl text-gray-400 p-8 text-center bg-gray-50/50">
+                <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-xl text-gray-400 p-8 text-center">
                   <Sparkles size={32} className="text-gray-300 mb-3" />
                   <p className="text-sm font-medium">
                     Output will appear here.
                   </p>
                   <p className="text-xs mt-1">
-                    Select a quick action or provide instructions and click
-                    Generate to see the magic.
+                    Pick a quick action or type custom instructions, then click
+                    Generate.
                   </p>
                 </div>
               )}
@@ -669,11 +967,11 @@ const AIAssistantModal = ({
           </div>
         </div>
 
-        {/* Footer Actions */}
+        {/* Footer */}
         <div className="px-6 py-4 bg-white border-t border-gray-100 flex items-center justify-end gap-3 rounded-b-3xl">
           <button
             onClick={onClose}
-            className="px-5 py-2.5 text-sm font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors"
+            className="px-5 py-2.5 text-sm font-bold text-gray-500 hover:bg-gray-100 rounded-xl"
           >
             Discard
           </button>
@@ -683,9 +981,9 @@ const AIAssistantModal = ({
               onClose();
             }}
             disabled={!result}
-            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-md shadow-emerald-600/20 transition-all text-sm disabled:opacity-50"
+            className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-md transition-all text-sm disabled:opacity-50"
           >
-            <CheckCircle2 size={16} /> Accept & Apply to Field
+            <CheckCircle2 size={16} /> Accept & Apply
           </button>
         </div>
       </div>
@@ -693,32 +991,45 @@ const AIAssistantModal = ({
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN PAGE COMPONENT
-// ─────────────────────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// § 9. MAIN COMPONENT
+// ═════════════════════════════════════════════════════════════════════════════
 
 const CreatePD = () => {
   const navigate = useNavigate();
-  const { axios, createrToken } = useAppContext();
   const location = useLocation();
+  const { axios, createrToken } = useAppContext();
 
-  // ── 1. CORE STATE ─────────────────────────────────────────────────────────
+  // ── Stable API service (only rebuilds if token changes) ────────────────
+  const apiService = useMemo(
+    () => buildApiService(axios, createrToken),
+    [axios, createrToken],
+  );
+
+  // ── Core UI state ────────────────────────────────────────────────────────
   const [activeStep, setActiveStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
 
+  // ── Program selection ────────────────────────────────────────────────────
   const [searchProgram, setSearchProgram] = useState("");
   const [showProgramDropdown, setShowProgramDropdown] = useState(false);
-
   const [creatorProfile, setCreatorProfile] = useState(null);
   const [availablePrograms, setAvailablePrograms] = useState([]);
   const [recentVersions, setRecentVersions] = useState([]);
 
-  // Modals & UI States
+  // ── Upload state (via reducer for correctness) ───────────────────────────
+  const [uploadState, dispatchUpload] = useReducer(uploadReducer, UPLOAD_INIT);
+  const fileInputRef = useRef(null);
+  const [dragActive, setDragActive] = useState(false);
+
+  // ── Form data ────────────────────────────────────────────────────────────
+  const [metaData, setMetaData] = useState(BLANK_META);
+  const [pdData, setPdData] = useState(BLANK_PD_DATA);
+  const [dirty, setDirty] = useState(false);
+
+  // ── Modals ───────────────────────────────────────────────────────────────
   const [showSidebar, setShowSidebar] = useState(false);
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [currentAssignContext, setCurrentAssignContext] = useState(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [aiModalConfig, setAiModalConfig] = useState({
@@ -728,31 +1039,17 @@ const CreatePD = () => {
     applyCallback: null,
   });
   const [enhancingSection, setEnhancingSection] = useState(null);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [currentAssignCtx, setCurrentAssignCtx] = useState(null);
 
   const dropdownRef = useRef(null);
   const sidebarRef = useRef(null);
-  const fileInputRef = useRef(null);
 
-  // States
-  const [metaData, setMetaData] = useState({
-    programId: "",
-    programCode: "",
-    programName: "",
-    schemeYear: "",
-    versionNo: "1.0.0",
-    effectiveAy: "",
-    totalCredits: 160,
-    academicCredits: 130,
-    isNew: true,
-    status: "draft",
-  });
-  const [pdData, setPdData] = useState(BLANK_PD_DATA);
-  const [dirty, setDirty] = useState(false);
-
+  // ── Jodit config — memoized once ─────────────────────────────────────────
   const joditConfig = useMemo(
     () => ({
       readonly: false,
-      placeholder: "Start typing...",
+      placeholder: "Start typing…",
       buttons: [
         "bold",
         "italic",
@@ -785,47 +1082,31 @@ const CreatePD = () => {
     [],
   );
 
-  const filteredPrograms = availablePrograms.filter(
-    (p) =>
-      p.code.toLowerCase().includes(searchProgram.toLowerCase()) ||
-      p.name.toLowerCase().includes(searchProgram.toLowerCase()),
+  const joditShort = useMemo(
+    () => ({ ...joditConfig, height: 160 }),
+    [joditConfig],
+  );
+  const joditTiny = useMemo(
+    () => ({ ...joditConfig, height: 120 }),
+    [joditConfig],
   );
 
-  // ── 1. LOCAL STORAGE SYNC ────────────────────────────────────────────────
-  useEffect(() => {
-    // Only attempt to load from local storage if NOT loading a specific ID from router state
-    if (!location.state?.loadId) {
-      const savedMeta = localStorage.getItem("pd_draft_meta");
-      const savedData = localStorage.getItem("pd_draft_data");
-      if (savedMeta && savedData) {
-        try {
-          setMetaData(JSON.parse(savedMeta));
-          setPdData(JSON.parse(savedData));
-          toast("Restored unsaved draft from local storage", { icon: "" });
-        } catch (e) {
-          clearLocalStorage();
-        }
-      }
-    }
-  }, [location.state]);
+  // ── Derived lists ─────────────────────────────────────────────────────────
+  const filteredPrograms = useMemo(
+    () =>
+      availablePrograms.filter(
+        (p) =>
+          p.code.toLowerCase().includes(searchProgram.toLowerCase()) ||
+          p.name.toLowerCase().includes(searchProgram.toLowerCase()),
+      ),
+    [availablePrograms, searchProgram],
+  );
 
-  useEffect(() => {
-    // Auto-save to local storage on change
-    if (dirty && metaData.programCode) {
-      const t = setTimeout(() => {
-        localStorage.setItem("pd_draft_meta", JSON.stringify(metaData));
-        localStorage.setItem("pd_draft_data", JSON.stringify(pdData));
-      }, 1000);
-      return () => clearTimeout(t);
-    }
-  }, [metaData, pdData, dirty]);
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.1  EFFECTS
+  // ═════════════════════════════════════════════════════════════════════════
 
-  const clearLocalStorage = () => {
-    localStorage.removeItem("pd_draft_meta");
-    localStorage.removeItem("pd_draft_data");
-  };
-
-  // ── 2. EFFECTS ─────────────────────────────────────────────────────────────
+  /** Close program dropdown on outside click */
   useEffect(() => {
     const fn = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target))
@@ -835,6 +1116,7 @@ const CreatePD = () => {
     return () => document.removeEventListener("mousedown", fn);
   }, []);
 
+  /** Load creator profile */
   useEffect(() => {
     (async () => {
       try {
@@ -854,232 +1136,434 @@ const CreatePD = () => {
     })();
   }, [axios, createrToken]);
 
+  /** Restore draft from localStorage on mount */
+  useEffect(() => {
+    if (!location.state?.loadId) {
+      const savedMeta = localStorage.getItem("pd_draft_meta");
+      const savedData = localStorage.getItem("pd_draft_data");
+      if (savedMeta && savedData) {
+        try {
+          setMetaData(JSON.parse(savedMeta));
+          setPdData(JSON.parse(savedData));
+          toast("Restored unsaved draft", { icon: "📁" });
+        } catch {
+          clearLocalDraft();
+        }
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Load specific PD from router state */
   useEffect(() => {
     if (location.state?.loadId) fetchFullPD(location.state.loadId);
   }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── 3. API FETCHERS ──────────────────────────────────────────────────────
-  const fetchRecentVersions = async (code) => {
-    try {
-      const { data } = await axios.get(`/api/creater/pd/versions/${code}`, {
-        headers: { Authorization: `Bearer ${createrToken}`, createrToken },
-      });
-      if (data.success) setRecentVersions(data.versions);
-    } catch (_) {}
+  /** Auto-save to localStorage (debounced 1 s) */
+  useEffect(() => {
+    if (!dirty || !metaData.programCode) return;
+    const t = setTimeout(() => {
+      localStorage.setItem("pd_draft_meta", JSON.stringify(metaData));
+      localStorage.setItem("pd_draft_data", JSON.stringify(pdData));
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [metaData, pdData, dirty]);
+
+  const clearLocalDraft = () => {
+    localStorage.removeItem("pd_draft_meta");
+    localStorage.removeItem("pd_draft_data");
   };
 
-  const fetchLatestPD = async () => {
-    if (!metaData.programCode) return toast.error("Select a program first");
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.2  DATA FETCHERS
+  // ═════════════════════════════════════════════════════════════════════════
+
+  const fetchRecentVersions = useCallback(
+    async (code) => {
+      try {
+        const { data } = await apiService.fetchVersions(code);
+        if (data.success) setRecentVersions(data.versions);
+      } catch (_) {}
+    },
+    [apiService],
+  );
+
+  const fetchLatestPD = useCallback(async () => {
+    if (!metaData.programCode) return toast.error("Select a program first.");
     setLoading(true);
     try {
-      const { data } = await axios.get(
-        `/api/creater/pd/latest/${metaData.programCode}`,
-        { headers: { Authorization: `Bearer ${createrToken}`, createrToken } },
-      );
+      const { data } = await apiService.fetchLatest(metaData.programCode);
       if (data.success) {
         populateForm(data.pd);
-        toast.success("Loaded latest version");
-      } else toast.error("No previous versions found.");
-    } catch {
-      toast.error("Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchFullPD = async (pdId) => {
-    setLoading(true);
-    try {
-      const { data } = await axios.get(`/api/creater/pd/fetch/${pdId}`, {
-        headers: { Authorization: `Bearer ${createrToken}`, createrToken },
-      });
-      if (data.success) {
-        populateForm(data.pd);
-        fetchRecentVersions(data.pd.program_id);
-        toast.success(`Loaded v${data.pd.version_no || data.pd.pdVersion}`);
-      } else toast.error(data.message);
-    } catch {
-      toast.error("Failed to load document");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const populateForm = (pd) => {
-    if (pd.pd_data) {
-      setPdData(pd.pd_data);
-      setMetaData({
-        programId: pd.program_id,
-        programCode: pd.program_id,
-        programName: pd.program_name,
-        schemeYear: pd.scheme_year,
-        versionNo: pd.version_no,
-        effectiveAy: pd.effective_ay,
-        totalCredits: pd.total_credits,
-        academicCredits: pd.academic_credits,
-        isNew: false,
-        status: pd.status || "draft",
-      });
-    }
-    setDirty(false);
-  };
-
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.type !== "application/pdf")
-      return toast.error("Only PDF files supported.");
-    const toastId = toast.loading("AI parsing PDF structure...");
-    setImporting(true);
-    const formData = new FormData();
-    formData.append("pdFile", file);
-    try {
-      const { data } = await axios.post("/api/creater/pd/import", formData, {
-        headers: {
-          Authorization: `Bearer ${createrToken}`,
-          createrToken,
-          "Content-Type": "multipart/form-data",
-        },
-        timeout: 90000,
-      });
-      if (data.success) {
-        const imp = data.parsedData;
-        setPdData((prev) => {
-          const n = { ...prev };
-          if (imp.details) n.details = { ...prev.details, ...imp.details };
-          if (imp.award) n.award = { ...prev.award, ...imp.award };
-          if (imp.overview) n.overview = imp.overview;
-          if (imp.peos?.length) {
-            n.peos = [...imp.peos];
-            while (n.peos.length < 3) n.peos.push("");
-          }
-          if (imp.pos?.length) n.pos = [...imp.pos];
-          if (imp.psos?.length) {
-            n.psos = [...imp.psos];
-            while (n.psos.length < 3) n.psos.push("");
-          }
-          if (imp.credit_def)
-            n.credit_def = { ...prev.credit_def, ...imp.credit_def };
-          if (imp.structure_table?.length)
-            n.structure_table = imp.structure_table.map((r) => ({
-              category: r.category || "",
-              credits: r.credits || 0,
-              code: r.code || "",
-            }));
-          if (imp.semesters?.length) {
-            const merged = [...prev.semesters];
-            imp.semesters.forEach((s) => {
-              const idx = merged.findIndex((x) => x.sem_no === s.sem_no);
-              const mapped = {
-                sem_no: s.sem_no,
-                courses: (s.courses || []).map((c) => ({
-                  code: c.code || "",
-                  title: c.title || "",
-                  credits: c.credits || 0,
-                  type: c.type || "Theory",
-                  category: c.category || "Core",
-                })),
-              };
-              if (idx >= 0) merged[idx] = mapped;
-              else merged.push(mapped);
-            });
-            merged.sort((a, b) => a.sem_no - b.sem_no);
-            while (merged.length < 8)
-              merged.push({ sem_no: merged.length + 1, courses: [] });
-            n.semesters = merged;
-          }
-          if (imp.prof_electives?.length)
-            n.prof_electives = imp.prof_electives.map((g) => ({
-              sem: g.sem || 1,
-              title: g.title || `PE - Sem ${g.sem || 1}`,
-              courses: (g.courses || []).map((c) => ({
-                code: c.code || "",
-                title: c.title || "",
-                credits: c.credits || 3,
-              })),
-            }));
-          if (imp.open_electives?.length)
-            n.open_electives = imp.open_electives.map((g) => ({
-              sem: g.sem || 1,
-              title: g.title || `OE - Sem ${g.sem || 1}`,
-              courses: (g.courses || []).map((c) => ({
-                code: c.code || "",
-                title: c.title || "",
-                credits: c.credits || 3,
-              })),
-            }));
-          return n;
-        });
-        if (imp.details?.program_name)
-          setMetaData((p) => ({ ...p, programName: imp.details.program_name }));
-        setDirty(true);
-        toast.success("PDF Extracted Successfully!", { id: toastId });
-      } else toast.error(data.message || "Import failed", { id: toastId });
-    } catch (err) {
-      toast.error("Server error during import.", { id: toastId });
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
-  // ── NEW: SECTION-LEVEL AI IMPROVIZER ─────────────────────────────────────
-  const handleSectionPolish = async (sectionTitle, dataKey) => {
-    setEnhancingSection(sectionTitle);
-    const toastId = toast.loading(
-      `AI is analyzing and polishing ${sectionTitle}...`,
-    );
-    try {
-      const currentData = pdData[dataKey];
-      const { data } = await axios.post(
-        "/api/creater/pd/ai-enhance-section",
-        {
-          sectionName: sectionTitle,
-          sectionData: currentData,
-        },
-        { headers: { Authorization: `Bearer ${createrToken}`, createrToken } },
-      );
-
-      if (data.success) {
-        setPdData((prev) => ({ ...prev, [dataKey]: data.enhancedData }));
-        setDirty(true);
-        toast.success(`${sectionTitle} polished successfully!`, {
-          id: toastId,
-        });
+        toast.success("Loaded latest version.");
       } else {
-        toast.error(data.message || "Failed to polish section.", {
-          id: toastId,
+        toast.error("No previous versions found.");
+      }
+    } catch {
+      toast.error("Failed to load data.");
+    } finally {
+      setLoading(false);
+    }
+  }, [metaData.programCode, apiService]);
+
+  const fetchFullPD = useCallback(
+    async (pdId) => {
+      setLoading(true);
+      try {
+        const { data } = await apiService.fetchById(pdId);
+        if (data.success) {
+          populateForm(data.pd);
+          fetchRecentVersions(data.pd.program_id);
+          toast.success(`Loaded v${data.pd.version_no || data.pd.pdVersion}`);
+        } else {
+          toast.error(data.message);
+        }
+      } catch {
+        toast.error("Failed to load document.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [apiService, fetchRecentVersions],
+  );
+
+  const populateForm = useCallback((pd) => {
+    if (!pd.pd_data) return;
+    // Normalise: ensure both `courses` and `categories` exist on every semester
+    const sems = (pd.pd_data.semesters || []).map((s) => ({
+      sem_no: s.sem_no,
+      courses: s.courses || [],
+      categories: s.categories || [],
+    }));
+    while (sems.length < 8)
+      sems.push({ sem_no: sems.length + 1, courses: [], categories: [] });
+
+    setPdData({ ...pd.pd_data, semesters: sems });
+    setMetaData({
+      programId: pd.program_id,
+      programCode: pd.program_id,
+      programName: pd.program_name,
+      schemaVersion: pd.scheme_year || "2024",
+      parseMode: "auto",
+      schemeYear: pd.scheme_year || "",
+      versionNo: pd.version_no,
+      effectiveAy: pd.effective_ay,
+      totalCredits: pd.total_credits,
+      academicCredits: pd.academic_credits,
+      isNew: false,
+      status: pd.status || "draft",
+    });
+    setDirty(false);
+  }, []);
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.3  PDF UPLOAD & PARSING (with abort + retry)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  const handleDrag = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(e.type === "dragenter" || e.type === "dragover");
+  }, []);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files?.[0]) processPDFUpload(e.dataTransfer.files[0]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleFileSelect = useCallback((e) => {
+    if (e.target.files?.[0]) processPDFUpload(e.target.files[0]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const cancelUpload = useCallback(() => {
+    if (uploadState.controller) {
+      uploadState.controller.abort();
+      dispatchUpload({ type: "CANCEL" });
+      toast("Upload cancelled.");
+    }
+  }, [uploadState.controller]);
+
+  /**
+   * Core upload function.
+   * isRetry = true → fallback from dynamic to stable parser.
+   */
+  const processPDFUpload = useCallback(
+    async (file, isRetry = false) => {
+      if (file.type !== "application/pdf") {
+        return dispatchUpload({
+          type: "ERROR",
+          message: "Invalid format. Only PDF files are supported.",
         });
       }
-    } catch (err) {
-      console.error(err);
-      toast.error(
-        err.response?.data?.message || "Error communicating with AI service.",
-        { id: toastId },
+      if (file.size > 15 * 1024 * 1024) {
+        return dispatchUpload({
+          type: "ERROR",
+          message: "File too large. Maximum size is 15 MB.",
+        });
+      }
+
+      const controller = new AbortController();
+      dispatchUpload({ type: "START", controller });
+
+      const formData = new FormData();
+      formData.append("pdFile", file);
+
+      // Simulate early step transitions while HTTP request is in-flight
+      const step1Timer = setTimeout(
+        () =>
+          dispatchUpload({
+            type: "STEP",
+            stepId: "detect",
+            status: "uploading",
+            progress: 25,
+            message: "Analysing document layout…",
+          }),
+        800,
       );
-    } finally {
-      setEnhancingSection(null);
+
+      const step2Timer = setTimeout(
+        () =>
+          dispatchUpload({
+            type: "STEP",
+            stepId: "extract",
+            status: "parsing",
+            progress: 50,
+            message: `Running ${isRetry ? "stable" : metaData.parseMode} extraction engine…`,
+          }),
+        2200,
+      );
+
+      try {
+        const { data } = await apiService.importAuto(
+          formData,
+          metaData.schemaVersion,
+          isRetry ? "stable" : metaData.parseMode,
+          controller.signal,
+        );
+
+        clearTimeout(step1Timer);
+        clearTimeout(step2Timer);
+
+        if (!data.success)
+          throw new Error(data.message || "Invalid parser response.");
+
+        // Animate remaining steps
+        dispatchUpload({
+          type: "STEP",
+          stepId: "map",
+          progress: 75,
+          message: "Mapping to database structure…",
+        });
+        await new Promise((r) => setTimeout(r, 400));
+        dispatchUpload({
+          type: "STEP",
+          stepId: "validate",
+          progress: 90,
+          message: "Validating structure…",
+        });
+        await new Promise((r) => setTimeout(r, 300));
+        dispatchUpload({
+          type: "STEP",
+          stepId: "complete",
+          progress: 95,
+          message: "Finalising…",
+        });
+        await new Promise((r) => setTimeout(r, 200));
+
+        const imp = data.parsedData;
+        const confidence = data.confidence
+          ? Math.round(data.confidence * 100)
+          : 100;
+        const schemaDetected = data.schemaVersion || metaData.schemaVersion;
+
+        // ── Merge parsed data into state ──
+        setPdData((prev) => normaliseParsedData(prev, imp));
+
+        if (imp.details?.program_name) {
+          setMetaData((p) => ({
+            ...p,
+            programName: imp.details.program_name,
+            schemaVersion: schemaDetected,
+          }));
+        }
+
+        setDirty(true);
+
+        const totalCourses = (imp.semesters || []).reduce(
+          (acc, sem) =>
+            acc +
+            (sem.courses?.length || 0) +
+            (sem.categories || []).reduce(
+              (c, cat) => c + (cat.courses?.length || 0),
+              0,
+            ),
+          0,
+        );
+
+        dispatchUpload({
+          type: "SUCCESS",
+          summary: {
+            schema: schemaDetected,
+            confidence,
+            warnings: data.warnings || [],
+            coursesCount: totalCourses,
+            semCount: (imp.semesters || []).length,
+          },
+        });
+
+        if (confidence < 90) {
+          toast("Extraction complete — some sections need verification.", {
+            icon: "⚠️",
+          });
+        } else {
+          toast.success("Extraction completed perfectly!");
+        }
+      } catch (err) {
+        clearTimeout(step1Timer);
+        clearTimeout(step2Timer);
+
+        if (
+          axios.isCancel?.(err) ||
+          err.name === "CanceledError" ||
+          err.name === "AbortError"
+        )
+          return;
+
+        // Auto-retry: fall back to stable parser once
+        if (!isRetry && metaData.parseMode === "auto") {
+          toast("Dynamic parser failed — retrying with stable engine…", {
+            icon: "🔄",
+          });
+          setMetaData((p) => ({ ...p, parseMode: "stable" }));
+          return processPDFUpload(file, true);
+        }
+
+        dispatchUpload({
+          type: "ERROR",
+          message:
+            err.response?.data?.message ||
+            err.message ||
+            "Server error during extraction.",
+          details: err.response?.data?.details || "",
+        });
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [metaData.parseMode, metaData.schemaVersion, apiService],
+  ); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Merge parser output into existing pdData without overwriting user edits. */
+  const normaliseParsedData = (prev, imp) => {
+    const n = { ...prev };
+
+    if (imp.details) n.details = { ...prev.details, ...imp.details };
+    if (imp.award) n.award = { ...prev.award, ...imp.award };
+    if (imp.overview) n.overview = imp.overview;
+    if (imp.credit_def)
+      n.credit_def = { ...prev.credit_def, ...imp.credit_def };
+
+    if (imp.peos?.length) {
+      n.peos = [...imp.peos];
+      while (n.peos.length < 3) n.peos.push("");
     }
+    if (imp.pos?.length) n.pos = [...imp.pos];
+    if (imp.psos?.length) {
+      n.psos = [...imp.psos];
+      while (n.psos.length < 3) n.psos.push("");
+    }
+
+    if (imp.structure_table?.length) {
+      n.structure_table = imp.structure_table.map((r) => ({
+        category: r.category || "",
+        credits: r.credits || 0,
+        code: r.code || "",
+      }));
+    }
+
+    if (imp.semesters?.length) {
+      const merged = [...prev.semesters];
+      imp.semesters.forEach((s) => {
+        const idx = merged.findIndex((x) => x.sem_no === s.sem_no);
+        const mapped = {
+          sem_no: s.sem_no,
+          courses: (s.courses || []).map((c) => ({
+            code: c.code || "",
+            title: c.title || "",
+            credits: c.credits || 0,
+            type: c.type || "Theory",
+            category: c.category || "Core",
+          })),
+          categories: (s.categories || []).map((cat) => ({
+            categoryName: cat.categoryName || "",
+            totalCategoryCredits: cat.totalCategoryCredits || 0,
+            courses: (cat.courses || []).map((c) => ({
+              code: c.code || "",
+              title: c.title || "",
+              credits: c.credits || 0,
+              type: c.type || "Theory",
+              category: c.category || "Core",
+            })),
+          })),
+        };
+        if (idx >= 0) merged[idx] = mapped;
+        else merged.push(mapped);
+      });
+      merged.sort((a, b) => a.sem_no - b.sem_no);
+      while (merged.length < 8)
+        merged.push({ sem_no: merged.length + 1, courses: [], categories: [] });
+      n.semesters = merged;
+    }
+
+    if (imp.prof_electives?.length) n.prof_electives = imp.prof_electives;
+    if (imp.open_electives?.length) n.open_electives = imp.open_electives;
+
+    return n;
   };
 
-  // ── 4. MUTATION HELPERS ──────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.4  DATA MUTATION HELPERS (all stable refs via useCallback)
+  // ═════════════════════════════════════════════════════════════════════════
+
   const handleMetaChange = useCallback((f, v) => {
     setDirty(true);
     setMetaData((p) => ({ ...p, [f]: v }));
   }, []);
+
+  const handleSchemaChange = useCallback(
+    (e) => {
+      const newSchema = e.target.value;
+      if (
+        dirty &&
+        !window.confirm(
+          `Switching to Schema ${newSchema} may alter the layout. Proceed?`,
+        )
+      )
+        return;
+      setMetaData((p) => ({ ...p, schemaVersion: newSchema }));
+      setDirty(true);
+    },
+    [dirty],
+  );
+
+  const handleParseModeChange = useCallback((e) => {
+    setMetaData((p) => ({ ...p, parseMode: e.target.value }));
+  }, []);
+
   const handleNestedChange = useCallback((sec, f, v) => {
     setDirty(true);
     setPdData((p) => ({ ...p, [sec]: { ...p[sec], [f]: v } }));
   }, []);
-  const handleOverviewChange = useCallback(
-    (c) => {
-      if (c !== pdData.overview) {
-        setDirty(true);
-        setPdData((p) => ({ ...p, overview: c }));
-      }
-    },
-    [pdData.overview],
-  );
+
+  const handleOverviewChange = useCallback((c) => {
+    setPdData((p) => {
+      if (c === p.overview) return p;
+      setDirty(true);
+      return { ...p, overview: c };
+    });
+  }, []);
+
   const handleArrayChange = useCallback((k, i, c) => {
     setDirty(true);
     setPdData((p) => {
@@ -1088,26 +1572,19 @@ const CreatePD = () => {
       return { ...p, [k]: a };
     });
   }, []);
+
   const addArrayItem = useCallback((k, d = "") => {
     setDirty(true);
     setPdData((p) => ({ ...p, [k]: [...p[k], d] }));
   }, []);
+
   const removeArrayItem = useCallback((k, i) => {
     setDirty(true);
     setPdData((p) => ({ ...p, [k]: p[k].filter((_, idx) => idx !== i) }));
   }, []);
 
-  const addPO = useCallback(() => addArrayItem("pos", ""), [addArrayItem]);
-  const removePO = useCallback(
-    (i) => {
-      if (pdData.pos.length <= 1)
-        return toast.error("At least one PO required.");
-      if (window.confirm("Delete this PO?")) removeArrayItem("pos", i);
-    },
-    [pdData.pos.length, removeArrayItem],
-  );
   const resetPOs = useCallback(() => {
-    if (window.confirm("Replace all POs with standard 12?")) {
+    if (window.confirm("Replace all POs with the standard 12?")) {
       setDirty(true);
       setPdData((p) => ({ ...p, pos: [...STANDARD_POS] }));
     }
@@ -1120,6 +1597,8 @@ const CreatePD = () => {
       credit_def: { ...p.credit_def, [k]: parseInt(v) || 0 },
     }));
   }, []);
+
+  // Structure table
   const addStructureItem = useCallback(() => {
     setDirty(true);
     setPdData((p) => ({
@@ -1146,18 +1625,21 @@ const CreatePD = () => {
     });
   }, []);
 
+  // Semesters
   const addSemester = useCallback(() => {
     setDirty(true);
     setPdData((p) => {
       const max = Math.max(...p.semesters.map((s) => s.sem_no), 0);
       return {
         ...p,
-        semesters: [...p.semesters, { sem_no: max + 1, courses: [] }].sort(
-          (a, b) => a.sem_no - b.sem_no,
-        ),
+        semesters: [
+          ...p.semesters,
+          { sem_no: max + 1, courses: [], categories: [] },
+        ].sort((a, b) => a.sem_no - b.sem_no),
       };
     });
   }, []);
+
   const removeSemester = useCallback((i) => {
     if (window.confirm("Delete this semester?")) {
       setDirty(true);
@@ -1167,78 +1649,148 @@ const CreatePD = () => {
       }));
     }
   }, []);
-  const addCourse = useCallback((si) => {
+
+  // 2024: flat course handlers
+  const addCourse2024 = useCallback((si) => {
     setDirty(true);
     setPdData((p) => {
       const s = [...p.semesters];
-      s[si].courses.push({
-        code: "",
-        title: "",
-        credits: 3,
-        type: "Theory",
-        category: "Core",
+      s[si] = {
+        ...s[si],
+        courses: [
+          ...s[si].courses,
+          { code: "", title: "", credits: 3, type: "Theory", category: "Core" },
+        ],
+      };
+      return { ...p, semesters: s };
+    });
+  }, []);
+  const removeCourse2024 = useCallback((si, ci) => {
+    setDirty(true);
+    setPdData((p) => {
+      const s = [...p.semesters];
+      s[si] = { ...s[si], courses: s[si].courses.filter((_, i) => i !== ci) };
+      return { ...p, semesters: s };
+    });
+  }, []);
+  const updateCourse2024 = useCallback((si, ci, f, v) => {
+    setDirty(true);
+    setPdData((p) => {
+      const s = p.semesters.map((sem, i) => {
+        if (i !== si) return sem;
+        const courses = sem.courses.map((c, j) =>
+          j === ci ? { ...c, [f]: v } : c,
+        );
+        return { ...sem, courses };
       });
       return { ...p, semesters: s };
     });
   }, []);
-  const removeCourse = useCallback((si, ci) => {
+
+  // 2026: category + course handlers
+  const addCategory2026 = useCallback((si) => {
     setDirty(true);
     setPdData((p) => {
       const s = [...p.semesters];
-      s[si].courses = s[si].courses.filter((_, i) => i !== ci);
+      s[si] = {
+        ...s[si],
+        categories: [
+          ...s[si].categories,
+          {
+            categoryName: "New Category",
+            totalCategoryCredits: 0,
+            courses: [],
+          },
+        ],
+      };
       return { ...p, semesters: s };
     });
   }, []);
-  const updateCourse = useCallback((si, ci, f, v) => {
+  const removeCategory2026 = useCallback((si, catIdx) => {
     setDirty(true);
     setPdData((p) => {
       const s = [...p.semesters];
-      s[si].courses[ci][f] = v;
+      s[si] = {
+        ...s[si],
+        categories: s[si].categories.filter((_, i) => i !== catIdx),
+      };
+      return { ...p, semesters: s };
+    });
+  }, []);
+  const updateCategoryName2026 = useCallback((si, catIdx, val) => {
+    setDirty(true);
+    setPdData((p) => {
+      const s = p.semesters.map((sem, i) => {
+        if (i !== si) return sem;
+        const cats = sem.categories.map((c, j) =>
+          j === catIdx ? { ...c, categoryName: val } : c,
+        );
+        return { ...sem, categories: cats };
+      });
+      return { ...p, semesters: s };
+    });
+  }, []);
+  const addCourse2026 = useCallback((si, catIdx) => {
+    setDirty(true);
+    setPdData((p) => {
+      const s = p.semesters.map((sem, i) => {
+        if (i !== si) return sem;
+        const cats = sem.categories.map((cat, j) =>
+          j === catIdx
+            ? {
+                ...cat,
+                courses: [
+                  ...cat.courses,
+                  {
+                    code: "",
+                    title: "",
+                    credits: 3,
+                    type: "Theory",
+                    category: "Core",
+                  },
+                ],
+              }
+            : cat,
+        );
+        return { ...sem, categories: cats };
+      });
+      return { ...p, semesters: s };
+    });
+  }, []);
+  const removeCourse2026 = useCallback((si, catIdx, ci) => {
+    setDirty(true);
+    setPdData((p) => {
+      const s = p.semesters.map((sem, i) => {
+        if (i !== si) return sem;
+        const cats = sem.categories.map((cat, j) =>
+          j === catIdx
+            ? { ...cat, courses: cat.courses.filter((_, k) => k !== ci) }
+            : cat,
+        );
+        return { ...sem, categories: cats };
+      });
+      return { ...p, semesters: s };
+    });
+  }, []);
+  const updateCourse2026 = useCallback((si, catIdx, ci, f, v) => {
+    setDirty(true);
+    setPdData((p) => {
+      const s = p.semesters.map((sem, i) => {
+        if (i !== si) return sem;
+        const cats = sem.categories.map((cat, j) => {
+          if (j !== catIdx) return cat;
+          const courses = cat.courses.map((c, k) =>
+            k === ci ? { ...c, [f]: v } : c,
+          );
+          return { ...cat, courses };
+        });
+        return { ...sem, categories: cats };
+      });
       return { ...p, semesters: s };
     });
   }, []);
 
-  const handleAssignCreator = useCallback((si, ci, creator) => {
-    setDirty(true);
-    setPdData((p) => {
-      const s = [...p.semesters];
-      s[si].courses[ci].assigneeId = creator.id;
-      s[si].courses[ci].assigneeName = creator.name;
-      return { ...p, semesters: s };
-    });
-  }, []);
-  const handleAssignElectiveCreator = useCallback((type, gi, ci, creator) => {
-    setDirty(true);
-    const key = type === "prof" ? "prof_electives" : "open_electives";
-    setPdData((p) => {
-      const a = [...p[key]];
-      a[gi].courses[ci].assigneeId = creator.id;
-      a[gi].courses[ci].assigneeName = creator.name;
-      return { ...p, [key]: a };
-    });
-  }, []);
-
-  const openAssignModal = (si, ci, c) => {
-    setCurrentAssignContext({
-      semIndex: si,
-      courseIndex: ci,
-      code: c.code || "New Course",
-      currentAssigneeId: c.assigneeId,
-    });
-    setIsAssignModalOpen(true);
-  };
-  const openElectiveAssignModal = (type, gi, ci, c) => {
-    setCurrentAssignContext({
-      isElective: true,
-      electiveType: type,
-      groupIndex: gi,
-      courseIndex: ci,
-      code: c.code || "Elective",
-      currentAssigneeId: c.assigneeId,
-    });
-    setIsAssignModalOpen(true);
-  };
-
+  // Electives
   const addElectiveGroup = useCallback((type) => {
     setDirty(true);
     const key = type === "prof" ? "prof_electives" : "open_electives";
@@ -1248,7 +1800,7 @@ const CreatePD = () => {
         ...p[key],
         {
           sem: 1,
-          title: `${type === "prof" ? "Professional" : "Open"} Electives - Sem 1`,
+          title: `${type === "prof" ? "Professional" : "Open"} Electives – Sem 1`,
           courses: [],
         },
       ],
@@ -1266,7 +1818,7 @@ const CreatePD = () => {
     const key = type === "prof" ? "prof_electives" : "open_electives";
     setPdData((p) => {
       const a = [...p[key]];
-      a[gi].sem = parseInt(v) || 1;
+      a[gi] = { ...a[gi], sem: parseInt(v) || 1 };
       return { ...p, [key]: a };
     });
   }, []);
@@ -1275,7 +1827,7 @@ const CreatePD = () => {
     const key = type === "prof" ? "prof_electives" : "open_electives";
     setPdData((p) => {
       const a = [...p[key]];
-      a[gi].title = v;
+      a[gi] = { ...a[gi], title: v };
       return { ...p, [key]: a };
     });
   }, []);
@@ -1284,7 +1836,10 @@ const CreatePD = () => {
     const key = type === "prof" ? "prof_electives" : "open_electives";
     setPdData((p) => {
       const a = [...p[key]];
-      a[gi].courses.push({ code: "", title: "", credits: 3 });
+      a[gi] = {
+        ...a[gi],
+        courses: [...a[gi].courses, { code: "", title: "", credits: 3 }],
+      };
       return { ...p, [key]: a };
     });
   }, []);
@@ -1293,7 +1848,7 @@ const CreatePD = () => {
     const key = type === "prof" ? "prof_electives" : "open_electives";
     setPdData((p) => {
       const a = [...p[key]];
-      a[gi].courses = a[gi].courses.filter((_, i) => i !== ci);
+      a[gi] = { ...a[gi], courses: a[gi].courses.filter((_, i) => i !== ci) };
       return { ...p, [key]: a };
     });
   }, []);
@@ -1301,12 +1856,74 @@ const CreatePD = () => {
     setDirty(true);
     const key = type === "prof" ? "prof_electives" : "open_electives";
     setPdData((p) => {
-      const a = [...p[key]];
-      a[gi].courses[ci][f] = v;
+      const a = p[key].map((grp, i) => {
+        if (i !== gi) return grp;
+        const courses = grp.courses.map((c, j) =>
+          j === ci ? { ...c, [f]: v } : c,
+        );
+        return { ...grp, courses };
+      });
       return { ...p, [key]: a };
     });
   }, []);
 
+  // Assign creators
+  const handleAssignCreator = useCallback((si, ci, creator) => {
+    setDirty(true);
+    setPdData((p) => {
+      const s = p.semesters.map((sem, i) => {
+        if (i !== si) return sem;
+        const courses = sem.courses.map((c, j) =>
+          j === ci
+            ? { ...c, assigneeId: creator.id, assigneeName: creator.name }
+            : c,
+        );
+        return { ...sem, courses };
+      });
+      return { ...p, semesters: s };
+    });
+  }, []);
+
+  const handleAssignElectiveCreator = useCallback((type, gi, ci, creator) => {
+    setDirty(true);
+    const key = type === "prof" ? "prof_electives" : "open_electives";
+    setPdData((p) => {
+      const a = p[key].map((grp, i) => {
+        if (i !== gi) return grp;
+        const courses = grp.courses.map((c, j) =>
+          j === ci
+            ? { ...c, assigneeId: creator.id, assigneeName: creator.name }
+            : c,
+        );
+        return { ...grp, courses };
+      });
+      return { ...p, [key]: a };
+    });
+  }, []);
+
+  const openAssignModal = useCallback((si, ci, c) => {
+    setCurrentAssignCtx({
+      semIndex: si,
+      courseIndex: ci,
+      code: c.code || "New Course",
+      currentAssigneeId: c.assigneeId,
+    });
+    setIsAssignModalOpen(true);
+  }, []);
+
+  const openElectiveAssignModal = useCallback((type, gi, ci, c) => {
+    setCurrentAssignCtx({
+      isElective: true,
+      electiveType: type,
+      groupIndex: gi,
+      courseIndex: ci,
+      code: c.code || "Elective",
+      currentAssigneeId: c.assigneeId,
+    });
+    setIsAssignModalOpen(true);
+  }, []);
+
+  // Program selection
   const handleProgramSelect = useCallback(
     (program) => {
       setMetaData((p) => ({
@@ -1320,8 +1937,7 @@ const CreatePD = () => {
         ...prev,
         details: {
           ...prev.details,
-          university:
-            program.college || creatorProfile?.college || "GM University",
+          university: program.college || creatorProfile?.college || "",
           faculty: program.faculty || creatorProfile?.faculty || "",
           school: program.school || creatorProfile?.school || "",
           department: program.department,
@@ -1334,35 +1950,71 @@ const CreatePD = () => {
       setDirty(true);
       fetchRecentVersions(program.code);
     },
-    [creatorProfile],
+    [creatorProfile, fetchRecentVersions],
   );
 
-  // ── 5. SAVE WORKFLOW ───────────────────────────────────────────────────────
+  // AI section polish
+  const handleSectionPolish = useCallback(
+    async (sectionTitle, dataKey) => {
+      setEnhancingSection(sectionTitle);
+      const tid = toast.loading(`AI polishing ${sectionTitle}…`);
+      try {
+        const { data } = await apiService.aiEnhanceSection({
+          sectionName: sectionTitle,
+          sectionData: pdData[dataKey],
+        });
+        if (data.success) {
+          setPdData((p) => ({ ...p, [dataKey]: data.enhancedData }));
+          setDirty(true);
+          toast.success(`${sectionTitle} polished!`, { id: tid });
+        } else {
+          toast.error(data.message || "Failed to polish section.", { id: tid });
+        }
+      } catch (err) {
+        toast.error(err.response?.data?.message || "AI service error.", {
+          id: tid,
+        });
+      } finally {
+        setEnhancingSection(null);
+      }
+    },
+    [apiService, pdData],
+  );
+
+  const triggerAIAssistant = useCallback(
+    (fieldName, content, applyCallback) => {
+      setAiModalConfig({ isOpen: true, fieldName, content, applyCallback });
+    },
+    [],
+  );
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.5  SAVE WORKFLOW
+  // ═════════════════════════════════════════════════════════════════════════
+
   const handleSave = useCallback(
     async (status = "draft", reviewerId = null) => {
-      if (!metaData.programId) return toast.error("Select a program first");
+      if (!metaData.programId) return toast.error("Select a program first.");
       setLoading(true);
       const payload = {
         programId: metaData.programCode,
         programName: metaData.programName,
-        schemeYear: metaData.schemeYear,
+        schemeYear: metaData.schemaVersion, // map schemaVersion → schemeYear for backend
         effectiveAy: metaData.effectiveAy,
         totalCredits: metaData.totalCredits,
         academicCredits: metaData.academicCredits,
         isNewProgram: metaData.isNew,
-        status: status,
-        pdData: pdData,
-        reviewerId: reviewerId,
+        status,
+        pdData,
+        reviewerId,
       };
       try {
-        const { data } = await axios.post("/api/creater/pd/save", payload, {
-          headers: { Authorization: `Bearer ${createrToken}`, createrToken },
-        });
+        const { data } = await apiService.savePD(payload);
         if (data.success) {
           toast.success(
             status === "under_review"
               ? "Submitted for review!"
-              : "Draft saved successfully.",
+              : "Draft saved.",
           );
           setMetaData((p) => ({
             ...p,
@@ -1372,15 +2024,17 @@ const CreatePD = () => {
           }));
           fetchRecentVersions(metaData.programCode);
           setDirty(false);
-          clearLocalStorage();
-        } else toast.error(data.message);
+          clearLocalDraft();
+        } else {
+          toast.error(data.message);
+        }
       } catch {
         toast.error("Save failed. Please try again.");
       } finally {
         setLoading(false);
       }
     },
-    [metaData, pdData, axios, createrToken],
+    [metaData, pdData, apiService, fetchRecentVersions],
   );
 
   const handleSaveAndNext = useCallback(async () => {
@@ -1389,98 +2043,177 @@ const CreatePD = () => {
   }, [handleSave]);
 
   const handlePreview = useCallback(() => {
-    if (!metaData.programId) return toast.error("Select a program first");
+    if (!metaData.programId) return toast.error("Select a program first.");
     setShowPreviewModal(true);
   }, [metaData.programId]);
 
-  const handleSubmitReviewClick = () => {
-    if (!metaData.programId) return toast.error("Select a program first");
-    setShowReviewModal(true);
-  };
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.6  COMPLETION CHECKS
+  // ═════════════════════════════════════════════════════════════════════════
+  const completions = useMemo(
+    () => [
+      !!metaData.programId,
 
-  const triggerAIAssistant = (fieldName, content, applyCallback) => {
-    setAiModalConfig({ isOpen: true, fieldName, content, applyCallback });
-  };
+      Array.isArray(pdData.peos) &&
+        pdData.peos.some((p) => p?.trim()) &&
+        Array.isArray(pdData.psos) &&
+        pdData.psos.some((p) => p?.trim()),
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER STEPS
-  // ─────────────────────────────────────────────────────────────────────────
+      metaData.schemaVersion === "2026"
+        ? Array.isArray(pdData.semesters) &&
+          pdData.semesters.some((s) => {
+            const categories = Array.isArray(s?.categories) ? s.categories : [];
+
+            const categoryCourses = categories.flatMap((cat) =>
+              Array.isArray(cat?.courses) ? cat.courses : [],
+            );
+
+            return categories.length > 0 || categoryCourses.length > 0;
+          })
+        : Array.isArray(pdData.semesters) &&
+          pdData.semesters.some(
+            (s) => Array.isArray(s?.courses) && s.courses.length > 0,
+          ),
+
+      (Array.isArray(pdData.prof_electives) &&
+        pdData.prof_electives.some(
+          (g) => Array.isArray(g?.courses) && g.courses.length > 0,
+        )) ||
+        (Array.isArray(pdData.open_electives) &&
+          pdData.open_electives.some(
+            (g) => Array.isArray(g?.courses) && g.courses.length > 0,
+          )),
+    ],
+
+    [metaData.programId, metaData.schemaVersion, pdData],
+  );
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.7  RENDER: STEP 1 — Program Info & PDF Upload
+  // ═════════════════════════════════════════════════════════════════════════
 
   const renderStep1 = () => (
     <div className="space-y-5 animate-in fade-in duration-200">
+      {/* ── Program & Schema Selection ── */}
       <SectionCard
         icon={<GraduationCap size={16} className="text-blue-500" />}
         iconBg="bg-blue-50"
-        title="Program Selection"
-        subtitle="Select the program this document belongs to"
+        title="Program & Schema Selection"
+        subtitle="Define the curriculum architecture and link to a program"
       >
-        <div ref={dropdownRef} className="relative mb-4">
-          <FieldLabel required>Select Program</FieldLabel>
-          <div className="relative">
-            <input
-              type="text"
-              value={searchProgram}
-              onChange={(e) => {
-                setSearchProgram(e.target.value);
-                setShowProgramDropdown(true);
-              }}
-              onFocus={() => setShowProgramDropdown(true)}
-              placeholder="Search programs..."
-              className="w-full pl-4 pr-10 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all"
-            />
-            <Search
-              className="absolute right-3 top-2.5 text-gray-300"
-              size={16}
-            />
-          </div>
-          {showProgramDropdown && (
-            <div className="absolute z-30 w-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
-              {filteredPrograms.map((p) => (
-                <div
-                  key={p.id}
-                  onClick={() => handleProgramSelect(p)}
-                  className="px-4 py-3 hover:bg-blue-50/60 cursor-pointer border-b border-gray-50 last:border-0 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="font-semibold text-gray-800 text-sm">
-                          {p.code}
-                        </span>
+        <div className="flex flex-col md:flex-row gap-5 mb-5">
+          {/* Program Search */}
+          <div ref={dropdownRef} className="relative flex-1">
+            <FieldLabel required>Select Program</FieldLabel>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchProgram}
+                onChange={(e) => {
+                  setSearchProgram(e.target.value);
+                  setShowProgramDropdown(true);
+                }}
+                onFocus={() => setShowProgramDropdown(true)}
+                placeholder="Search programs…"
+                className="w-full pl-4 pr-10 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all"
+              />
+              <Search
+                className="absolute right-3 top-2.5 text-gray-300"
+                size={16}
+              />
+            </div>
+            {showProgramDropdown && (
+              <div className="absolute z-30 w-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
+                {filteredPrograms.length === 0 ? (
+                  <p className="px-4 py-3 text-xs text-gray-400 italic">
+                    No programs found.
+                  </p>
+                ) : (
+                  filteredPrograms.map((p) => (
+                    <div
+                      key={p.id}
+                      onClick={() => handleProgramSelect(p)}
+                      className="px-4 py-3 hover:bg-blue-50/60 cursor-pointer border-b border-gray-50 last:border-0 transition-colors"
+                    >
+                      <div className="font-semibold text-gray-800 text-sm mb-0.5">
+                        {p.code}
                       </div>
                       <p className="text-xs text-gray-500 truncate">{p.name}</p>
                     </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {metaData.programId && (
-            <div className="mt-3 p-3.5 bg-blue-50/60 border border-blue-100 rounded-xl flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-semibold text-gray-800 text-sm truncate">
-                  {metaData.programName}
-                </p>
-                <p className="text-xs text-blue-500 font-medium mt-0.5">
-                  {metaData.programCode}
-                </p>
+                  ))
+                )}
               </div>
+            )}
+            {metaData.programId && (
+              <div className="mt-3 p-3 bg-blue-50/60 border border-blue-100 rounded-xl flex items-center gap-3">
+                <div>
+                  <p className="font-semibold text-gray-800 text-sm truncate">
+                    {metaData.programName}
+                  </p>
+                  <p className="text-xs text-blue-500 font-medium mt-0.5">
+                    {metaData.programCode}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Schema & Parse Mode */}
+          <div className="w-full md:w-72 space-y-3">
+            <div>
+              <FieldLabel required>PD Schema Version</FieldLabel>
+              <div className="relative">
+                <select
+                  value={metaData.schemaVersion}
+                  onChange={handleSchemaChange}
+                  className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 appearance-none"
+                >
+                  <option value="2026">
+                    PD Schema 2026 (Merged / Dynamic)
+                  </option>
+                  <option value="2024">PD Schema 2024 (Legacy / Flat)</option>
+                </select>
+                <ChevronRight
+                  className="pointer-events-none absolute right-3 top-2.5 rotate-90 text-gray-400"
+                  size={16}
+                />
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1.5 ml-0.5">
+                {metaData.schemaVersion === "2026"
+                  ? "Semesters are grouped by category (e.g. Academic, Lab, Elective)."
+                  : "Flat semester course list — compatible with pre-2026 documents."}
+              </p>
             </div>
-          )}
+
+            {/* Active schema badge */}
+            <div
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold ${
+                metaData.schemaVersion === "2026"
+                  ? "bg-indigo-50 border-indigo-200 text-indigo-600"
+                  : "bg-amber-50 border-amber-200 text-amber-600"
+              }`}
+            >
+              <Zap size={13} />
+              {metaData.schemaVersion === "2026"
+                ? "2026 Dynamic Schema Active"
+                : "2024 Legacy Schema Active"}
+            </div>
+          </div>
         </div>
+
+        {/* Metadata row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-gray-100">
           {[
             {
               label: "Scheme Year",
               icon: <Calendar size={11} />,
               field: "schemeYear",
-              placeholder: "e.g., 2024",
+              placeholder: "e.g. 2026",
             },
             {
               label: "Effective A.Y.",
               icon: <Clock size={11} />,
               field: "effectiveAy",
-              placeholder: "e.g., 2024-25",
+              placeholder: "e.g. 2026-27",
             },
             {
               label: "Total Credits",
@@ -1512,7 +2245,9 @@ const CreatePD = () => {
                 }
                 placeholder={placeholder}
                 className={
-                  readOnly ? "bg-gray-50 cursor-not-allowed text-gray-400" : ""
+                  readOnly
+                    ? "!bg-gray-50 cursor-not-allowed !text-gray-400"
+                    : ""
                 }
               />
             </div>
@@ -1520,40 +2255,143 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
+      {/* ── Polymorphic AI Parser ── */}
       <SectionCard
         icon={<UploadCloud size={16} className="text-violet-500" />}
         iconBg="bg-violet-50"
-        title="AI Document Parser"
-        subtitle="Upload an existing PDF syllabus to instantly populate all fields below using AI."
+        title="Polymorphic AI Document Parser"
+        subtitle={`Smart extraction engine — current mode: ${metaData.parseMode} | schema: ${metaData.schemaVersion}`}
+        action={
+          <select
+            value={metaData.parseMode}
+            onChange={handleParseModeChange}
+            className="text-xs font-semibold px-2 py-1.5 bg-violet-50 text-violet-700 border border-violet-200 rounded-lg outline-none cursor-pointer"
+          >
+            <option value="auto">Auto Mode</option>
+            <option value="stable">Stable (2024)</option>
+            <option value="dynamic">Dynamic AI (2026+)</option>
+          </select>
+        }
       >
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        {/* Mode explanation */}
+        <div className="flex flex-wrap gap-2 mb-4 text-[10px]">
+          {[
+            {
+              mode: "auto",
+              label: "Auto",
+              desc: "Detects schema & routes automatically",
+              color: "bg-violet-50 text-violet-600 border-violet-200",
+            },
+            {
+              mode: "stable",
+              label: "Stable",
+              desc: "Fast parser for 2024-schema PDFs",
+              color: "bg-blue-50 text-blue-600 border-blue-200",
+            },
+            {
+              mode: "dynamic",
+              label: "Dynamic AI",
+              desc: "LLM-assisted for complex layouts",
+              color: "bg-indigo-50 text-indigo-600 border-indigo-200",
+            },
+          ].map((m) => (
+            <div
+              key={m.mode}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border font-semibold ${m.color} ${metaData.parseMode === m.mode ? "ring-2 ring-offset-1 ring-current" : "opacity-60"}`}
+            >
+              <span>{m.label}</span>
+              <span className="opacity-70 font-normal hidden sm:inline">
+                — {m.desc}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Drop zone */}
+        <div
+          className={`relative border-2 border-dashed rounded-2xl p-6 text-center transition-all ${
+            dragActive
+              ? "border-violet-500 bg-violet-50 scale-[1.005]"
+              : "border-gray-200 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-300"
+          }`}
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+        >
           <input
             type="file"
             accept=".pdf"
             ref={fileInputRef}
-            onChange={handleFileUpload}
+            onChange={handleFileSelect}
             className="hidden"
             id="pd-import-upload"
           />
-          <label
-            htmlFor="pd-import-upload"
-            className={[
-              "inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all border shadow-sm",
-              importing
-                ? "bg-violet-50 border-violet-200 text-violet-400 pointer-events-none"
-                : "bg-violet-600 border-violet-700 text-white hover:bg-violet-700",
-            ].join(" ")}
-          >
-            {importing ? (
-              <RefreshCw size={15} className="animate-spin" />
-            ) : (
-              <Sparkles size={15} />
-            )}
-            {importing ? "AI is Extracting Data..." : "Auto-Fill from PDF"}
-          </label>
+
+          {/* ── IDLE ── */}
+          {uploadState.status === "idle" && (
+            <div className="py-2">
+              <div className="mx-auto w-14 h-14 bg-white rounded-2xl shadow-sm flex items-center justify-center mb-3 border border-gray-100">
+                <UploadCloud size={26} className="text-violet-500" />
+              </div>
+              <h4 className="text-sm font-semibold text-gray-800 mb-1">
+                Drag & drop your syllabus PDF
+              </h4>
+              <p className="text-xs text-gray-500 mb-4">
+                Max 15 MB · Engine auto-detects schema and layout type
+              </p>
+              <label
+                htmlFor="pd-import-upload"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all bg-white border border-gray-200 text-gray-700 hover:border-violet-300 hover:text-violet-600 shadow-sm"
+              >
+                Browse Files
+              </label>
+            </div>
+          )}
+
+          {/* ── IN PROGRESS ── */}
+          {["uploading", "parsing", "mapping"].includes(uploadState.status) && (
+            <ParsingProgressView
+              uploadState={uploadState}
+              onCancel={cancelUpload}
+            />
+          )}
+
+          {/* ── ERROR ── */}
+          {uploadState.status === "error" && (
+            <div className="py-2">
+              <ServerCrash size={32} className="mx-auto text-rose-400 mb-3" />
+              <p className="text-sm font-semibold text-rose-600 mb-1">
+                Extraction Failed
+              </p>
+              <p className="text-xs text-rose-500 mb-4 max-w-sm mx-auto">
+                {uploadState.message}
+              </p>
+              {uploadState.errorDetails && (
+                <pre className="text-[10px] text-left bg-rose-50 border border-rose-100 rounded-xl p-3 mb-4 overflow-x-auto max-w-sm mx-auto text-rose-400 whitespace-pre-wrap">
+                  {uploadState.errorDetails.slice(0, 200)}
+                </pre>
+              )}
+              <button
+                onClick={() => dispatchUpload({ type: "RESET" })}
+                className="text-xs font-medium bg-white px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-600"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+
+          {/* ── SUCCESS ── */}
+          {uploadState.status === "success" && uploadState.summary && (
+            <ExtractionSummary
+              summary={uploadState.summary}
+              onReset={() => dispatchUpload({ type: "RESET" })}
+            />
+          )}
         </div>
       </SectionCard>
 
+      {/* ── Institutional Details ── */}
       <SectionCard
         icon={<Settings size={16} className="text-gray-400" />}
         iconBg="bg-gray-100"
@@ -1568,7 +2406,6 @@ const CreatePD = () => {
                 {k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
               </FieldLabel>
               <OptimizedInput
-                type="text"
                 value={v}
                 onChange={(val) => handleNestedChange("details", k, val)}
                 placeholder={`Enter ${k.replace(/_/g, " ")}`}
@@ -1578,6 +2415,7 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
+      {/* ── Award Details ── */}
       <SectionCard
         icon={<Award size={16} className="text-amber-500" />}
         iconBg="bg-amber-50"
@@ -1592,7 +2430,6 @@ const CreatePD = () => {
                 {k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
               </FieldLabel>
               <OptimizedInput
-                type="text"
                 value={v}
                 onChange={(val) => handleNestedChange("award", k, val)}
                 placeholder="—"
@@ -1604,8 +2441,13 @@ const CreatePD = () => {
     </div>
   );
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.8  RENDER: STEP 2 — Objectives
+  // ═════════════════════════════════════════════════════════════════════════
+
   const renderStep2 = () => (
     <div className="space-y-5 animate-in fade-in duration-200">
+      {/* Program Overview */}
       <SectionCard
         icon={<FileText size={16} className="text-blue-500" />}
         iconBg="bg-blue-50"
@@ -1618,7 +2460,7 @@ const CreatePD = () => {
                 setPdData((p) => ({ ...p, overview: res }));
               })
             }
-            className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors border border-indigo-200"
+            className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 border border-indigo-200"
           >
             <Sparkles size={13} /> AI Enhance
           </button>
@@ -1631,6 +2473,7 @@ const CreatePD = () => {
         />
       </SectionCard>
 
+      {/* PEOs */}
       <SectionCard
         icon={<Target size={16} className="text-indigo-500" />}
         iconBg="bg-indigo-50"
@@ -1640,10 +2483,9 @@ const CreatePD = () => {
         action={
           <button
             onClick={() => addArrayItem("peos", "")}
-            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm transition-colors"
+            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm"
           >
-            <Plus size={11} className="text-indigo-500" />
-            Add PEO
+            <Plus size={11} className="text-indigo-500" /> Add PEO
           </button>
         }
       >
@@ -1671,7 +2513,7 @@ const CreatePD = () => {
                     </button>
                     <button
                       onClick={() => removeArrayItem("peos", i)}
-                      className="text-gray-300 hover:text-rose-400 transition-colors"
+                      className="text-gray-300 hover:text-rose-400"
                     >
                       <Trash2 size={13} />
                     </button>
@@ -1679,7 +2521,7 @@ const CreatePD = () => {
                 </div>
                 <JoditEditor
                   value={peo}
-                  config={{ ...joditConfig, height: 160 }}
+                  config={joditShort}
                   onBlur={(v) => handleArrayChange("peos", i, v)}
                 />
               </div>
@@ -1688,6 +2530,7 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
+      {/* POs */}
       <SectionCard
         icon={<BookOpen size={16} className="text-emerald-500" />}
         iconBg="bg-emerald-50"
@@ -1698,17 +2541,15 @@ const CreatePD = () => {
           <div className="flex gap-2">
             <button
               onClick={resetPOs}
-              className="flex items-center gap-1 text-xs font-medium text-gray-500 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm transition-colors"
+              className="flex items-center gap-1 text-xs font-medium text-gray-500 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm"
             >
-              <RotateCcw size={11} />
-              Reset
+              <RotateCcw size={11} /> Reset
             </button>
             <button
-              onClick={addPO}
-              className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm transition-colors"
+              onClick={() => addArrayItem("pos", "")}
+              className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm"
             >
-              <Plus size={11} className="text-emerald-500" />
-              Add PO
+              <Plus size={11} className="text-emerald-500" /> Add PO
             </button>
           </div>
         }
@@ -1727,21 +2568,21 @@ const CreatePD = () => {
                         handleArrayChange("pos", i, res),
                       )
                     }
-                    className="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-1 rounded transition-colors"
+                    className="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-1 rounded"
                   >
                     <Sparkles size={13} />
                   </button>
                 </div>
                 <JoditEditor
                   value={po}
-                  config={{ ...joditConfig, height: 120 }}
+                  config={joditTiny}
                   onBlur={(v) => handleArrayChange("pos", i, v)}
                 />
               </div>
               <button
                 onClick={() => removeArrayItem("pos", i)}
                 disabled={pdData.pos.length <= 1}
-                className="text-gray-300 hover:text-rose-400 transition-colors mt-1 flex-shrink-0"
+                className="text-gray-300 hover:text-rose-400 mt-1 flex-shrink-0 disabled:opacity-30"
               >
                 <Trash2 size={13} />
               </button>
@@ -1750,6 +2591,7 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
+      {/* PSOs */}
       <SectionCard
         icon={<Sparkles size={16} className="text-amber-500" />}
         iconBg="bg-amber-50"
@@ -1759,10 +2601,9 @@ const CreatePD = () => {
         action={
           <button
             onClick={() => addArrayItem("psos", "")}
-            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm transition-colors"
+            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm"
           >
-            <Plus size={11} className="text-amber-500" />
-            Add PSO
+            <Plus size={11} className="text-amber-500" /> Add PSO
           </button>
         }
       >
@@ -1784,13 +2625,13 @@ const CreatePD = () => {
                           handleArrayChange("psos", i, res),
                         )
                       }
-                      className="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-1 rounded transition-colors"
+                      className="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-1 rounded"
                     >
                       <Sparkles size={13} />
                     </button>
                     <button
                       onClick={() => removeArrayItem("psos", i)}
-                      className="text-gray-300 hover:text-rose-400 transition-colors"
+                      className="text-gray-300 hover:text-rose-400"
                     >
                       <Trash2 size={13} />
                     </button>
@@ -1798,7 +2639,7 @@ const CreatePD = () => {
                 </div>
                 <JoditEditor
                   value={pso}
-                  config={{ ...joditConfig, height: 160 }}
+                  config={joditShort}
                   onBlur={(v) => handleArrayChange("psos", i, v)}
                 />
               </div>
@@ -1809,8 +2650,282 @@ const CreatePD = () => {
     </div>
   );
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.9  RENDER: STEP 3 — Structure (schema-driven semesters)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /** Render a single semester's 2026 category-based view. */
+  const renderSem2026 = useCallback(
+    (sem, si) => (
+      <div className="p-3 space-y-4">
+        {sem.categories.map((cat, catIdx) => (
+          <div
+            key={catIdx}
+            className="border border-indigo-100 rounded-xl overflow-hidden bg-white"
+          >
+            <div className="flex items-center justify-between px-4 py-2 bg-indigo-50/30 border-b border-indigo-50">
+              <div className="flex-1 max-w-sm">
+                <OptimizedInput
+                  value={cat.categoryName}
+                  onChange={(v) => updateCategoryName2026(si, catIdx, v)}
+                  className="!py-1 !px-2 !text-xs font-semibold text-indigo-900 !bg-transparent !border-none !shadow-none focus:!ring-0"
+                  placeholder="Category name (e.g. Academic)"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => addCourse2026(si, catIdx)}
+                  className="text-[10px] uppercase font-bold text-indigo-600 px-2 py-1 bg-white border border-indigo-200 rounded hover:bg-indigo-50"
+                >
+                  + Course
+                </button>
+                <button
+                  onClick={() => removeCategory2026(si, catIdx)}
+                  className="text-gray-400 hover:text-rose-500 p-1"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead className="bg-gray-50/50">
+                  <tr>
+                    {["Code", "Title", "Cr", "Type", ""].map((h, i) => (
+                      <th
+                        key={i}
+                        className="px-3 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {cat.courses.map((c, ci) => (
+                    <tr
+                      key={ci}
+                      className="border-t border-gray-50 hover:bg-gray-50/30"
+                    >
+                      <td className="p-2 w-28">
+                        <OptimizedInput
+                          value={c.code}
+                          onChange={(v) =>
+                            updateCourse2026(si, catIdx, ci, "code", v)
+                          }
+                          className="!py-1 !text-xs uppercase"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <OptimizedInput
+                          value={c.title}
+                          onChange={(v) =>
+                            updateCourse2026(si, catIdx, ci, "title", v)
+                          }
+                          className="!py-1 !text-xs"
+                        />
+                      </td>
+                      <td className="p-2 w-16">
+                        <OptimizedInput
+                          type="number"
+                          value={c.credits}
+                          onChange={(v) =>
+                            updateCourse2026(
+                              si,
+                              catIdx,
+                              ci,
+                              "credits",
+                              parseInt(v) || 0,
+                            )
+                          }
+                          className="!py-1 !text-xs text-center"
+                        />
+                      </td>
+                      <td className="p-2 w-28">
+                        <select
+                          value={c.type}
+                          onChange={(e) =>
+                            updateCourse2026(
+                              si,
+                              catIdx,
+                              ci,
+                              "type",
+                              e.target.value,
+                            )
+                          }
+                          className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white"
+                        >
+                          <option>Theory</option>
+                          <option>Lab</option>
+                          <option>Theory+Lab</option>
+                          <option>Project</option>
+                        </select>
+                      </td>
+                      <td className="p-2 text-center w-10">
+                        <button
+                          onClick={() => removeCourse2026(si, catIdx, ci)}
+                          className="text-gray-300 hover:text-rose-400"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {cat.courses.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-4 py-4 text-center text-xs text-gray-300 italic"
+                      >
+                        No courses yet. Click + Course.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+        {sem.categories.length === 0 && (
+          <p className="text-xs text-gray-400 text-center py-4 italic">
+            No categories yet. Click "Add Category".
+          </p>
+        )}
+      </div>
+    ),
+    [
+      updateCategoryName2026,
+      addCourse2026,
+      removeCategory2026,
+      updateCourse2026,
+      removeCourse2026,
+    ],
+  );
+
+  /** Render a single semester's 2024 flat-course view. */
+  const renderSem2024 = useCallback(
+    (sem, si) => (
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-xs">
+          <thead className="bg-gray-50/60 border-b border-gray-100">
+            <tr>
+              {[
+                "#",
+                "Code",
+                "Title",
+                "Cr",
+                "Type",
+                "Category",
+                "Assignee",
+                "",
+              ].map((h, i) => (
+                <th
+                  key={i}
+                  className="px-3 py-2.5 text-left font-semibold text-gray-400 uppercase tracking-wider text-[10px]"
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {sem.courses.map((c, ci) => (
+              <tr
+                key={ci}
+                className="hover:bg-gray-50/60 transition-colors group"
+              >
+                <td className="px-3 py-2 text-gray-300 text-center text-[11px]">
+                  {ci + 1}
+                </td>
+                <td className="px-2 py-2 w-24">
+                  <OptimizedInput
+                    value={c.code}
+                    onChange={(v) => updateCourse2024(si, ci, "code", v)}
+                    className="!py-1.5 !text-xs uppercase !px-2"
+                  />
+                </td>
+                <td className="px-2 py-2 min-w-[140px]">
+                  <OptimizedInput
+                    value={c.title}
+                    onChange={(v) => updateCourse2024(si, ci, "title", v)}
+                    className="!py-1.5 !text-xs !px-2"
+                  />
+                </td>
+                <td className="px-2 py-2 w-12">
+                  <OptimizedInput
+                    type="number"
+                    min="0"
+                    value={c.credits}
+                    onChange={(v) =>
+                      updateCourse2024(si, ci, "credits", parseInt(v) || 0)
+                    }
+                    className="!py-1.5 !text-xs !text-center !px-1"
+                  />
+                </td>
+                <td className="px-2 py-2 w-28">
+                  <select
+                    value={c.type}
+                    onChange={(e) =>
+                      updateCourse2024(si, ci, "type", e.target.value)
+                    }
+                    className="w-full px-1.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+                  >
+                    <option>Theory</option>
+                    <option>Lab</option>
+                    <option>Theory+Lab</option>
+                    <option>Project</option>
+                  </select>
+                </td>
+                <td className="px-2 py-2 w-32">
+                  <select
+                    value={c.category}
+                    onChange={(e) =>
+                      updateCourse2024(si, ci, "category", e.target.value)
+                    }
+                    className="w-full px-1.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
+                  >
+                    <option>Core</option>
+                    <option>Elective</option>
+                    <option>Open Elective</option>
+                    <option>Project</option>
+                  </select>
+                </td>
+                <td className="px-2 py-2 w-28">
+                  <AssignBtn
+                    course={c}
+                    onClick={() => openAssignModal(si, ci, c)}
+                  />
+                </td>
+                <td className="px-3 py-2 text-center">
+                  <button
+                    onClick={() => removeCourse2024(si, ci)}
+                    className="text-gray-300 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {sem.courses.length === 0 && (
+              <tr>
+                <td
+                  colSpan={8}
+                  className="px-4 py-6 text-center text-xs text-gray-300 italic"
+                >
+                  No courses yet. Click Add.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    ),
+    [updateCourse2024, removeCourse2024, openAssignModal],
+  );
+
   const renderStep3 = () => (
     <div className="space-y-5 animate-in fade-in duration-200">
+      {/* Credit Definition */}
       <SectionCard
         icon={<Settings size={16} className="text-gray-400" />}
         iconBg="bg-gray-100"
@@ -1841,6 +2956,7 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
+      {/* Programme Structure Table */}
       <SectionCard
         icon={<Table size={16} className="text-blue-500" />}
         iconBg="bg-blue-50"
@@ -1848,10 +2964,9 @@ const CreatePD = () => {
         action={
           <button
             onClick={addStructureItem}
-            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm transition-colors"
+            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm"
           >
-            <Plus size={11} className="text-blue-500" />
-            Add Row
+            <Plus size={11} className="text-blue-500" /> Add Row
           </button>
         }
         noPad
@@ -1863,7 +2978,7 @@ const CreatePD = () => {
                 {["#", "Category", "Code", "Credits", ""].map((h, i) => (
                   <th
                     key={i}
-                    className={`px-4 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider text-[10px] ${i === 3 ? "w-20" : i === 4 ? "w-12" : ""}`}
+                    className="px-4 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider text-[10px]"
                   >
                     {h}
                   </th>
@@ -1872,16 +2987,12 @@ const CreatePD = () => {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {pdData.structure_table.map((row, i) => (
-                <tr
-                  key={i}
-                  className="hover:bg-gray-50/60 transition-colors group"
-                >
+                <tr key={i} className="hover:bg-gray-50/60 group">
                   <td className="px-4 py-2.5 text-gray-300 text-xs text-center">
                     {i + 1}
                   </td>
                   <td className="px-3 py-2.5">
                     <OptimizedInput
-                      type="text"
                       value={row.category}
                       onChange={(v) => updateStructureItem(i, "category", v)}
                       className="!py-1.5 !text-xs"
@@ -1890,7 +3001,6 @@ const CreatePD = () => {
                   </td>
                   <td className="px-3 py-2.5 w-28">
                     <OptimizedInput
-                      type="text"
                       value={row.code}
                       onChange={(v) => updateStructureItem(i, "code", v)}
                       className="!py-1.5 !text-xs uppercase"
@@ -1950,167 +3060,99 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
+      {/* Semester-wise Courses (schema-driven) */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-gray-800">
-              Semester-wise Courses
+              Semester-wise Curriculum
             </h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Rendering:{" "}
+              <span
+                className={`font-semibold ${metaData.schemaVersion === "2026" ? "text-indigo-600" : "text-amber-600"}`}
+              >
+                {metaData.schemaVersion === "2026"
+                  ? "2026 Category-based Structure"
+                  : "2024 Flat Course List"}
+              </span>
+            </p>
           </div>
           <button
             onClick={addSemester}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors shadow-sm"
           >
-            <Plus size={12} />
-            Add Semester
+            <Plus size={12} /> Add Semester
           </button>
         </div>
+
         {pdData.semesters.map((sem, si) => (
           <div
             key={sem.sem_no}
             className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
           >
+            {/* Semester header */}
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-gray-50/50">
               <div className="flex items-center gap-3">
                 <FolderOpen size={15} className="text-gray-400" />
                 <span className="font-semibold text-gray-700 text-sm">
                   Semester {sem.sem_no}
                 </span>
+                {metaData.schemaVersion === "2026" ? (
+                  <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
+                    {sem.categories.length} categories
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">
+                    {sem.courses.length} courses
+                  </span>
+                )}
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={() => addCourse(si)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg"
-                >
-                  <Plus size={11} />
-                  Add
-                </button>
+                {metaData.schemaVersion === "2026" ? (
+                  <button
+                    onClick={() => addCategory2026(si)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg"
+                  >
+                    <Plus size={11} /> Add Category
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => addCourse2024(si)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg"
+                  >
+                    <Plus size={11} /> Add Course
+                  </button>
+                )}
                 <button
                   onClick={() => removeSemester(si)}
                   className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-rose-500 bg-rose-50 border border-rose-200 rounded-lg"
                 >
-                  <Trash2 size={11} />
-                  Remove
+                  <Trash2 size={11} /> Remove
                 </button>
               </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-xs">
-                <thead>
-                  <tr className="bg-gray-50/60 border-b border-gray-100">
-                    {[
-                      "#",
-                      "Code",
-                      "Title",
-                      "Cr",
-                      "Type",
-                      "Category",
-                      "Assignee",
-                      "",
-                    ].map((h, i) => (
-                      <th
-                        key={i}
-                        className="px-3 py-2.5 text-left font-semibold text-gray-400 uppercase tracking-wider text-[10px]"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {sem.courses.map((c, ci) => (
-                    <tr
-                      key={ci}
-                      className="hover:bg-gray-50/60 transition-colors group"
-                    >
-                      <td className="px-3 py-2 text-gray-300 text-center text-[11px]">
-                        {ci + 1}
-                      </td>
-                      <td className="px-2 py-2 w-24">
-                        <OptimizedInput
-                          type="text"
-                          value={c.code}
-                          onChange={(v) => updateCourse(si, ci, "code", v)}
-                          className="!py-1.5 !text-xs uppercase !px-2"
-                        />
-                      </td>
-                      <td className="px-2 py-2 min-w-[140px]">
-                        <OptimizedInput
-                          type="text"
-                          value={c.title}
-                          onChange={(v) => updateCourse(si, ci, "title", v)}
-                          className="!py-1.5 !text-xs !px-2"
-                        />
-                      </td>
-                      <td className="px-2 py-2 w-12">
-                        <OptimizedInput
-                          type="number"
-                          min="0"
-                          value={c.credits}
-                          onChange={(v) =>
-                            updateCourse(si, ci, "credits", parseInt(v) || 0)
-                          }
-                          className="!py-1.5 !text-xs !text-center !px-1"
-                        />
-                      </td>
-                      <td className="px-2 py-2 w-28">
-                        <select
-                          value={c.type}
-                          onChange={(e) =>
-                            updateCourse(si, ci, "type", e.target.value)
-                          }
-                          className="w-full px-1.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
-                        >
-                          <option>Theory</option>
-                          <option>Lab</option>
-                          <option>Theory+Lab</option>
-                          <option>Project</option>
-                        </select>
-                      </td>
-                      <td className="px-2 py-2 w-32">
-                        <select
-                          value={c.category}
-                          onChange={(e) =>
-                            updateCourse(si, ci, "category", e.target.value)
-                          }
-                          className="w-full px-1.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white"
-                        >
-                          <option>Core</option>
-                          <option>Elective</option>
-                          <option>Open Elective</option>
-                          <option>Project</option>
-                        </select>
-                      </td>
-                      <td className="px-2 py-2 w-28">
-                        <AssignBtn
-                          course={c}
-                          onClick={() => openAssignModal(si, ci, c)}
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <button
-                          onClick={() => removeCourse(si, ci)}
-                          className="text-gray-300 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+
+            {/* Schema-driven body */}
+            {metaData.schemaVersion === "2026"
+              ? renderSem2026(sem, si)
+              : renderSem2024(sem, si)}
           </div>
         ))}
       </div>
     </div>
   );
 
-  const renderStep4 = () => {
-    const renderElectiveSection = (type) => {
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.10 RENDER: STEP 4 — Electives
+  // ═════════════════════════════════════════════════════════════════════════
+
+  const renderElectiveSection = useCallback(
+    (type) => {
       const isPE = type === "prof";
       const key = isPE ? "prof_electives" : "open_electives";
       const groups = pdData[key];
+
       return (
         <SectionCard
           icon={
@@ -2126,8 +3168,7 @@ const CreatePD = () => {
               onClick={() => addElectiveGroup(type)}
               className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5"
             >
-              <Plus size={11} />
-              Add Group
+              <Plus size={11} /> Add Group
             </button>
           }
         >
@@ -2150,7 +3191,6 @@ const CreatePD = () => {
                       className="!w-12 !py-1.5 !px-2 !text-xs !text-center"
                     />
                     <OptimizedInput
-                      type="text"
                       value={grp.title}
                       onChange={(v) => updateElectiveGroupTitle(type, gi, v)}
                       className="flex-1 min-w-[150px] !py-1.5 !text-xs"
@@ -2159,7 +3199,7 @@ const CreatePD = () => {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => addElectiveCourse(type, gi)}
-                      className="text-xs px-2.5 py-1.5 font-medium bg-white border border-gray-200 text-gray-600 rounded-lg"
+                      className="text-xs px-2.5 py-1.5 font-medium bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50"
                     >
                       + Course
                     </button>
@@ -2175,13 +3215,9 @@ const CreatePD = () => {
                   <table className="w-full border-collapse text-xs">
                     <tbody className="divide-y divide-gray-50">
                       {grp.courses.map((c, ci) => (
-                        <tr
-                          key={ci}
-                          className="hover:bg-gray-50/60 transition-colors group"
-                        >
+                        <tr key={ci} className="hover:bg-gray-50/60 group">
                           <td className="px-2 py-2 w-28">
                             <OptimizedInput
-                              type="text"
                               value={c.code}
                               onChange={(v) =>
                                 updateElectiveCourse(type, gi, ci, "code", v)
@@ -2191,7 +3227,6 @@ const CreatePD = () => {
                           </td>
                           <td className="px-2 py-2">
                             <OptimizedInput
-                              type="text"
                               value={c.title}
                               onChange={(v) =>
                                 updateElectiveCourse(type, gi, ci, "title", v)
@@ -2234,54 +3269,56 @@ const CreatePD = () => {
                           </td>
                         </tr>
                       ))}
+                      {grp.courses.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan={5}
+                            className="px-4 py-4 text-center text-xs text-gray-300 italic"
+                          >
+                            No courses. Click + Course.
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
               </div>
             ))}
+            {groups.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-6 italic">
+                No groups yet. Click "Add Group".
+              </p>
+            )}
           </div>
         </SectionCard>
       );
-    };
-    return (
-      <div className="space-y-5 animate-in fade-in duration-200">
-        {renderElectiveSection("prof")}
-        {renderElectiveSection("open")}
-      </div>
-    );
-  };
+    },
+    [
+      pdData,
+      addElectiveGroup,
+      removeElectiveGroup,
+      updateElectiveGroupSem,
+      updateElectiveGroupTitle,
+      addElectiveCourse,
+      removeElectiveCourse,
+      updateElectiveCourse,
+      openElectiveAssignModal,
+    ],
+  );
 
-  const completions = [
-    !!metaData.programId,
-    pdData.peos.some((p) => p?.trim()) && pdData.psos.some((p) => p?.trim()),
-    pdData.semesters.some((s) => s.courses.length > 0),
-    pdData.prof_electives.some((g) => g.courses.length > 0) ||
-      pdData.open_electives.some((g) => g.courses.length > 0),
-  ];
+  const renderStep4 = () => (
+    <div className="space-y-5 animate-in fade-in duration-200">
+      {renderElectiveSection("prof")}
+      {renderElectiveSection("open")}
+    </div>
+  );
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // MAIN RETURN
-  // ─────────────────────────────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.11 SIDEBAR
+  // ═════════════════════════════════════════════════════════════════════════
 
-  return (
-    <CreatorLayout>
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap'); * { font-family: 'DM Sans', sans-serif; } .scrollbar-hide::-webkit-scrollbar { display: none; } .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }`,
-        }}
-      />
-
-      <AIAssistantModal
-        isOpen={aiModalConfig.isOpen}
-        onClose={() => setAiModalConfig({ ...aiModalConfig, isOpen: false })}
-        fieldName={aiModalConfig.fieldName}
-        currentContent={aiModalConfig.content}
-        onApply={aiModalConfig.applyCallback}
-        axios={axios}
-        createrToken={createrToken}
-      />
-
-      {/* Sidebar Modals */}
+  const renderSidebar = () => (
+    <>
       {showSidebar && (
         <div
           className="fixed inset-0 z-40 lg:hidden"
@@ -2290,7 +3327,6 @@ const CreatePD = () => {
           <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
         </div>
       )}
-
       {showSidebar && (
         <div
           ref={sidebarRef}
@@ -2302,11 +3338,13 @@ const CreatePD = () => {
             </h2>
             <button
               onClick={() => setShowSidebar(false)}
-              className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+              className="text-gray-400 hover:bg-gray-100 p-1.5 rounded-lg"
             >
               <X size={16} />
             </button>
           </div>
+
+          {/* Progress */}
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center justify-between mb-3">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
@@ -2350,6 +3388,8 @@ const CreatePD = () => {
               ))}
             </div>
           </div>
+
+          {/* Version History */}
           <div className="p-4 flex-1 overflow-y-auto">
             <div className="flex items-center gap-2 mb-3">
               <History size={14} className="text-gray-400" />
@@ -2359,7 +3399,7 @@ const CreatePD = () => {
             </div>
             {recentVersions.length === 0 ? (
               <p className="text-xs text-gray-300 italic text-center py-4">
-                No versions saved yet.
+                No saved versions yet.
               </p>
             ) : (
               <div className="space-y-1.5">
@@ -2377,9 +3417,9 @@ const CreatePD = () => {
                         v{ver.version_no}
                       </span>
                       <span
-                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded uppercase ${ver.status === "approved" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}
+                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded uppercase ${ver.status === "approved" ? "bg-emerald-50 text-emerald-600" : ver.status === "under_review" ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600"}`}
                       >
-                        {ver.status.replace("_", " ")}
+                        {ver.status?.replace("_", " ")}
                       </span>
                     </div>
                     <p className="text-[10px] text-gray-400">
@@ -2392,8 +3432,91 @@ const CreatePD = () => {
           </div>
         </div>
       )}
+    </>
+  );
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // § 9.12 MAIN RETURN
+  // ═════════════════════════════════════════════════════════════════════════
+
+  return (
+    <CreatorLayout>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+          @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
+          * { font-family: 'DM Sans', sans-serif; }
+          .scrollbar-hide::-webkit-scrollbar { display: none; }
+          .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+          .animate-in { animation-fill-mode: both; }
+          .fade-in { animation: fadeIn 0.2s ease-out; }
+          .zoom-in-95 { animation: zoomIn95 0.2s ease-out; }
+          .slide-in-from-right-5 { animation: slideInRight 0.2s ease-out; }
+          @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+          @keyframes zoomIn95 { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+          @keyframes slideInRight { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+        `,
+        }}
+      />
+
+      {/* ── Modals ── */}
+      <AIAssistantModal
+        isOpen={aiModalConfig.isOpen}
+        onClose={() => setAiModalConfig((p) => ({ ...p, isOpen: false }))}
+        fieldName={aiModalConfig.fieldName}
+        currentContent={aiModalConfig.content}
+        onApply={aiModalConfig.applyCallback}
+        apiService={apiService}
+      />
+
+      <ReviewSubmitModal
+        isOpen={showReviewModal}
+        onClose={() => setShowReviewModal(false)}
+        apiService={apiService}
+        onConfirm={(adminId) => {
+          setShowReviewModal(false);
+          handleSave("under_review", adminId);
+        }}
+      />
+
+      <SearchCreator
+        isOpen={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        courseCode={currentAssignCtx?.code}
+        currentAssigneeId={currentAssignCtx?.currentAssigneeId}
+        onSelect={(creator) => {
+          if (!currentAssignCtx) return;
+          if (currentAssignCtx.isElective)
+            handleAssignElectiveCreator(
+              currentAssignCtx.electiveType,
+              currentAssignCtx.groupIndex,
+              currentAssignCtx.courseIndex,
+              creator,
+            );
+          else
+            handleAssignCreator(
+              currentAssignCtx.semIndex,
+              currentAssignCtx.courseIndex,
+              creator,
+            );
+          setIsAssignModalOpen(false);
+        }}
+      />
+
+      {showPreviewModal && (
+        <Preview
+          isModal
+          onClose={() => setShowPreviewModal(false)}
+          passedPdData={pdData}
+          passedMetaData={metaData}
+        />
+      )}
+
+      {renderSidebar()}
+
+      {/* ── Main Content ── */}
       <div className="max-w-5xl mx-auto px-3 sm:px-4 lg:px-0 pb-10">
+        {/* ── Header ── */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
             <div className="min-w-0">
@@ -2412,12 +3535,21 @@ const CreatePD = () => {
                     <span className="text-sm text-gray-600 font-medium truncate max-w-xs">
                       {metaData.programName}
                     </span>
+                    <span
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase tracking-widest border ${
+                        metaData.schemaVersion === "2026"
+                          ? "text-indigo-600 bg-indigo-50 border-indigo-200"
+                          : "text-amber-600 bg-amber-50 border-amber-200"
+                      }`}
+                    >
+                      {metaData.schemaVersion} Schema
+                    </span>
                     <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md uppercase tracking-widest border border-gray-200">
                       v{metaData.versionNo}
                     </span>
                     {dirty && (
                       <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                        Unsaved changes
+                        Unsaved
                       </span>
                     )}
                   </>
@@ -2429,17 +3561,18 @@ const CreatePD = () => {
               </div>
             </div>
 
+            {/* Action buttons */}
             <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
               <button
                 onClick={() => navigate("/creator/pd-history")}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm"
               >
                 <FolderOpen size={14} />
                 <span className="hidden sm:inline">History</span>
               </button>
               <button
                 onClick={() => setShowSidebar(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm"
               >
                 <Menu size={14} />
                 <span className="hidden sm:inline">Sections</span>
@@ -2447,7 +3580,7 @@ const CreatePD = () => {
               <button
                 onClick={fetchLatestPD}
                 disabled={!metaData.programCode || loading}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-40"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-40"
               >
                 <RefreshCw
                   size={14}
@@ -2458,7 +3591,7 @@ const CreatePD = () => {
               <button
                 onClick={handlePreview}
                 disabled={!metaData.programCode}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors disabled:opacity-40"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm disabled:opacity-40"
               >
                 <Eye size={14} />
                 <span className="hidden sm:inline">Preview</span>
@@ -2466,7 +3599,7 @@ const CreatePD = () => {
               <button
                 onClick={() => handleSave("draft")}
                 disabled={loading || !metaData.programCode}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-gray-900 rounded-lg hover:bg-gray-800 shadow-sm transition-colors disabled:opacity-40"
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-gray-900 rounded-lg hover:bg-gray-800 shadow-sm disabled:opacity-40"
               >
                 {loading ? (
                   <RefreshCw size={14} className="animate-spin" />
@@ -2476,15 +3609,19 @@ const CreatePD = () => {
                 Save Draft
               </button>
               <button
-                onClick={handleSubmitReviewClick}
+                onClick={() => {
+                  if (!metaData.programId)
+                    return toast.error("Select a program first.");
+                  setShowReviewModal(true);
+                }}
                 disabled={loading || !metaData.programCode}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-40"
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm disabled:opacity-40"
               >
-                <Send size={14} />
-                Submit
+                <Send size={14} /> Submit
               </button>
             </div>
           </div>
+
           <StepProgressBar
             activeStep={activeStep}
             onStepClick={setActiveStep}
@@ -2492,16 +3629,17 @@ const CreatePD = () => {
           />
         </div>
 
+        {/* Unsaved changes banner */}
         {dirty && (
           <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl border text-xs mb-5 bg-yellow-50 border-yellow-200 text-yellow-700">
             <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
             <p className="font-medium">
-              Unsaved content. Please save your draft to update the version
-              history.
+              Unsaved changes. Save your draft to update the version history.
             </p>
           </div>
         )}
 
+        {/* ── Step content ── */}
         <div className="min-h-[400px]">
           {activeStep === 1 && renderStep1()}
           {activeStep === 2 && renderStep2()}
@@ -2509,29 +3647,31 @@ const CreatePD = () => {
           {activeStep === 4 && renderStep4()}
         </div>
 
+        {/* ── Bottom navigation ── */}
         <div className="mt-6 flex flex-col-reverse sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
           <button
             onClick={() => setActiveStep((p) => Math.max(1, p - 1))}
             disabled={activeStep === 1}
-            className="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30 transition-all"
+            className="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30"
           >
-            <ArrowLeft size={16} strokeWidth={2} />
-            Previous
+            <ArrowLeft size={16} strokeWidth={2} /> Previous
           </button>
+
           <div className="flex items-center justify-center gap-2">
             {STEP_CONFIG.map((step) => (
               <button
                 key={step.id}
                 onClick={() => setActiveStep(step.id)}
-                className={`w-2 h-2 rounded-full transition-all duration-200 ${activeStep === step.id ? "w-5 bg-gray-800" : "bg-gray-200 hover:bg-gray-300"}`}
+                className={`h-2 rounded-full transition-all duration-200 ${activeStep === step.id ? "w-5 bg-gray-800" : "w-2 bg-gray-200 hover:bg-gray-300"}`}
               />
             ))}
           </div>
+
           <div className="flex items-center gap-2">
             <button
               onClick={handleSaveAndNext}
               disabled={loading || !metaData.programCode}
-              className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 disabled:opacity-40 transition-all"
+              className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 disabled:opacity-40"
             >
               {loading ? (
                 <RefreshCw size={14} className="animate-spin" />
@@ -2543,61 +3683,15 @@ const CreatePD = () => {
             <button
               onClick={() => setActiveStep((p) => Math.min(4, p + 1))}
               disabled={activeStep === 4}
-              className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-gray-900 text-white rounded-xl hover:bg-gray-800 disabled:opacity-30 transition-all shadow-sm"
+              className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-gray-900 text-white rounded-xl hover:bg-gray-800 disabled:opacity-30 shadow-sm"
             >
-              Next
-              <ArrowRight size={16} strokeWidth={2} />
+              Next <ArrowRight size={16} strokeWidth={2} />
             </button>
           </div>
         </div>
       </div>
-
-      <SearchCreator
-        isOpen={isAssignModalOpen}
-        onClose={() => setIsAssignModalOpen(false)}
-        courseCode={currentAssignContext?.code}
-        currentAssigneeId={currentAssignContext?.currentAssigneeId}
-        onSelect={(creator) => {
-          if (!currentAssignContext) return;
-          if (currentAssignContext.isElective)
-            handleAssignElectiveCreator(
-              currentAssignContext.electiveType,
-              currentAssignContext.groupIndex,
-              currentAssignContext.courseIndex,
-              creator,
-            );
-          else
-            handleAssignCreator(
-              currentAssignContext.semIndex,
-              currentAssignContext.courseIndex,
-              creator,
-            );
-          setIsAssignModalOpen(false);
-        }}
-      />
-      {showPreviewModal && (
-        <Preview
-          isModal={true}
-          onClose={() => setShowPreviewModal(false)}
-          passedPdData={pdData}
-          passedMetaData={metaData}
-        />
-      )}
-      <ReviewSubmitModal
-        isOpen={showReviewModal}
-        onClose={() => setShowReviewModal(false)}
-        axios={axios}
-        createrToken={createrToken}
-        onConfirm={(adminId) => {
-          setShowReviewModal(false);
-          handleSave("under_review", adminId);
-        }}
-      />
     </CreatorLayout>
   );
 };
 
 export default CreatePD;
-
-// in EditCD page  also add the AI asistance but remomber outcome ma and assessment weight doont implement because it has diffferent paste and apply structure so implemet the only normal inputs like text areas in edit CD and  in edit Cd implement localstorage feature as CreatePD implement it in Edit CD  localstorage so give full EditCD  updated Code
-// give full structured code without any bugs

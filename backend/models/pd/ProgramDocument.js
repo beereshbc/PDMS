@@ -2,16 +2,19 @@ import mongoose from "mongoose";
 
 const ProgramDocumentSchema = new mongoose.Schema(
   {
-    // This ID groups all versions of the "CSE B.Tech" document together
     programCode: { type: String, required: true, index: true }, // e.g., "BTECH-CSE"
-    schemeYear: { type: String, required: true }, // e.g., "2024"
 
-    // The version of the COMBINED document (e.g., PD v1.0.5)
-    // This increments if ANY section increments
+    // SCHEMA VERSION TRACKING: Crucial for routing parsers and frontend rendering
+    schemeYear: {
+      type: String,
+      required: true,
+      enum: ["2024", "2026"], // Easily expandable for future schemas (e.g., "2027")
+      default: "2026",
+    },
+
     pdVersion: { type: String, required: true },
 
     // --- References to Specific Section Versions ---
-    // We store the ObjectId of the specific version of the section
     section1_info: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "PD_Section1_Info",
@@ -34,7 +37,7 @@ const ProgramDocumentSchema = new mongoose.Schema(
     },
 
     // --- Meta Data ---
-    effectiveAcademicYear: { type: String }, // e.g., "2024-25"
+    effectiveAcademicYear: { type: String },
     status: {
       type: String,
       enum: ["Draft", "UnderReview", "Approved", "Archived"],
@@ -48,7 +51,6 @@ const ProgramDocumentSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// Ensure we don't have duplicate versions for the same program scheme
 ProgramDocumentSchema.index(
   { programCode: 1, schemeYear: 1, pdVersion: 1 },
   { unique: true },
