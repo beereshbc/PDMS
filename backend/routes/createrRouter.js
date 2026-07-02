@@ -7,7 +7,6 @@ import {
   getPDById,
   getLatestPD,
   uploadAndParsePD,
-  uploadAndDynamicParsePD,
   getDashboardStats,
   getCreatorHistory,
   searchCreaters,
@@ -50,10 +49,5 @@ createrRouter.get("/cd/assigned", getAssignedCDs);
 // Parser
 // Add this line with your other PD routes
 createrRouter.post("/pd/import", upload.single("pdFile"), uploadAndParsePD);
-createrRouter.post(
-  "/pd/import/dynamic",
-  upload.single("pdFile"),
-  uploadAndDynamicParsePD,
-);
 
 export default createrRouter;

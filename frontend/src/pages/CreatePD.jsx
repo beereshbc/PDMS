@@ -348,27 +348,8 @@ const buildApiService = (axios, createrToken) => {
         signal,
       }),
 
-    importDynamic: (formData, schema, signal) => {
-      formData.append("schemaVersion", schema);
-      return axios.post("/api/creater/pd/import/dynamic", formData, {
-        headers: multipartHeaders,
-        timeout: 300000, // 5 Minutes
-        signal,
-      });
-    },
-
     importAuto: (formData, schema, parseMode, signal) => {
-      if (
-        parseMode === "dynamic" ||
-        (parseMode === "auto" && schema === "2026")
-      ) {
-        formData.append("schemaVersion", schema);
-        return axios.post("/api/creater/pd/import/dynamic", formData, {
-          headers: multipartHeaders,
-          timeout: 300000, // 5 Minutes
-          signal,
-        });
-      }
+      // Dynamic logic removed; defaults to the standard import endpoint
       return axios.post("/api/creater/pd/import", formData, {
         headers: multipartHeaders,
         timeout: 300000,
@@ -378,14 +359,20 @@ const buildApiService = (axios, createrToken) => {
 
     savePD: (payload) =>
       axios.post("/api/creater/pd/save", payload, { headers }),
+
     fetchLatest: (code) =>
       axios.get(`/api/creater/pd/latest/${code}`, { headers }),
+
     fetchById: (id) => axios.get(`/api/creater/pd/fetch/${id}`, { headers }),
+
     fetchVersions: (code) =>
       axios.get(`/api/creater/pd/versions/${code}`, { headers }),
+
     fetchAdmins: () => axios.get("/api/creater/pd/review-admins", { headers }),
+
     aiEnhanceField: (body) =>
       axios.post("/api/creater/pd/ai-enhance", body, { headers }),
+
     aiEnhanceSection: (body) =>
       axios.post("/api/creater/pd/ai-enhance-section", body, { headers }),
   };
