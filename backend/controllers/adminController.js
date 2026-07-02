@@ -371,9 +371,8 @@ export const processPDReview = async (req, res) => {
       { _id: id, approved_by: adminId },
       {
         status: status,
-        // Optional: you can populate change_summary just for history modal viewing
         change_summary: rejectionMessage || "",
-        review_comment: rejectionMessage || "", // Save comment in db
+        review_comment: rejectionMessage || "",
         approved_at: status === "approved" ? new Date() : null,
       },
       { new: true },
@@ -398,7 +397,7 @@ export const processPDReview = async (req, res) => {
 export const processCDReview = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, rejectionMessage } = req.body; // status: "Approved" or "Draft"
+    const { status, rejectionMessage } = req.body;
 
     const filter = await getJurisdictionFilter(req.admin);
 
@@ -407,7 +406,7 @@ export const processCDReview = async (req, res) => {
       {
         status,
         rejectionMessage: rejectionMessage || "",
-        reviewComment: rejectionMessage || "", // Save comment in db
+        reviewComment: rejectionMessage || "",
         approvalDate: status === "Approved" ? new Date() : null,
         approvedBy: status === "Approved" ? req.admin._id : null,
       },
@@ -432,7 +431,7 @@ export const processCDReview = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. CURRICULUM COMPILER & VERSIONS
+// 6. CURRICULUM COMPILER & VERSIONS (UPDATED FOR 2026 SCHEMA)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const checkProgramReadiness = async (req, res) => {
@@ -455,39 +454,51 @@ export const checkProgramReadiness = async (req, res) => {
 
     const analysis = await Promise.all(
       semesters.map(async (sem) => {
-        const courseResults = await Promise.all(
-          (sem.courses || []).map(async (course) => {
-            totalCourses++;
+        const courseResults = [];
 
-            const approvedCD = await CourseDocument.findOne({
-              courseCode: course.code,
+        const processCourse = async (course) => {
+          totalCourses++;
+          const approvedCD = await CourseDocument.findOne({
+            courseCode: course.code,
+            status: "Approved",
+          }).select("cdVersion updatedAt");
+
+          if (approvedCD) {
+            approvedCount++;
+            courseResults.push({
+              code: course.code,
+              title: course.title,
               status: "Approved",
-            }).select("cdVersion updatedAt");
-
-            if (approvedCD) {
-              approvedCount++;
-              return {
-                code: course.code,
-                title: course.title,
-                status: "Approved",
-                version: approvedCD.cdVersion,
-                lastUpdated: approvedCD.updatedAt,
-              };
-            }
-
+              version: approvedCD.cdVersion,
+              lastUpdated: approvedCD.updatedAt,
+            });
+          } else {
             const pendingCD = await CourseDocument.findOne({
               courseCode: course.code,
               status: "UnderReview",
             });
-
-            return {
+            courseResults.push({
               code: course.code,
               title: course.title,
               status: pendingCD ? "Pending" : "Missing",
               version: null,
-            };
-          }),
-        );
+            });
+          }
+        };
+
+        // 2024 Legacy handling
+        if (sem.courses && sem.courses.length > 0) {
+          for (const c of sem.courses) await processCourse(c);
+        }
+
+        // 2026 Categories handling
+        if (sem.categories && sem.categories.length > 0) {
+          for (const cat of sem.categories) {
+            if (cat.courses) {
+              for (const c of cat.courses) await processCourse(c);
+            }
+          }
+        }
 
         return { number: sem.sem_no, courses: courseResults };
       }),
@@ -554,7 +565,6 @@ export const getCDVersionsForAdmin = async (req, res) => {
       formatted.createdBy = cd.createdBy;
       formatted.createdAt = cd.createdAt;
       formatted.updatedAt = cd.updatedAt;
-      // Supply review message for the version history popup
       formatted.change_summary = cd.reviewComment || cd.rejectionMessage || "";
       return formatted;
     });
@@ -567,7 +577,7 @@ export const getCDVersionsForAdmin = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NEW: FETCH CDs GROUPED BY PROGRAM DOCUMENT
+// NEW: FETCH CDs GROUPED BY PROGRAM DOCUMENT (UPDATED FOR 2026 SCHEMA)
 // ─────────────────────────────────────────────────────────────────────────────
 export const getGroupedCDReviews = async (req, res) => {
   try {
@@ -616,6 +626,7 @@ export const getGroupedCDReviews = async (req, res) => {
       };
 
       const addCourseToPD = (courseObj, context) => {
+        if (!courseObj || !courseObj.code) return;
         const code = courseObj.code;
         stats.total += 1;
         processedCourseCodes.add(code);
@@ -653,14 +664,35 @@ export const getGroupedCDReviews = async (req, res) => {
         }
       };
 
-      pd.pd_data?.semesters?.forEach((sem) =>
-        sem.courses?.forEach((c) => addCourseToPD(c, `Semester ${sem.sem_no}`)),
-      );
+      // Extract Semesters (Handles both 2024 and 2026 schema)
+      pd.pd_data?.semesters?.forEach((sem) => {
+        sem.courses?.forEach((c) => addCourseToPD(c, `Semester ${sem.sem_no}`));
+        sem.categories?.forEach((cat) =>
+          cat.courses?.forEach((c) =>
+            addCourseToPD(c, `Semester ${sem.sem_no} (${cat.categoryName})`),
+          ),
+        );
+      });
+
+      // Extract 2024 Electives
       pd.pd_data?.prof_electives?.forEach((grp) =>
         grp.courses?.forEach((c) => addCourseToPD(c, `Prof. Elective`)),
       );
       pd.pd_data?.open_electives?.forEach((grp) =>
         grp.courses?.forEach((c) => addCourseToPD(c, `Open Elective`)),
+      );
+
+      // Extract 2026 Electives
+      pd.pd_data?.section4?.professionalElectives?.forEach((grp) =>
+        grp.courses?.forEach((c) => addCourseToPD(c, `Prof. Elective`)),
+      );
+      pd.pd_data?.section4?.openElectives?.forEach((grp) =>
+        grp.courses?.forEach((c) => addCourseToPD(c, `Open Elective`)),
+      );
+
+      // Extract 2026 Technical Competency Courses
+      pd.pd_data?.section4?.technicalCompetencyCourses?.forEach((c) =>
+        addCourseToPD(c, `Technical Competency`),
       );
 
       groupedData.push({
@@ -734,6 +766,7 @@ export const compileCurriculumBook = async (req, res) => {
       _id: programId,
       approved_by: adminId,
     }).populate("created_by", "name email");
+
     if (!pd) {
       return res.status(404).json({
         success: false,
@@ -745,14 +778,31 @@ export const compileCurriculumBook = async (req, res) => {
     const courseCodes = [];
     const pdData = pd.pd_data || {};
 
-    pdData.semesters?.forEach((sem) =>
-      sem.courses?.forEach((c) => courseCodes.push(c.code)),
-    );
+    // 2024 and 2026 extract
+    pdData.semesters?.forEach((sem) => {
+      sem.courses?.forEach((c) => courseCodes.push(c.code));
+      sem.categories?.forEach((cat) =>
+        cat.courses?.forEach((c) => courseCodes.push(c.code)),
+      );
+    });
+
+    // 2024 Electives
     pdData.prof_electives?.forEach((grp) =>
       grp.courses?.forEach((c) => courseCodes.push(c.code)),
     );
     pdData.open_electives?.forEach((grp) =>
       grp.courses?.forEach((c) => courseCodes.push(c.code)),
+    );
+
+    // 2026 Section 4 Additions
+    pdData.section4?.professionalElectives?.forEach((grp) =>
+      grp.courses?.forEach((c) => courseCodes.push(c.code)),
+    );
+    pdData.section4?.openElectives?.forEach((grp) =>
+      grp.courses?.forEach((c) => courseCodes.push(c.code)),
+    );
+    pdData.section4?.technicalCompetencyCourses?.forEach((c) =>
+      courseCodes.push(c.code),
     );
 
     // 3. Fetch all APPROVED Course Documents for those codes
@@ -798,7 +848,6 @@ export const compileCurriculumBook = async (req, res) => {
   }
 };
 
-// Add this inside adminController.js
 export const getAllPDsForAdmin = async (req, res) => {
   try {
     const adminId = req.admin._id;

@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-Unified Polymorphic PD Document Parser
-Supports both 2024 (Legacy/Flat) and 2026 (Merged Categories) Schemas.
+Advanced Unified Polymorphic PD Document Parser
+Supports both 2024 (Legacy/Flat) and 2026 (Merged Categories) Schemas across ALL Departments.
 """
 
 import sys
 import json
 import re
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Tuple
 
 try:
     import pdfplumber
@@ -22,6 +21,21 @@ except ImportError:
 # ════════════════════════════════════════════════════════════════════════
 # § 1. SHARED HELPERS & DATA STRUCTURES
 # ════════════════════════════════════════════════════════════════════════
+
+# Matches ANY department course code like UE24CS3540, UE26ME101, UE26TSCV01, etc.
+UNIVERSAL_CODE_RE = re.compile(
+    r"\b[A-Z]{2,4}\d{2}[A-Z]{2,5}\d{2,4}\b", re.IGNORECASE)
+
+# Fuzzy matchers for 2026 Schema Categories
+CATEGORY_MATCHERS = {
+    "Academic": re.compile(r"^\s*(?:\d+\.\s*)?academic(?: courses)?\s*$", re.IGNORECASE),
+    "Competency and Skills": re.compile(r"^\s*(?:\d+\.\s*)?competency\s+and\s+skills?(?: courses)?\s*$", re.IGNORECASE),
+    "Professional Skills": re.compile(r"^\s*(?:\d+\.\s*)?professional\s+skills?(?: courses)?\s*$", re.IGNORECASE),
+    "Sports, Culture and Environment": re.compile(r"^\s*(?:\d+\.\s*)?sports[,\s]+culture\s+and\s+environment(?: courses)?\s*$", re.IGNORECASE)
+}
+
+NOISE_LINE_RE = re.compile(
+    r"^(s\.?\s*no\.?\s*course code\s*course title\s*credits|page\s*\|\s*\d+|note:.*)$", re.IGNORECASE)
 
 
 def clean_text(text: str) -> str:
@@ -64,59 +78,28 @@ def extract_numbered_or_bulleted_items(block: str) -> List[str]:
     items = re.split(r"\n?\s*\d+\.\s+", "\n" + block)
     items = [clean_text(i) for i in items if len(clean_text(i)) > 2]
     if len(items) > 1:
-        deduped = []
-        for it in items:
-            it = re.sub(r"^(\d+\.\s*)+", "", it).strip()
-            if it:
-                deduped.append(it)
-        return deduped
+        return [re.sub(r"^(\d+\.\s*)+", "", it).strip() for it in items if it]
+
     items = re.split(r"\n\s*[-*•]\s+", "\n" + block)
     items = [clean_text(i) for i in items if len(clean_text(i)) > 2]
     if len(items) > 1:
         return items
+
     lines = [clean_text(l) for l in block.split("\n") if clean_text(l)]
     return lines if lines else [clean_text(block)]
 
 
 def create_blank_pd_data() -> Dict[str, Any]:
-    """Provides a strict schema-compliant dictionary to prevent React crashes."""
     return {
-        "details": {
-            "university": "GM University", "faculty": "", "school": "",
-            "department": "", "program_name": "", "director": "", "hod": "",
-            "contact_email": "", "contact_phone": ""
-        },
-        "award": {
-            "title": "", "mode": "Full Time", "awarding_body": "GM University",
-            "joint_award": "Not Applicable", "teaching_institution": "GM University",
-            "date_program_specs": "", "date_approval": "", "next_review": "",
-            "approving_body": "", "accredited_body": "", "accreditation_grade": "",
-            "accreditation_validity": "", "benchmark": "NEP 2020"
-        },
-        "overview": "",
-        "peos": [], "pos": [], "psos": [],
-        "credit_def": {"L": 0, "T": 0, "P": 0},
-        "structure_table": [],
-        "semesters": [],
-        "prof_electives": [],
-        "open_electives": [],
+        "details": {"university": "GM University", "faculty": "", "school": "", "department": "", "program_name": "", "director": "", "hod": "", "contact_email": "", "contact_phone": ""},
+        "award": {"title": "", "mode": "Full Time", "awarding_body": "GM University", "joint_award": "Not Applicable", "teaching_institution": "GM University", "date_program_specs": "", "date_approval": "", "next_review": "", "approving_body": "", "accredited_body": "", "accreditation_grade": "", "accreditation_validity": "", "benchmark": "NEP 2020"},
+        "overview": "", "peos": [], "pos": [], "psos": [], "credit_def": {"L": 0, "T": 0, "P": 0},
+        "structure_table": [], "semesters": [], "prof_electives": [], "open_electives": [],
         "section4": {
-            "professionalElectives": [],
-            "openElectives": [],
-            "technicalCompetencyCourses": [],
-            "programDeliveryAndAttainment": "",
-            "teachingLearningMethods": [],
-            "attendance": "",
-            "assessmentGrading": {
-                "description": "",
-                "components": [],
-                "gradeRules": "",
-                "passingCriteria": ""
-            },
-            "awardOfDegree": "",
-            "studentSupport": [],
-            "qualityControlMeasures": [],
-            "notes": ""
+            "professionalElectives": [], "openElectives": [], "technicalCompetencyCourses": [],
+            "programDeliveryAndAttainment": "", "teachingLearningMethods": [], "attendance": "",
+            "assessmentGrading": {"description": "", "components": [], "gradeRules": "", "passingCriteria": ""},
+            "awardOfDegree": "", "studentSupport": [], "qualityControlMeasures": [], "notes": ""
         },
         "parserWarnings": []
     }
@@ -127,39 +110,24 @@ def create_blank_pd_data() -> Dict[str, Any]:
 
 
 def parse_2024(pdf, full_text: str, data: Dict[str, Any]) -> None:
-    """Extraction logic for 2024 flat-schema PDFs."""
-
     # --- Metadata ---
-    m = re.search(r'Faculty\s+(.+?)(?:\n|School)', full_text, re.IGNORECASE)
-    if m:
-        data["details"]["faculty"] = clean_text(m.group(1))
+    metadata_patterns = [
+        (r'Faculty\s+(.+?)(?:\n|School)', 'faculty'),
+        (r'School\s+(.+?)(?:\n|Department)', 'school'),
+        (r'Department\s+(.+?)(?:\n|Program)', 'department'),
+        (r'Director of School\s+(.+?)(?:\n|Head)', 'director'),
+        (r'Head of Department\s+(.+?)(?:\n|\d+\.)', 'hod'),
+        (r'B\.Tech\.?\s+in\s+(.+?)(?:\n|$)', 'program_name')
+    ]
+    for pattern, key in metadata_patterns:
+        m = re.search(pattern, full_text, re.IGNORECASE)
+        if m:
+            data["details"][key] = clean_text(m.group(1))
 
-    m = re.search(r'School\s+(.+?)(?:\n|Department)', full_text, re.IGNORECASE)
-    if m:
-        data["details"]["school"] = clean_text(m.group(1))
+    if not data["details"]["program_name"]:
+        data["details"]["program_name"] = "Engineering"
 
-    m = re.search(r'Department\s+(.+?)(?:\n|Program)',
-                  full_text, re.IGNORECASE)
-    if m:
-        data["details"]["department"] = clean_text(m.group(1))
-
-    m = re.search(r'Director of School\s+(.+?)(?:\n|Head)',
-                  full_text, re.IGNORECASE)
-    if m:
-        data["details"]["director"] = clean_text(m.group(1))
-
-    m = re.search(r'Head of Department\s+(.+?)(?:\n|\d+\.)',
-                  full_text, re.IGNORECASE)
-    if m:
-        data["details"]["hod"] = clean_text(m.group(1))
-
-    m = re.search(r'B\.Tech\.?\s+in\s+(.+?)(?:\n|$)', full_text, re.IGNORECASE)
-    if m:
-        data["details"]["program_name"] = clean_text(m.group(1))
-    else:
-        data["details"]["program_name"] = "Computer Science & Engineering"
-
-    # --- Award ---
+    # --- Award Details ---
     award_patterns = [
         (r'1\.\s*Title of the Award\s+(.+?)(?:\n|2\.)', 'title'),
         (r'2\.\s*Modes of Study\s+(.+?)(?:\n|3\.)', 'mode'),
@@ -216,138 +184,91 @@ def parse_2024(pdf, full_text: str, data: Dict[str, Any]) -> None:
     if m:
         data["credit_def"]["P"] = safe_int(m.group(2))
 
-    # --- Structure Table ---
-    struct = re.search(r'Sl\. No\. Program -?Category Credits(.+?)(?=Semester|Total|$)',
-                       full_text, re.IGNORECASE | re.DOTALL)
-    if struct:
-        lines = struct.group(1).strip().split('\n')
-        for line in lines:
-            line = line.strip()
-            if not line or not line[0].isdigit():
-                continue
-            m = re.match(
-                r'^(\d+)\.\s+(.*?)\s+(\d+)(?:\s*\(([^)]+)\))?\s*$', line)
-            if m:
-                _, cat, cred, code = m.groups()
-                data["structure_table"].append({"category": clean_text(
-                    cat), "credits": safe_int(cred), "code": code.strip() if code else ""})
-
-    # --- Semesters (Tables) ---
+    # --- Semesters & Electives Parsing from Tables ---
     for page in pdf.pages:
         text = page.extract_text() or ""
-        if 'semester' not in text.lower():
-            continue
-
-        sem_match = re.search(r'Semester[- ](\d+)', text, re.IGNORECASE)
-        if not sem_match:
-            continue
-        sem_no = int(sem_match.group(1))
-
+        text_lower = text.lower()
         tables = page.extract_tables()
+
         if not tables:
             continue
 
-        table = None
-        for tbl in tables:
-            for row in tbl[:3]:
-                row_text = " ".join([str(c) for c in row if c]).lower()
-                if "course code" in row_text and "course title" in row_text:
-                    table = tbl
-                    break
-            if table:
-                break
+        # Parse Standard Semesters
+        if 'semester' in text_lower and not any(k in text_lower for k in ['professional elective', 'open elective']):
+            sem_match = re.search(r'Semester[- ](\d+)', text, re.IGNORECASE)
+            if sem_match:
+                sem_no = int(sem_match.group(1))
+                for table in tables:
+                    header_idx = next((i for i, r in enumerate(table[:3]) if r and any(
+                        "course code" in str(c).lower() for c in r if c)), -1)
+                    if header_idx != -1:
+                        sem_obj = next(
+                            (s for s in data["semesters"] if s["sem_no"] == sem_no), None)
+                        if not sem_obj:
+                            sem_obj = {"sem_no": sem_no,
+                                       "courses": [], "categories": []}
+                            data["semesters"].append(sem_obj)
 
-        if not table:
-            continue
+                        for row in table[header_idx + 1:]:
+                            if not row or len(row) < 2:
+                                continue
+                            cells = [str(c).strip() if c else "" for c in row]
+                            code = next((c for c in cells if UNIVERSAL_CODE_RE.match(
+                                c) or c in ["SDTCD", "CASP", "CIBI", "SA", "SASP"]), "")
+                            if not code:
+                                continue
 
-        header_idx = next((i for i, r in enumerate(table) if r and any(
-            "course code" in str(c).lower() for c in r)), -1)
-        if header_idx == -1:
-            continue
+                            code_idx = cells.index(code)
+                            title = cells[code_idx + 1] if code_idx + \
+                                1 < len(cells) else ""
+                            credits = next(
+                                (int(c) for c in reversed(cells) if c.isdigit()), 0)
 
-        sem_obj = next(
-            (s for s in data["semesters"] if s["sem_no"] == sem_no), None)
-        if not sem_obj:
-            sem_obj = {"sem_no": sem_no, "courses": [], "categories": []}
-            data["semesters"].append(sem_obj)
+                            sem_obj["courses"].append({
+                                "code": code, "title": clean_text(title), "credits": credits,
+                                "type": "Lab" if "lab" in title.lower() else "Theory", "category": "Core"
+                            })
 
-        for row in table[header_idx + 1:]:
-            if not row or len(row) < 2:
-                continue
-            cells = [str(c).strip() if c else "" for c in row]
+        # Parse Electives
+        is_prof = "professional elective" in text_lower
+        is_open = "open elective" in text_lower
 
-            code = ""
-            for cell in cells:
-                if re.match(r'^UE\d{2}[A-Z]{2}\d{4}$', cell) or cell in ["SDTCD", "CASP", "CIBI", "SA", "SASP"]:
-                    code = cell
-                    break
-            if not code:
-                continue
+        if is_prof or is_open:
+            sem_numbers = re.findall(
+                r'(\d+)(?:th|st|nd|rd)?\s*Semester', text, re.IGNORECASE)
+            if sem_numbers:
+                semester = int(sem_numbers[0])
+                target_list = data["section4"]["professionalElectives"] if is_prof else data["section4"]["openElectives"]
 
-            code_idx = cells.index(code)
-            title = cells[code_idx + 1] if code_idx + 1 < len(cells) else ""
+                for table in tables:
+                    header_idx = next((i for i, r in enumerate(table[:3]) if any(
+                        "course code" in str(c).lower() for c in r if c)), -1)
+                    if header_idx != -1:
+                        group = next(
+                            (g for g in target_list if g["semester"] == semester), None)
+                        if not group:
+                            group = {
+                                "semester": semester, "title": f"{'Professional' if is_prof else 'Open'} Electives - Sem {semester}", "courses": []}
+                            target_list.append(group)
 
-            credits = next((int(c) for c in reversed(cells) if c.isdigit()), 0)
-            sem_obj["courses"].append({
-                "code": code, "title": clean_text(title), "credits": credits,
-                "type": "Theory", "category": "Core"
-            })
+                        for row in table[header_idx + 1:]:
+                            if not row or len(row) < 2:
+                                continue
+                            cells = [str(c).strip() if c else "" for c in row]
+                            code = next(
+                                (c for c in cells if UNIVERSAL_CODE_RE.match(c)), "")
+                            if not code:
+                                continue
 
-    # --- Electives (Tables) ---
-    for page in pdf.pages:
-        text = page.extract_text() or ""
-        if "elective" not in text.lower():
-            continue
+                            code_idx = cells.index(code)
+                            title = cells[code_idx + 1] if code_idx + \
+                                1 < len(cells) else ""
+                            credits = next(
+                                (int(c) for c in reversed(cells) if c.isdigit()), 3)
 
-        is_prof = "professional" in text.lower()
-        is_open = "open" in text.lower()
-        if not is_prof and not is_open:
-            continue
+                            group["courses"].append(
+                                {"code": code, "title": clean_text(title), "credits": credits})
 
-        sem_numbers = re.findall(
-            r'(\d+)(?:th|st|nd|rd)?\s*Semester', text, re.IGNORECASE)
-        if not sem_numbers:
-            continue
-        semester = int(sem_numbers[0])
-
-        tables = page.extract_tables()
-        if not tables:
-            continue
-
-        for table in tables:
-            header_idx = next((i for i, r in enumerate(
-                table[:3]) if "course code" in " ".join([str(c) for c in r]).lower()), -1)
-            if header_idx == -1:
-                continue
-
-            target_list = data["section4"]["professionalElectives"] if is_prof else data["section4"]["openElectives"]
-            group = next(
-                (g for g in target_list if g["semester"] == semester), None)
-            if not group:
-                group = {"semester": semester,
-                         "title": f"{'Professional' if is_prof else 'Open'} Electives - Sem {semester}", "courses": []}
-                target_list.append(group)
-
-            for row in table[header_idx + 1:]:
-                if not row or len(row) < 2:
-                    continue
-                cells = [str(c).strip() if c else "" for c in row]
-
-                code = next((c for c in cells if re.match(
-                    r'^UE\d{2}[A-Z]{2}\d{4}$', c)), "")
-                if not code:
-                    continue
-
-                code_idx = cells.index(code)
-                title = cells[code_idx + 1] if code_idx + \
-                    1 < len(cells) else ""
-                credits = next((int(c)
-                               for c in reversed(cells) if c.isdigit()), 3)
-
-                group["courses"].append(
-                    {"code": code, "title": clean_text(title), "credits": credits})
-
-    # Ensure legacy root mappings
     data["prof_electives"] = data["section4"]["professionalElectives"]
     data["open_electives"] = data["section4"]["openElectives"]
 
@@ -368,11 +289,6 @@ SECTION_HEADING_PATTERNS = [
     (21, r"Student\s+Support(?:\s+for\s+Learning)?"), (22,
                                                        r"Quality\s+Control\s+Measures"),
 ]
-CODE_TOKEN_RE = re.compile(r"\b[A-Z]{2,6}\d{2}[A-Z]{2,6}(?:\d{1,3}|XX)\b")
-CATEGORY_DIVIDER_LINES = {"academic", "competency and skills",
-                          "professional skills", "sports, culture and environment"}
-NOISE_LINE_RE = re.compile(
-    r"^(s\.?\s*no\.?\s*course code\s*course title\s*credits|page\s*\|\s*\d+|note:.*)$", re.IGNORECASE)
 
 
 def _get_section_spans(full_text: str) -> Dict[int, Tuple[int, int]]:
@@ -394,8 +310,7 @@ def _get_section_text(full_text: str, spans: Dict[int, Tuple[int, int]], sec_no:
     if sec_no not in spans:
         return ""
     start, end = spans[sec_no]
-    text = full_text[start:end]
-    return re.sub(r"^\s*\d+\s+[^\n]*\n", "", text, count=1).strip()
+    return re.sub(r"^\s*\d+\s+[^\n]*\n", "", full_text[start:end], count=1).strip()
 
 
 def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
@@ -424,7 +339,6 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
 
     # --- Outcomes ---
     data["overview"] = clean_text(_get_section_text(full_text, spans, 10))
-
     peo_text = re.sub(r"(?i)^The Program Educational Objectives include:?\s*",
                       "", _get_section_text(full_text, spans, 11))
     data["peos"] = [clean_text(p) for p in re.findall(
@@ -440,31 +354,14 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
         r"(PSO-\d+\s*:.*?)(?=PSO-\d+\s*:|\Z)", pso_text, re.DOTALL) if len(clean_text(p)) > 10]
 
     # --- Credit Def ---
-    l_m = re.search(
-        r"(?i)Lecture\s*\(L\)\s*per week\s*(\d+)\s*Credit", full_text)
-    t_m = re.search(
-        r"(?i)Tutorial\s*\(T\)\s*per week\s*(\d+)\s*Credit", full_text)
-    p_m = re.search(
-        r"(?i)Practical\s*\(P\)\s*per week\s*(\d+)\s*Credit", full_text)
-    if l_m:
-        data["credit_def"]["L"] = safe_int(l_m.group(1))
-    if t_m:
-        data["credit_def"]["T"] = safe_int(t_m.group(1))
-    if p_m:
-        data["credit_def"]["P"] = safe_int(p_m.group(1))
+    for pat, key in [(r"(?i)Lecture\s*\(L\)\s*per week\s*(\d+)\s*Credit", "L"),
+                     (r"(?i)Tutorial\s*\(T\)\s*per week\s*(\d+)\s*Credit", "T"),
+                     (r"(?i)Practical\s*\(P\)\s*per week\s*(\d+)\s*Credit", "P")]:
+        m = re.search(pat, full_text)
+        if m:
+            data["credit_def"][key] = safe_int(m.group(1))
 
-    # --- Structure Table ---
-    st_m = re.search(
-        r"(?i)Program\s*-\s*Category\s+Credits(.*?)(?=Total\s+130|\n\d+\.\s*Courses and Credits|\Z)", full_text, re.DOTALL)
-    if st_m:
-        for line in [l.strip() for l in st_m.group(1).split("\n") if l.strip()]:
-            rm = re.match(
-                r"^(\d+)\s+(.*?)\s+(\d+)\s*(\([A-Z0-9]+\))?\s*$", line)
-            if rm:
-                data["structure_table"].append({"category": clean_text(rm.group(
-                    2)), "credits": safe_int(rm.group(3)), "code": (rm.group(4) or "").strip("()")})
-
-    # --- Semesters (2026 Line-Based Logic) ---
+    # --- Semesters (2026 Line-Based Logic with fuzzy category matcher) ---
     sem_matches = list(re.finditer(
         r"(?im)^Semester[\s-]*([IVX\d]+)\s*$", full_text))
     for idx, m in enumerate(sem_matches):
@@ -475,6 +372,8 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
         start = m.end()
         end = sem_matches[idx + 1].start() if idx + \
             1 < len(sem_matches) else len(full_text)
+
+        # Stop semester reading if we hit section 15
         cutoff = re.search(
             r"(?im)^\s*15\s+(?:List of )?Technical Competency Courses", full_text[start:end])
         block_text = full_text[start:start +
@@ -496,11 +395,12 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
         i, n = 0, len(lines)
         while i < n:
             line = lines[i]
-            low = line.lower()
 
-            if low in DIVIDER_LINES:
-                current_cat = {"academic": "Academic", "competency and skills": "Competency and Skills", "professional skills":
-                               "Professional Skills", "sports, culture and environment": "Sports, Culture and Environment"}.get(low, "Academic")
+            # Check if line is a Category Header using fuzzy Regex
+            matched_cat = next(
+                (cat_name for cat_name, rgx in CATEGORY_MATCHERS.items() if rgx.match(line)), None)
+            if matched_cat:
+                current_cat = matched_cat
                 i += 1
                 continue
 
@@ -515,7 +415,9 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
                 i += 1
                 continue
 
-            bare_m = re.match(rf"^({CODE_TOKEN_RE.pattern})\s+(.+?)\s*$", line)
+            # Bare Match: Code + Title (missing credits because they span lines)
+            bare_m = re.match(
+                rf"^({UNIVERSAL_CODE_RE.pattern})\s+(.+?)\s*$", line, re.IGNORECASE)
             if pending_group_active and bare_m and not re.search(r"\d+\s*$", line.split()[-1]):
                 title = clean_text(bare_m.group(2))
                 if not re.match(r".*\s\d+$", title):
@@ -524,8 +426,9 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
                     i += 1
                     continue
 
+            # Standard Match: SlNo Code Title Credits
             std_m = re.match(
-                rf"^(\d+)\s+({CODE_TOKEN_RE.pattern})\s+(.+?)\s+(\d+)\s*$", line)
+                rf"^(\d+)\s+({UNIVERSAL_CODE_RE.pattern})\s+(.+?)\s+(\d+)\s*$", line, re.IGNORECASE)
             if std_m:
                 code, title, credits = std_m.group(2).upper(), clean_text(
                     std_m.group(3)), safe_int(std_m.group(4))
@@ -536,8 +439,8 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
                     pending_group_courses.append((code, title))
                     cat = _get_cat(current_cat)
                     for gc, gt in pending_group_courses:
-                        cat["courses"].append({"code": gc, "title": gt, "credits": credits, "type": _infer_course_type(
-                            gt), "category": "Professional Elective"})
+                        cat["courses"].append(
+                            {"code": gc, "title": gt, "credits": credits, "type": "Theory", "category": "Professional Elective"})
                     pending_group_active = False
                 else:
                     _get_cat(current_cat)["courses"].append(
@@ -545,8 +448,9 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
                 i += 1
                 continue
 
+            # No Title Match: Code Credits (Title is on next line)
             no_title_m = re.match(
-                rf"^(\d+)\s+({CODE_TOKEN_RE.pattern})\s+(\d+)\s*$", line)
+                rf"^(\d+)\s+({UNIVERSAL_CODE_RE.pattern})\s+(\d+)\s*$", line, re.IGNORECASE)
             if no_title_m:
                 code, credits = no_title_m.group(
                     2).upper(), safe_int(no_title_m.group(3))
@@ -555,7 +459,7 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
                     title = clean_text(lines[i + 1].strip("()"))
                     i += 1
                 _get_cat(current_cat)["courses"].append(
-                    {"code": code, "title": title or "Competitive Learning", "credits": credits, "type": _infer_course_type(title), "category": current_cat})
+                    {"code": code, "title": title or "Competitive Learning", "credits": credits, "type": "Theory", "category": current_cat})
                 i += 1
                 continue
 
@@ -574,26 +478,27 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
     if tc:
         tlines = [l.strip() for l in tc.split("\n") if l.strip()
                   and not re.match(r"(?i)^(course|s\.?no|note:)", l)]
-        tech_re = re.compile(r"\bCS\d{2}TSCS\d{2}\b", re.IGNORECASE)
         i, n = 0, len(tlines)
         while i < n:
             l = tlines[i]
+            # Match Line with Universal Course Code + Title + Credits + Platform
             m1 = re.match(
-                rf"^(\d+)\s+({tech_re.pattern})\s+(.+?)\s+(\d+)\s+(\S+)\s*$", l)
+                rf"^(\d+)\s+({UNIVERSAL_CODE_RE.pattern})\s+(.+?)\s+(\d+)\s+(\S+)\s*$", l, re.IGNORECASE)
             if m1:
                 s4["technicalCompetencyCourses"].append({"code": m1.group(2).upper(), "title": clean_text(
                     m1.group(3)), "credits": safe_int(m1.group(4)), "resource": clean_text(m1.group(5))})
                 i += 1
                 continue
 
-            m2 = re.match(rf"^({tech_re.pattern})\s+(.+?)\s+(\S+)\s*$", l)
+            m2 = re.match(
+                rf"^({UNIVERSAL_CODE_RE.pattern})\s+(.+?)\s+(\S+)\s*$", l, re.IGNORECASE)
             if m2:
                 code, title, res, cr, desc = m2.group(1).upper(), clean_text(
                     m2.group(2)), clean_text(m2.group(3)), 2, ""
                 if i+1 < n and re.match(r"^\d+\s+\d+\s*$", tlines[i+1]):
                     cr = safe_int(tlines[i+1].split()[-1])
                     i += 1
-                    if i+1 < n and not tech_re.search(tlines[i+1]):
+                    if i+1 < n and not UNIVERSAL_CODE_RE.search(tlines[i+1]):
                         desc = clean_text(tlines[i+1])
                         i += 1
                 s4["technicalCompetencyCourses"].append(
@@ -602,16 +507,11 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
                 continue
             i += 1
 
-    dl = _get_section_text(full_text, spans, 16)
-    if dl:
-        s4["programDeliveryAndAttainment"] = clean_text(dl)
-
+    s4["programDeliveryAndAttainment"] = clean_text(
+        _get_section_text(full_text, spans, 16))
     s4["teachingLearningMethods"] = extract_numbered_or_bulleted_items(
         _get_section_text(full_text, spans, 17))
-
-    att = _get_section_text(full_text, spans, 18)
-    if att:
-        s4["attendance"] = clean_text(att)
+    s4["attendance"] = clean_text(_get_section_text(full_text, spans, 18))
 
     ag_txt = _get_section_text(full_text, spans, 19)
     if ag_txt:
@@ -635,23 +535,11 @@ def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
             s4["assessmentGrading"]["passingCriteria"] = clean_text(
                 p_m.group(1))
 
-    aw = _get_section_text(full_text, spans, 20)
-    if aw:
-        s4["awardOfDegree"] = clean_text(aw)
-
+    s4["awardOfDegree"] = clean_text(_get_section_text(full_text, spans, 20))
     s4["studentSupport"] = extract_numbered_or_bulleted_items(
         _get_section_text(full_text, spans, 21))
     s4["qualityControlMeasures"] = extract_numbered_or_bulleted_items(
         _get_section_text(full_text, spans, 22))
-
-
-def _infer_course_type(title: str) -> str:
-    t = title.lower()
-    if "lab" in t or "practical" in t:
-        return "Lab"
-    if "project" in t or "internship" in t:
-        return "Project"
-    return "Theory"
 
 # ════════════════════════════════════════════════════════════════════════
 # § 4. ROUTER AND EXECUTION
@@ -692,7 +580,6 @@ def process_pdf(file_path: str, requested_schema: str = "auto") -> Dict[str, Any
                 {"sem_no": len(data["semesters"]) + 1, "courses": [], "categories": []})
         data["semesters"].sort(key=lambda x: x["sem_no"])
 
-        # Basic Confidence & Validation logic
         score = 100
         warnings = []
         if not data.get("peos"):
@@ -722,7 +609,6 @@ def process_pdf(file_path: str, requested_schema: str = "auto") -> Dict[str, Any
 
     except Exception as e:
         import traceback
-        # Critical: Print stack trace to stderr so it doesn't break stdout JSON!
         print(traceback.format_exc(), file=sys.stderr)
         return {"success": False, "error": str(e)}
 
@@ -736,6 +622,4 @@ if __name__ == "__main__":
     schema_arg = sys.argv[2] if len(sys.argv) > 2 else "auto"
 
     result = process_pdf(pdf_path, schema_arg)
-
-    # GUARANTEE ONLY JSON GOES TO STDOUT
     print(json.dumps(result, ensure_ascii=False))
