@@ -11,8 +11,6 @@ import {
   Search,
   ChevronDown,
   Download,
-  Maximize2,
-  Minimize2,
   CheckCircle,
   Copy,
 } from "lucide-react";
@@ -37,6 +35,16 @@ const splitObjective = (html = "", defaultTitle = "") => {
 
 const sumCredits = (courses = []) =>
   courses.reduce((acc, c) => acc + (parseFloat(c.credits) || 0), 0);
+
+const sumSemCredits = (sem, is2026) => {
+  if (is2026) {
+    return (sem.categories || []).reduce(
+      (acc, cat) => acc + sumCredits(cat.courses || []),
+      0,
+    );
+  }
+  return sumCredits(sem.courses || []);
+};
 
 /* ─────────────────────────────────────────────────────────────────────────────
    STYLES (Black & White Academic Theme for the Document)
@@ -139,11 +147,13 @@ const STYLES = `
 
   .pd-credit-box { border: 1px solid #000; background: #f9f9f9; padding: 10px 15px; margin-bottom: 15px; font-weight: bold; text-align: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .pd-sem-hdr { font-size: 11pt; font-weight: bold; text-align: left; margin: 25px 0 10px; border-bottom: 1px solid #ccc; padding-bottom: 4px; text-transform: uppercase; }
+  .pd-cat-hdr { font-size: 10.5pt; font-weight: bold; text-align: left; margin: 15px 0 8px; color: #333; }
 
   .pd-sig { display: flex; justify-content: space-between; margin-top: 60px; }
   .pd-sig-box { width: 40%; text-align: center; border-top: 1px solid #000; padding-top: 8px; font-weight: bold; }
 
   .pd-page-break { page-break-after: always; }
+  .pd-mb-2 { margin-bottom: 8px; }
 
   /* ── Print Overrides ─────────────────────────────────────────── */
   @media print {
@@ -212,7 +222,6 @@ const Preview = ({
   const [tocOpen, setTocOpen] = useState(false);
   const [ddOpen, setDdOpen] = useState(false);
   const [searchQ, setSearchQ] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
   const [progress, setProgress] = useState(0);
   const [copied, setCopied] = useState(false);
 
@@ -239,67 +248,49 @@ const Preview = ({
         });
         if (res.data.success) {
           const pd = res.data.pd;
-          const s1 = pd.section1_info,
-            s2 = pd.section2_objectives,
-            s3 = pd.section3_structure,
-            s4 = pd.section4_electives;
+
+          // Map MongoDB schema to the common pdData expected by UI
+          // Handle both 2024 (flat courses) and 2026 (nested categories + polymorphic section4)
+          const pData = pd.pd_data || {};
+
           setData({
             metaData: {
-              programName: s1.programName,
-              programCode: pd.programCode,
-              schemeYear: pd.schemeYear,
-              versionNo: pd.pdVersion,
-              effectiveAy: pd.effectiveAcademicYear,
+              programName: pd.program_name,
+              programCode: pd.program_id,
+              schemaVersion: pd.scheme_year || "2024",
+              schemeYear: pd.scheme_year || "2024",
+              versionNo: pd.version_no,
+              effectiveAy: pd.effective_ay,
             },
             pdData: {
               details: {
-                university: "GM UNIVERSITY",
-                faculty: s1.faculty,
-                school: s1.school,
-                department: s1.department,
-                program_name: s1.programName,
-                director: s1.directorOfSchool,
-                hod: s1.headOfDepartment,
+                university: pData.details?.university || "GM UNIVERSITY",
+                faculty: pData.details?.faculty || "",
+                school: pData.details?.school || "",
+                department: pData.details?.department || "",
+                program_name: pData.details?.program_name || pd.program_name,
+                director: pData.details?.director || "",
+                hod: pData.details?.hod || "",
               },
-              award: {
-                title: s1.awardTitle,
-                mode: s1.modeOfStudy,
-                awarding_body: s1.awardingInstitution,
-                joint_award: s1.jointAward,
-                teaching_institution: s1.teachingInstitution,
-                date_program_specs: s1.dateOfProgramSpecs,
-                date_approval: s1.dateOfCourseApproval,
-                next_review: s1.nextReviewDate,
-                approving_body: s1.approvingRegulatingBody,
-                accredited_body: s1.accreditedBody,
-                accreditation_grade: s1.gradeAwarded,
-                accreditation_validity: s1.accreditationValidity,
-                benchmark: s1.programBenchmark,
+              award: pData.award || {},
+              overview: pData.overview || "",
+              peos: pData.peos || [],
+              pos: pData.pos || [],
+              psos: pData.psos || [],
+              credit_def: pData.credit_def || { L: 0, T: 0, P: 0 },
+              structure_table: pData.structure_table || [],
+              semesters: (pData.semesters || []).map((s) => ({
+                sem_no: s.sem_no,
+                courses: s.courses || [],
+                categories: s.categories || [],
+              })),
+              section4: pData.section4 || {
+                professionalElectives: pData.prof_electives || [],
+                openElectives: pData.open_electives || [],
               },
-              overview: s2.programOverview,
-              peos: s2.peos,
-              pos: s2.pos,
-              psos: s2.psos,
-              credit_def: {
-                L: s3.creditDefinition.lecture,
-                T: s3.creditDefinition.tutorial,
-                P: s3.creditDefinition.practical,
-              },
-              structure_table: s3.structureTable,
-              semesters: s3.semesters.map((s) => ({
-                sem_no: s.semNumber,
-                courses: s.courses,
-              })),
-              prof_electives: s4.professionalElectives.map((g) => ({
-                sem: g.semester,
-                title: g.title,
-                courses: g.courses,
-              })),
-              open_electives: s4.openElectives.map((g) => ({
-                sem: g.semester,
-                title: g.title,
-                courses: g.courses,
-              })),
+              // Fallbacks for older 2024 structure directly on root
+              prof_electives: pData.prof_electives || [],
+              open_electives: pData.open_electives || [],
             },
           });
         } else {
@@ -357,7 +348,7 @@ const Preview = ({
   const generateFilename = useCallback(() => {
     if (!data) return "Program_Document.pdf";
     const { pdData, metaData } = data;
-    const prog = (pdData.details.program_name || "Program")
+    const prog = (pdData.details?.program_name || "Program")
       .replace(/[^\w\s-]/g, "")
       .replace(/\s+/g, "_")
       .trim();
@@ -365,10 +356,6 @@ const Preview = ({
     return `PD_${prog}_v${ver}.pdf`;
   }, [data]);
 
-  const handlePrint = useCallback(() => {
-    window.print();
-    setDdOpen(false);
-  }, []);
   const handleDownloadPDF = useCallback(() => {
     const filename = generateFilename();
     document.title = filename;
@@ -381,6 +368,7 @@ const Preview = ({
     }, 500);
     setDdOpen(false);
   }, [generateFilename]);
+
   const handleCopyFilename = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(generateFilename());
@@ -413,7 +401,10 @@ const Preview = ({
   if (!data) return null;
 
   const { pdData, metaData } = data;
+  const is2026 = metaData.schemaVersion === "2026";
+  const sec4 = pdData.section4 || {};
 
+  // Build Dynamic TOC
   const TOC_SECTIONS = [
     { id: "cover", num: "—", label: "Cover Page" },
     { id: "prog-details", num: "—", label: "Program & Award Details" },
@@ -424,9 +415,26 @@ const Preview = ({
     { id: "sec-18", num: "18", label: "Programme Structure" },
     { id: "sec-19", num: "19", label: "Credit Definitions" },
     { id: "sec-20", num: "20", label: "Semester-wise Courses" },
-    { id: "sec-21", num: "21", label: "Professional Electives", sub: true },
-    { id: "sec-22", num: "22", label: "Open Electives", sub: true },
   ];
+
+  if (is2026) {
+    TOC_SECTIONS.push(
+      { id: "sec-21", num: "21", label: "Technical Competency Courses" },
+      { id: "sec-22", num: "22", label: "Program Delivery & Attainment" },
+      { id: "sec-23", num: "23", label: "Teaching & Learning Methods" },
+      { id: "sec-24", num: "24", label: "Attendance Policy" },
+      { id: "sec-25", num: "25", label: "Assessment & Grading" },
+      { id: "sec-26", num: "26", label: "Award of Degree" },
+      { id: "sec-27", num: "27", label: "Student Support" },
+      { id: "sec-28", num: "28", label: "Quality Control Measures" },
+      { id: "sec-29", num: "29", label: "Additional Notes" },
+    );
+  } else {
+    TOC_SECTIONS.push(
+      { id: "sec-21", num: "21", label: "Professional Electives", sub: true },
+      { id: "sec-22", num: "22", label: "Open Electives", sub: true },
+    );
+  }
 
   return (
     <div ref={shellRef} className={isModal ? "preview-overlay" : "pd-shell"}>
@@ -493,7 +501,18 @@ const Preview = ({
             </button>
             {ddOpen && (
               <div className="pd-dropdown">
-                <div className="pd-dropdown-header">Export Options</div>
+                <div
+                  className="pd-dropdown-header"
+                  style={{
+                    padding: "8px 14px",
+                    fontSize: "10px",
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    borderBottom: "1px solid #1e293b",
+                  }}
+                >
+                  Export Options
+                </div>
                 <button
                   className="pd-dropdown-item"
                   onClick={handleDownloadPDF}
@@ -559,26 +578,28 @@ const Preview = ({
           <div ref={docRef} className="pd-doc">
             {/* ── COVER ─────────────────────────────────────────── */}
             <div id="cover" className="pd-cover">
-              <div className="pd-cover-uni">{pdData.details.university}</div>
+              <div className="pd-cover-uni">
+                {pdData.details?.university || "GM UNIVERSITY"}
+              </div>
               <div className="pd-cover-type">Program Document</div>
               <div className="pd-cover-scheme">
                 {metaData.schemeYear} Scheme
               </div>
               <div className="pd-cover-program">
-                {pdData.award.title?.toUpperCase() ||
+                {pdData.award?.title?.toUpperCase() ||
                   metaData.programName?.toUpperCase() ||
                   "PROGRAM NAME"}
               </div>
               <div className="pd-cover-school">
-                {pdData.details.school}
+                {pdData.details?.school}
                 <br />
-                {pdData.details.faculty}
+                {pdData.details?.faculty}
               </div>
             </div>
 
             <div id="prog-details" className="pd-int-hdr">
               <div className="pd-int-hdr-prog">
-                {pdData.details.program_name}
+                {pdData.details?.program_name || metaData.programName}
               </div>
               <div className="pd-int-hdr-meta">
                 Version: {metaData.versionNo}{" "}
@@ -591,12 +612,12 @@ const Preview = ({
             <table>
               <tbody>
                 {[
-                  ["Faculty", pdData.details.faculty],
-                  ["School", pdData.details.school],
-                  ["Department", pdData.details.department],
-                  ["Program", pdData.details.program_name],
-                  ["Director of School", pdData.details.director],
-                  ["Head of Department", pdData.details.hod],
+                  ["Faculty", pdData.details?.faculty],
+                  ["School", pdData.details?.school],
+                  ["Department", pdData.details?.department],
+                  ["Program", pdData.details?.program_name],
+                  ["Director of School", pdData.details?.director],
+                  ["Head of Department", pdData.details?.hod],
                 ].map(([lbl, val]) => (
                   <tr key={lbl}>
                     <td className="w-label">{lbl}</td>
@@ -613,67 +634,71 @@ const Preview = ({
                   {
                     id: "1.",
                     label: "Title of the Award",
-                    val: pdData.award.title,
+                    val: pdData.award?.title,
                   },
-                  { id: "2.", label: "Modes of Study", val: pdData.award.mode },
+                  {
+                    id: "2.",
+                    label: "Modes of Study",
+                    val: pdData.award?.mode,
+                  },
                   {
                     id: "3.",
                     label: "Awarding Institution",
-                    val: pdData.award.awarding_body,
+                    val: pdData.award?.awarding_body,
                   },
                   {
                     id: "4.",
                     label: "Joint Award",
-                    val: pdData.award.joint_award,
+                    val: pdData.award?.joint_award,
                   },
                   {
                     id: "5.",
                     label: "Teaching Institution",
-                    val: pdData.award.teaching_institution,
+                    val: pdData.award?.teaching_institution,
                   },
                   {
                     id: "6.",
                     label: "Date of Program Specs",
-                    val: pdData.award.date_program_specs,
+                    val: pdData.award?.date_program_specs,
                   },
                   {
                     id: "7.",
                     label: "Date of Course Approval",
-                    val: pdData.award.date_approval,
+                    val: pdData.award?.date_approval,
                   },
                   {
                     id: "8.",
                     label: "Next Review Date",
-                    val: pdData.award.next_review,
+                    val: pdData.award?.next_review,
                   },
                   {
                     id: "9.",
                     label: "Program Approving Body",
-                    val: pdData.award.approving_body,
+                    val: pdData.award?.approving_body,
                   },
                   {
                     id: "10.",
                     label: "Program Accredited Body",
-                    val: pdData.award.accredited_body,
+                    val: pdData.award?.accredited_body,
                   },
                   {
                     id: "11.",
                     label: "Grade Awarded",
-                    val: pdData.award.accreditation_grade,
+                    val: pdData.award?.accreditation_grade,
                   },
                   {
                     id: "12.",
                     label: "Accreditation Validity",
-                    val: pdData.award.accreditation_validity,
+                    val: pdData.award?.accreditation_validity,
                   },
                   {
                     id: "13.",
                     label: "Program Benchmark",
-                    val: pdData.award.benchmark,
+                    val: pdData.award?.benchmark,
                   },
                 ].map((row) => (
                   <tr key={row.id}>
-                    <td className="w-num">{row.id}</td>
+                    <td className="w-serial">{row.id}</td>
                     <td className="w-label">{row.label}</td>
                     <td>{row.val || "—"}</td>
                   </tr>
@@ -689,13 +714,13 @@ const Preview = ({
             <SecMajor id="sec-15">
               15. Program Educational Objectives (PEOs)
             </SecMajor>
-            {pdData.peos.map(
+            {pdData.peos?.map(
               (peo, i) =>
                 peo && <ObjBlock key={i} html={peo} prefix="PEO" idx={i} />,
             )}
 
             <SecMajor id="sec-16">16. Program Outcomes (POs)</SecMajor>
-            {pdData.pos.map(
+            {pdData.pos?.map(
               (po, i) =>
                 po && <ObjBlock key={i} html={po} prefix="PO" idx={i} />,
             )}
@@ -703,17 +728,17 @@ const Preview = ({
             <SecMajor id="sec-17">
               17. Program Specific Outcomes (PSOs)
             </SecMajor>
-            {pdData.psos.map(
+            {pdData.psos?.map(
               (pso, i) =>
                 pso && <ObjBlock key={i} html={pso} prefix="PSO" idx={i} />,
             )}
 
             <SecMajor id="sec-18">18. Programme Structure</SecMajor>
             <div className="pd-credit-box">
-              1 Hr. Lecture (L) per week = {pdData.credit_def.L} Credit
-              &nbsp;|&nbsp; 2 Hr. Tutorial (T) per week = {pdData.credit_def.T}{" "}
-              Credit &nbsp;|&nbsp; 2 Hr. Practical (P) per week ={" "}
-              {pdData.credit_def.P} Credit
+              1 Hr. Lecture (L) per week = {pdData.credit_def?.L ?? 0} Credit
+              &nbsp;|&nbsp; 2 Hr. Tutorial (T) per week ={" "}
+              {pdData.credit_def?.T ?? 0} Credit &nbsp;|&nbsp; 2 Hr. Practical
+              (P) per week = {pdData.credit_def?.P ?? 0} Credit
             </div>
             <table>
               <thead>
@@ -723,7 +748,7 @@ const Preview = ({
                 </tr>
               </thead>
               <tbody>
-                {pdData.structure_table.map((row, i) => (
+                {(pdData.structure_table || []).map((row, i) => (
                   <tr key={i}>
                     <td>{row.category || "—"}</td>
                     <td className="pd-tc pd-fb">{row.credits ?? 0}</td>
@@ -732,11 +757,14 @@ const Preview = ({
               </tbody>
               <tfoot>
                 <tr>
-                  <td className="pd-tr w-label" style={{ paddingRight: 14 }}>
+                  <td
+                    className="pd-tr w-label"
+                    style={{ paddingRight: 14, textAlign: "right" }}
+                  >
                     Total Credits
                   </td>
                   <td>
-                    {pdData.structure_table.reduce(
+                    {(pdData.structure_table || []).reduce(
                       (a, r) => a + (parseFloat(r.credits) || 0),
                       0,
                     )}
@@ -755,9 +783,9 @@ const Preview = ({
               </thead>
               <tbody>
                 {[
-                  ["Lecture (L)", pdData.credit_def.L],
-                  ["Tutorial (T)", pdData.credit_def.T],
-                  ["Practical (P)", pdData.credit_def.P],
+                  ["Lecture (L)", pdData.credit_def?.L ?? 0],
+                  ["Tutorial (T)", pdData.credit_def?.T ?? 0],
+                  ["Practical (P)", pdData.credit_def?.P ?? 0],
                 ].map(([lbl, val]) => (
                   <tr key={lbl}>
                     <td className="pd-tc">{lbl}</td>
@@ -770,24 +798,116 @@ const Preview = ({
             <div className="pd-page-break" />
 
             <SecMajor id="sec-20">20. Semester-wise Courses</SecMajor>
-            {pdData.semesters.map((sem) =>
-              sem.courses.length > 0 ? (
+            {(pdData.semesters || []).map((sem) => {
+              const hasCourses = is2026
+                ? sem.categories?.some((cat) => cat.courses?.length > 0)
+                : sem.courses?.length > 0;
+
+              if (!hasCourses) return null;
+
+              return (
                 <div
                   key={sem.sem_no}
                   style={{ marginBottom: 28, pageBreakInside: "avoid" }}
                 >
                   <div className="pd-sem-hdr">Semester {sem.sem_no}</div>
+
+                  {is2026 ? (
+                    /* ── 2026 CATEGORIZED SEMESTER TABLE ── */
+                    sem.categories.map((cat, idx) => {
+                      if (!cat.courses || cat.courses.length === 0) return null;
+                      return (
+                        <div key={idx} style={{ marginBottom: 15 }}>
+                          <div className="pd-cat-hdr">{cat.categoryName}</div>
+                          <table>
+                            <thead>
+                              <tr>
+                                <th className="w-serial">S.No</th>
+                                <th className="w-code">Course Code</th>
+                                <th>Course Title</th>
+                                <th className="w-cr">Credits</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {cat.courses.map((c, i) => (
+                                <tr key={i}>
+                                  <td className="pd-tc">{i + 1}</td>
+                                  <td className="w-code">{c.code || "—"}</td>
+                                  <td>{c.title || "—"}</td>
+                                  <td className="pd-tc pd-fb">
+                                    {c.credits ?? 0}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    /* ── 2024 FLAT SEMESTER TABLE ── */
+                    <table>
+                      <thead>
+                        <tr>
+                          <th className="w-serial">S.No</th>
+                          <th className="w-code">Course Code</th>
+                          <th>Course Title</th>
+                          <th className="w-cr">Credits</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sem.courses.map((c, i) => (
+                          <tr key={i}>
+                            <td className="pd-tc">{i + 1}</td>
+                            <td className="w-code">{c.code || "—"}</td>
+                            <td>{c.title || "—"}</td>
+                            <td className="pd-tc pd-fb">{c.credits ?? 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+
+                  {/* Semester Total */}
+                  <table style={{ marginTop: is2026 ? -10 : 0 }}>
+                    <tfoot>
+                      <tr>
+                        <td
+                          className="w-label"
+                          style={{ paddingRight: 14, textAlign: "right" }}
+                        >
+                          Semester Total
+                        </td>
+                        <td className="w-cr pd-tc pd-fb">
+                          {sumSemCredits(sem, is2026)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              );
+            })}
+
+            <div className="pd-page-break" />
+
+            {/* ── CONDITIONAL SECTION 21+ RENDERING based on Schema Version ── */}
+            {is2026 ? (
+              <>
+                <SecMajor id="sec-21">
+                  21. Technical Competency Courses
+                </SecMajor>
+                {sec4.technicalCompetencyCourses?.length > 0 ? (
                   <table>
                     <thead>
                       <tr>
-                        <th className="w-serial">S.No</th>
-                        <th className="w-code">Course Code</th>
-                        <th>Course Title</th>
+                        <th className="w-serial">#</th>
+                        <th className="w-code">Code</th>
+                        <th>Title</th>
                         <th className="w-cr">Credits</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sem.courses.map((c, i) => (
+                      {sec4.technicalCompetencyCourses.map((c, i) => (
                         <tr key={i}>
                           <td className="pd-tc">{i + 1}</td>
                           <td className="w-code">{c.code || "—"}</td>
@@ -796,95 +916,187 @@ const Preview = ({
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot>
-                      <tr>
-                        <td
-                          colSpan="3"
-                          className="pd-tr w-label"
-                          style={{ paddingRight: 14 }}
-                        >
-                          Semester Total
-                        </td>
-                        <td className="pd-tc">{sumCredits(sem.courses)}</td>
-                      </tr>
-                    </tfoot>
                   </table>
+                ) : (
+                  <p>No technical competency courses specified.</p>
+                )}
+
+                <SecMajor id="sec-22">
+                  22. Program Delivery & Attainment
+                </SecMajor>
+                <div className="pd-rich pd-tj">
+                  {parse(
+                    sec4.programDeliveryAndAttainment || "<p>Not provided.</p>",
+                  )}
                 </div>
-              ) : null,
-            )}
 
-            <div className="pd-page-break" />
+                <SecMajor id="sec-23">23. Teaching & Learning Methods</SecMajor>
+                <div className="pd-rich">
+                  <ul>
+                    {sec4.teachingLearningMethods?.map(
+                      (m, i) => m && <li key={i}>{parse(m)}</li>,
+                    )}
+                  </ul>
+                  {(!sec4.teachingLearningMethods ||
+                    sec4.teachingLearningMethods.filter(Boolean).length ===
+                      0) && <p>Not provided.</p>}
+                </div>
 
-            {pdData.prof_electives.length > 0 && (
-              <div id="sec-21">
-                <SecMajor>21. Professional Electives</SecMajor>
-                {pdData.prof_electives.map((group, i) => (
-                  <div
-                    key={i}
-                    style={{ marginBottom: 24, pageBreakInside: "avoid" }}
-                  >
-                    <SecMinor>
-                      {group.title} — Sem {group.sem}
-                    </SecMinor>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th className="w-serial">#</th>
-                          <th className="w-code">Code</th>
-                          <th>Title</th>
-                          <th className="w-cr">Credits</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {group.courses.map((c, idx) => (
-                          <tr key={idx}>
-                            <td className="pd-tc">{idx + 1}</td>
-                            <td className="w-code">{c.code || "—"}</td>
-                            <td>{c.title || "—"}</td>
-                            <td className="pd-tc pd-fb">{c.credits ?? 0}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                <SecMajor id="sec-24">24. Attendance Policy</SecMajor>
+                <div className="pd-rich pd-tj">
+                  {parse(sec4.attendance || "<p>Not provided.</p>")}
+                </div>
+
+                <SecMajor id="sec-25">25. Assessment & Grading</SecMajor>
+                <div className="pd-rich pd-tj">
+                  {parse(
+                    sec4.assessmentGrading?.description ||
+                      "<p>Not provided.</p>",
+                  )}
+
+                  {sec4.assessmentGrading?.gradeRules && (
+                    <>
+                      <div className="pd-sec-minor">Grading Rules</div>
+                      {parse(sec4.assessmentGrading.gradeRules)}
+                    </>
+                  )}
+                  {sec4.assessmentGrading?.passingCriteria && (
+                    <>
+                      <div className="pd-sec-minor">Passing Criteria</div>
+                      {parse(sec4.assessmentGrading.passingCriteria)}
+                    </>
+                  )}
+                </div>
+
+                <SecMajor id="sec-26">26. Award of Degree</SecMajor>
+                <div className="pd-rich pd-tj">
+                  {parse(sec4.awardOfDegree || "<p>Not provided.</p>")}
+                </div>
+
+                <div className="pd-page-break" />
+
+                <SecMajor id="sec-27">
+                  27. Student Support for Learning
+                </SecMajor>
+                <div className="pd-rich">
+                  <ul>
+                    {sec4.studentSupport?.map(
+                      (m, i) => m && <li key={i}>{parse(m)}</li>,
+                    )}
+                  </ul>
+                  {(!sec4.studentSupport ||
+                    sec4.studentSupport.filter(Boolean).length === 0) && (
+                    <p>Not provided.</p>
+                  )}
+                </div>
+
+                <SecMajor id="sec-28">28. Quality Control Measures</SecMajor>
+                <div className="pd-rich">
+                  <ul>
+                    {sec4.qualityControlMeasures?.map(
+                      (m, i) => m && <li key={i}>{parse(m)}</li>,
+                    )}
+                  </ul>
+                  {(!sec4.qualityControlMeasures ||
+                    sec4.qualityControlMeasures.filter(Boolean).length ===
+                      0) && <p>Not provided.</p>}
+                </div>
+
+                {sec4.notes && (
+                  <>
+                    <SecMajor id="sec-29">29. Additional Notes</SecMajor>
+                    <div className="pd-rich pd-tj">{parse(sec4.notes)}</div>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                {/* ── 2024 Legacy Electives ── */}
+                {/* Fallback to checking root arrays if section4 is missing on older docs */}
+                {(sec4.professionalElectives?.length > 0 ||
+                  pdData.prof_electives?.length > 0) && (
+                  <div id="sec-21">
+                    <SecMajor>21. Professional Electives</SecMajor>
+                    {(sec4.professionalElectives?.length
+                      ? sec4.professionalElectives
+                      : pdData.prof_electives
+                    ).map((group, i) => (
+                      <div
+                        key={i}
+                        style={{ marginBottom: 24, pageBreakInside: "avoid" }}
+                      >
+                        <SecMinor>
+                          {group.title} — Sem {group.semester || group.sem}
+                        </SecMinor>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th className="w-serial">#</th>
+                              <th className="w-code">Code</th>
+                              <th>Title</th>
+                              <th className="w-cr">Credits</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.courses.map((c, idx) => (
+                              <tr key={idx}>
+                                <td className="pd-tc">{idx + 1}</td>
+                                <td className="w-code">{c.code || "—"}</td>
+                                <td>{c.title || "—"}</td>
+                                <td className="pd-tc pd-fb">
+                                  {c.credits ?? 0}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
+                )}
 
-            {pdData.open_electives.length > 0 && (
-              <div id="sec-22">
-                <SecMajor>22. Open Electives</SecMajor>
-                {pdData.open_electives.map((group, i) => (
-                  <div
-                    key={i}
-                    style={{ marginBottom: 24, pageBreakInside: "avoid" }}
-                  >
-                    <SecMinor>
-                      {group.title} — Sem {group.sem}
-                    </SecMinor>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th className="w-serial">#</th>
-                          <th className="w-code">Code</th>
-                          <th>Title</th>
-                          <th className="w-cr">Credits</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {group.courses.map((c, idx) => (
-                          <tr key={idx}>
-                            <td className="pd-tc">{idx + 1}</td>
-                            <td className="w-code">{c.code || "—"}</td>
-                            <td>{c.title || "—"}</td>
-                            <td className="pd-tc pd-fb">{c.credits ?? 0}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                {(sec4.openElectives?.length > 0 ||
+                  pdData.open_electives?.length > 0) && (
+                  <div id="sec-22">
+                    <SecMajor>22. Open Electives</SecMajor>
+                    {(sec4.openElectives?.length
+                      ? sec4.openElectives
+                      : pdData.open_electives
+                    ).map((group, i) => (
+                      <div
+                        key={i}
+                        style={{ marginBottom: 24, pageBreakInside: "avoid" }}
+                      >
+                        <SecMinor>
+                          {group.title} — Sem {group.semester || group.sem}
+                        </SecMinor>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th className="w-serial">#</th>
+                              <th className="w-code">Code</th>
+                              <th>Title</th>
+                              <th className="w-cr">Credits</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.courses.map((c, idx) => (
+                              <tr key={idx}>
+                                <td className="pd-tc">{idx + 1}</td>
+                                <td className="w-code">{c.code || "—"}</td>
+                                <td>{c.title || "—"}</td>
+                                <td className="pd-tc pd-fb">
+                                  {c.credits ?? 0}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
 
             <div className="pd-sig">
@@ -895,6 +1107,7 @@ const Preview = ({
                 <div className="pd-sig-line">Head of Department</div>
               </div>
             </div>
+            {/* End of Print Area */}
           </div>
         </div>
       </div>

@@ -4,7 +4,9 @@
  * Supports: PD Schema 2024 (Legacy) | PD Schema 2026 (Merged/Dynamic)
  * Features: Polymorphic parser routing, drag-drop uploader, abort/retry,
  *           step-progress UI, AI enhancement, section polish, autosave,
- *           version history sidebar, schema-driven form rendering.
+ *           version history sidebar, schema-driven form rendering,
+ *           polymorphic Section 4 (Electives for 2024 / Institutional
+ *           Delivery & Quality fields for 2026).
  *
  * Designed for: ~80,000 concurrent users
  * React Optimizations: useMemo, useCallback, lazy renders, stable refs
@@ -80,21 +82,30 @@ import SearchCreator from "../components/SearchCreator";
 // ═════════════════════════════════════════════════════════════════════════════
 
 const STANDARD_POS = [
-  "Engineering knowledge: Apply the knowledge of mathematics, science, engineering fundamentals, and an engineering specialization to the solution of complex engineering problems.",
-  "Problem analysis: Identify, formulate, review research literature, and analyze complex engineering problems reaching substantiated conclusions using first principles of mathematics, natural sciences, and engineering sciences.",
-  "Design/development of solutions: Design solutions for complex engineering problems and design system components or processes that meet the specified needs with appropriate consideration for the public health and safety, and the cultural, societal, and environmental considerations.",
+  "Engineering knowledge Apply the knowledge of mathematics, science, engineering fundamentals, and an engineering specialization to the solution of complex engineering problems.",
+  "Problem analysis Identify, formulate, review research literature, and analyze complex engineering problems reaching substantiated conclusions using first principles of mathematics, natural sciences, and engineering sciences.",
+  "Design/development of solutions Design solutions for complex engineering problems and design system components or processes that meet the specified needs with appropriate consideration for the public health and safety, and the cultural, societal, and environmental considerations.",
   "Conduct investigations of complex problems: Use research-based knowledge and research methods including design of experiments, analysis and interpretation of data, and synthesis of the information to provide valid conclusions.",
-  "Modern tool usage: Create, select, and apply appropriate techniques, resources, and modern engineering and IT tools including prediction and modeling to complex engineering activities with an understanding of the limitations.",
-  "The engineer and society: Apply reasoning informed by the contextual knowledge to assess societal, health, safety, legal and cultural issues and the consequent responsibilities relevant to the professional engineering practice.",
-  "Environment and sustainability: Understand the impact of the professional engineering solutions in societal and environmental contexts, and demonstrate the knowledge of, and need for sustainable development.",
-  "Ethics: Apply ethical principles and commit to professional ethics and responsibilities and norms of the engineering practice.",
-  "Individual and team work: Function effectively as an individual, and as a member or leader in diverse teams, and in multidisciplinary settings.",
-  "Communication: Communicate effectively on complex engineering activities with the engineering community and with society at large, such as, being able to comprehend and write effective reports and design documentation, make effective presentations, and give and receive clear instructions.",
-  "Project management and finance: Demonstrate knowledge and understanding of the engineering and management principles and apply these to one's own work, as a member and leader in a team, to manage projects and in multidisciplinary environments.",
-  "Lifelong learning: Recognize the need for, and have the preparation and ability to engage in independent and life-long learning in the broadest context of technological change.",
+  "Modern tool usage Create, select, and apply appropriate techniques, resources, and modern engineering and IT tools including prediction and modeling to complex engineering activities with an understanding of the limitations.",
+  "The engineer and society Apply reasoning informed by the contextual knowledge to assess societal, health, safety, legal and cultural issues and the consequent responsibilities relevant to the professional engineering practice.",
+  "Environment and sustainability Understand the impact of the professional engineering solutions in societal and environmental contexts, and demonstrate the knowledge of, and need for sustainable development.",
+  "Ethics Apply ethical principles and commit to professional ethics and responsibilities and norms of the engineering practice.",
+  "Individual and team work Function effectively as an individual, and as a member or leader in diverse teams, and in multidisciplinary settings.",
+  "Communication Communicate effectively on complex engineering activities with the engineering community and with society at large, such as, being able to comprehend and write effective reports and design documentation, make effective presentations, and give and receive clear instructions.",
+  "Project management and finance Demonstrate knowledge and understanding of the engineering and management principles and apply these to one's own work, as a member and leader in a team, to manage projects and in multidisciplinary environments.",
+  "Lifelong learning Recognize the need for, and have the preparation and ability to engage in independent and life-long learning in the broadest context of technological change.",
 ];
 
-/** Unified blank state — compatible with both 2024 and 2026 schemas. */
+/**
+ * Unified blank state — compatible with both 2024 and 2026 schemas.
+ * Section 4 is now polymorphic:
+ *   2024 schema → professionalElectives[] / openElectives[]
+ *   2026 schema → technicalCompetencyCourses[], programDeliveryAndAttainment,
+ *                 teachingLearningMethods[], attendance, assessmentGrading{},
+ *                 awardOfDegree, studentSupport[], qualityControlMeasures[], notes
+ * Both shapes are always present so the renderer can pick by schemaVersion
+ * without losing data when switching schemas.
+ */
 const BLANK_PD_DATA = {
   details: {
     university: "",
@@ -128,19 +139,30 @@ const BLANK_PD_DATA = {
   psos: ["", "", ""],
   credit_def: { L: 0, T: 0, P: 0 },
   structure_table: [],
-  /**
-   * Polymorphic semester array:
-   *   2024 schema  → uses `sem.courses[]`   (flat course list)
-   *   2026 schema  → uses `sem.categories[]` (categories → courses)
-   * Both arrays are always present; the renderer picks by schemaVersion.
-   */
   semesters: Array.from({ length: 8 }, (_, i) => ({
     sem_no: i + 1,
-    courses: [], // 2024
-    categories: [], // 2026
+    courses: [],
+    categories: [],
   })),
-  prof_electives: [],
-  open_electives: [],
+  // Guarantee section4 object exists immediately
+  section4: {
+    professionalElectives: [],
+    openElectives: [],
+    technicalCompetencyCourses: [],
+    programDeliveryAndAttainment: "",
+    teachingLearningMethods: [""],
+    attendance: "",
+    assessmentGrading: {
+      description: "",
+      components: [],
+      gradeRules: "",
+      passingCriteria: "",
+    },
+    awardOfDegree: "",
+    studentSupport: [""],
+    qualityControlMeasures: [""],
+    notes: "",
+  },
 };
 
 const BLANK_META = {
@@ -162,7 +184,12 @@ const STEP_CONFIG = [
   { id: 1, label: "Program Info", shortLabel: "Info", icon: GraduationCap },
   { id: 2, label: "Objectives", shortLabel: "Obj", icon: Target },
   { id: 3, label: "Structure", shortLabel: "Structure", icon: Layers },
-  { id: 4, label: "Electives", shortLabel: "Electives", icon: BookMarked },
+  {
+    id: 4,
+    label: "Additional/Electives",
+    shortLabel: "Sec 4",
+    icon: BookMarked,
+  },
 ];
 
 /** Parsing step definitions used in the progress UI. */
@@ -1226,35 +1253,97 @@ const CreatePD = () => {
     [apiService, fetchRecentVersions],
   );
 
-  const populateForm = useCallback((pd) => {
-    if (!pd.pd_data) return;
-    // Normalise: ensure both `courses` and `categories` exist on every semester
-    const sems = (pd.pd_data.semesters || []).map((s) => ({
-      sem_no: s.sem_no,
-      courses: s.courses || [],
-      categories: s.categories || [],
-    }));
-    while (sems.length < 8)
-      sems.push({ sem_no: sems.length + 1, courses: [], categories: [] });
+  /** Normalize a raw section4 payload to guarantee both 2024 & 2026 shapes exist. */
+  const normaliseSection4 = useCallback((raw) => {
+    // Define the absolute base structure inside the function to ensure it's always fresh
+    const baseS4 = {
+      professionalElectives: [],
+      openElectives: [],
+      technicalCompetencyCourses: [],
+      programDeliveryAndAttainment: "",
+      teachingLearningMethods: [""],
+      attendance: "",
+      assessmentGrading: {
+        description: "",
+        components: [],
+        gradeRules: "",
+        passingCriteria: "",
+      },
+      awardOfDegree: "",
+      studentSupport: [""],
+      qualityControlMeasures: [""],
+      notes: "",
+    };
 
-    setPdData({ ...pd.pd_data, semesters: sems });
-    setMetaData({
-      programId: pd.program_id,
-      programCode: pd.program_id,
-      programName: pd.program_name,
-      schemaVersion: pd.scheme_year || "2024",
-      parseMode: "auto",
-      schemeYear: pd.scheme_year || "",
-      versionNo: pd.version_no,
-      effectiveAy: pd.effective_ay,
-      totalCredits: pd.total_credits,
-      academicCredits: pd.academic_credits,
-      isNew: false,
-      status: pd.status || "draft",
-    });
-    setDirty(false);
+    if (!raw) return baseS4;
+
+    const s4 = { ...baseS4, ...raw };
+
+    s4.professionalElectives = s4.professionalElectives || [];
+    s4.openElectives = s4.openElectives || [];
+    s4.technicalCompetencyCourses = s4.technicalCompetencyCourses || [];
+    s4.teachingLearningMethods = s4.teachingLearningMethods?.length
+      ? s4.teachingLearningMethods
+      : [""];
+    s4.studentSupport = s4.studentSupport?.length ? s4.studentSupport : [""];
+    s4.qualityControlMeasures = s4.qualityControlMeasures?.length
+      ? s4.qualityControlMeasures
+      : [""];
+    s4.assessmentGrading = {
+      ...baseS4.assessmentGrading,
+      ...(s4.assessmentGrading || {}),
+    };
+    return s4;
   }, []);
 
+  const populateForm = useCallback(
+    (pd) => {
+      if (!pd.pd_data) return;
+
+      // Normalise: ensure both `courses` and `categories` exist on every semester
+      const sems = (pd.pd_data.semesters || []).map((s) => ({
+        sem_no: s.sem_no,
+        courses: s.courses || [],
+        categories: s.categories || [],
+      }));
+      while (sems.length < 8) {
+        sems.push({ sem_no: sems.length + 1, courses: [], categories: [] });
+      }
+
+      // Support legacy documents saved with old top-level prof_electives /
+      // open_electives instead of the new polymorphic section4 object.
+      let section4Source = pd.pd_data.section4;
+      if (!section4Source) {
+        section4Source = {
+          professionalElectives: pd.pd_data.prof_electives || [],
+          openElectives: pd.pd_data.open_electives || [],
+        };
+      }
+
+      setPdData({
+        ...pd.pd_data,
+        semesters: sems,
+        section4: normaliseSection4(section4Source),
+      });
+
+      setMetaData({
+        programId: pd.program_id,
+        programCode: pd.program_id,
+        programName: pd.program_name,
+        schemaVersion: pd.scheme_year || "2024",
+        parseMode: "auto",
+        schemeYear: pd.scheme_year || "",
+        versionNo: pd.version_no,
+        effectiveAy: pd.effective_ay,
+        totalCredits: pd.total_credits,
+        academicCredits: pd.academic_credits,
+        isNew: false,
+        status: pd.status || "draft",
+      });
+      setDirty(false);
+    },
+    [normaliseSection4],
+  );
   // ═════════════════════════════════════════════════════════════════════════
   // § 9.3  PDF UPLOAD & PARSING (with abort + retry)
   // ═════════════════════════════════════════════════════════════════════════
@@ -1284,6 +1373,92 @@ const CreatePD = () => {
     }
   }, [uploadState.controller]);
 
+  /** Merge parser output into existing pdData without overwriting user edits. */
+  const normaliseParsedData = useCallback(
+    (prev, imp) => {
+      const n = { ...prev };
+
+      if (imp.details) n.details = { ...prev.details, ...imp.details };
+      if (imp.award) n.award = { ...prev.award, ...imp.award };
+      if (imp.overview) n.overview = imp.overview;
+      if (imp.credit_def)
+        n.credit_def = { ...prev.credit_def, ...imp.credit_def };
+
+      if (imp.peos?.length) {
+        n.peos = [...imp.peos];
+        while (n.peos.length < 3) n.peos.push("");
+      }
+      if (imp.pos?.length) n.pos = [...imp.pos];
+      if (imp.psos?.length) {
+        n.psos = [...imp.psos];
+        while (n.psos.length < 3) n.psos.push("");
+      }
+
+      if (imp.structure_table?.length) {
+        n.structure_table = imp.structure_table.map((r) => ({
+          category: r.category || "",
+          credits: r.credits || 0,
+          code: r.code || "",
+        }));
+      }
+
+      if (imp.semesters?.length) {
+        const merged = [...prev.semesters];
+        imp.semesters.forEach((s) => {
+          const idx = merged.findIndex((x) => x.sem_no === s.sem_no);
+          const mapped = {
+            sem_no: s.sem_no,
+            courses: (s.courses || []).map((c) => ({
+              code: c.code || "",
+              title: c.title || "",
+              credits: c.credits || 0,
+              type: c.type || "Theory",
+              category: c.category || "Core",
+            })),
+            categories: (s.categories || []).map((cat) => ({
+              categoryName: cat.categoryName || "",
+              totalCategoryCredits: cat.totalCategoryCredits || 0,
+              courses: (cat.courses || []).map((c) => ({
+                code: c.code || "",
+                title: c.title || "",
+                credits: c.credits || 0,
+                type: c.type || "Theory",
+                category: c.category || "Core",
+              })),
+            })),
+          };
+          if (idx >= 0) merged[idx] = mapped;
+          else merged.push(mapped);
+        });
+        merged.sort((a, b) => a.sem_no - b.sem_no);
+        while (merged.length < 8)
+          merged.push({
+            sem_no: merged.length + 1,
+            courses: [],
+            categories: [],
+          });
+        n.semesters = merged;
+      }
+
+      // STRICT POLYMORPHIC SECTION 4 MERGE
+      // Ensure section4 is always defined before passing to normalizer
+      let incomingSection4 = imp.section4 || {};
+
+      // Fallback for legacy 2024 parser arrays at root level
+      if (imp.prof_electives?.length)
+        incomingSection4.professionalElectives = imp.prof_electives;
+      if (imp.open_electives?.length)
+        incomingSection4.openElectives = imp.open_electives;
+
+      n.section4 = normaliseSection4({
+        ...(prev.section4 || {}),
+        ...incomingSection4,
+      });
+
+      return n;
+    },
+    [normaliseSection4],
+  );
   /**
    * Core upload function.
    * isRetry = true → fallback from dynamic to stable parser.
@@ -1406,7 +1581,7 @@ const CreatePD = () => {
           summary: {
             schema: schemaDetected,
             confidence,
-            warnings: data.warnings || [],
+            warnings: data.warnings || data.validation?.missingFields || [],
             coursesCount: totalCourses,
             semCount: (imp.semesters || []).length,
           },
@@ -1451,76 +1626,13 @@ const CreatePD = () => {
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    [metaData.parseMode, metaData.schemaVersion, apiService],
+    [
+      metaData.parseMode,
+      metaData.schemaVersion,
+      apiService,
+      normaliseParsedData,
+    ],
   ); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /** Merge parser output into existing pdData without overwriting user edits. */
-  const normaliseParsedData = (prev, imp) => {
-    const n = { ...prev };
-
-    if (imp.details) n.details = { ...prev.details, ...imp.details };
-    if (imp.award) n.award = { ...prev.award, ...imp.award };
-    if (imp.overview) n.overview = imp.overview;
-    if (imp.credit_def)
-      n.credit_def = { ...prev.credit_def, ...imp.credit_def };
-
-    if (imp.peos?.length) {
-      n.peos = [...imp.peos];
-      while (n.peos.length < 3) n.peos.push("");
-    }
-    if (imp.pos?.length) n.pos = [...imp.pos];
-    if (imp.psos?.length) {
-      n.psos = [...imp.psos];
-      while (n.psos.length < 3) n.psos.push("");
-    }
-
-    if (imp.structure_table?.length) {
-      n.structure_table = imp.structure_table.map((r) => ({
-        category: r.category || "",
-        credits: r.credits || 0,
-        code: r.code || "",
-      }));
-    }
-
-    if (imp.semesters?.length) {
-      const merged = [...prev.semesters];
-      imp.semesters.forEach((s) => {
-        const idx = merged.findIndex((x) => x.sem_no === s.sem_no);
-        const mapped = {
-          sem_no: s.sem_no,
-          courses: (s.courses || []).map((c) => ({
-            code: c.code || "",
-            title: c.title || "",
-            credits: c.credits || 0,
-            type: c.type || "Theory",
-            category: c.category || "Core",
-          })),
-          categories: (s.categories || []).map((cat) => ({
-            categoryName: cat.categoryName || "",
-            totalCategoryCredits: cat.totalCategoryCredits || 0,
-            courses: (cat.courses || []).map((c) => ({
-              code: c.code || "",
-              title: c.title || "",
-              credits: c.credits || 0,
-              type: c.type || "Theory",
-              category: c.category || "Core",
-            })),
-          })),
-        };
-        if (idx >= 0) merged[idx] = mapped;
-        else merged.push(mapped);
-      });
-      merged.sort((a, b) => a.sem_no - b.sem_no);
-      while (merged.length < 8)
-        merged.push({ sem_no: merged.length + 1, courses: [], categories: [] });
-      n.semesters = merged;
-    }
-
-    if (imp.prof_electives?.length) n.prof_electives = imp.prof_electives;
-    if (imp.open_electives?.length) n.open_electives = imp.open_electives;
-
-    return n;
-  };
 
   // ═════════════════════════════════════════════════════════════════════════
   // § 9.4  DATA MUTATION HELPERS (all stable refs via useCallback)
@@ -1595,6 +1707,15 @@ const CreatePD = () => {
     setPdData((p) => ({
       ...p,
       credit_def: { ...p.credit_def, [k]: parseInt(v) || 0 },
+    }));
+  }, []);
+
+  /** Generic section4 field setter — used by every polymorphic Section 4 control. */
+  const handleSection4Change = useCallback((field, value) => {
+    setDirty(true);
+    setPdData((p) => ({
+      ...p,
+      section4: { ...p.section4, [field]: value },
     }));
   }, []);
 
@@ -1790,85 +1911,172 @@ const CreatePD = () => {
     });
   }, []);
 
-  // Electives
+  // ── Section 4 — 2024 polymorphic Elective group handlers ──
   const addElectiveGroup = useCallback((type) => {
     setDirty(true);
-    const key = type === "prof" ? "prof_electives" : "open_electives";
+    const key = type === "prof" ? "professionalElectives" : "openElectives";
     setPdData((p) => ({
       ...p,
-      [key]: [
-        ...p[key],
-        {
-          sem: 1,
-          title: `${type === "prof" ? "Professional" : "Open"} Electives – Sem 1`,
-          courses: [],
-        },
-      ],
+      section4: {
+        ...p.section4,
+        [key]: [
+          ...p.section4[key],
+          {
+            semester: 1,
+            sem: 1,
+            title: `${type === "prof" ? "Professional" : "Open"} Electives – Sem 1`,
+            courses: [],
+          },
+        ],
+      },
     }));
   }, []);
   const removeElectiveGroup = useCallback((type, i) => {
     if (window.confirm("Remove this group?")) {
       setDirty(true);
-      const key = type === "prof" ? "prof_electives" : "open_electives";
-      setPdData((p) => ({ ...p, [key]: p[key].filter((_, idx) => idx !== i) }));
+      const key = type === "prof" ? "professionalElectives" : "openElectives";
+      setPdData((p) => ({
+        ...p,
+        section4: {
+          ...p.section4,
+          [key]: p.section4[key].filter((_, idx) => idx !== i),
+        },
+      }));
     }
   }, []);
   const updateElectiveGroupSem = useCallback((type, gi, v) => {
     setDirty(true);
-    const key = type === "prof" ? "prof_electives" : "open_electives";
+    const key = type === "prof" ? "professionalElectives" : "openElectives";
     setPdData((p) => {
-      const a = [...p[key]];
-      a[gi] = { ...a[gi], sem: parseInt(v) || 1 };
-      return { ...p, [key]: a };
+      const a = [...p.section4[key]];
+      a[gi] = { ...a[gi], semester: parseInt(v) || 1, sem: parseInt(v) || 1 };
+      return { ...p, section4: { ...p.section4, [key]: a } };
     });
   }, []);
   const updateElectiveGroupTitle = useCallback((type, gi, v) => {
     setDirty(true);
-    const key = type === "prof" ? "prof_electives" : "open_electives";
+    const key = type === "prof" ? "professionalElectives" : "openElectives";
     setPdData((p) => {
-      const a = [...p[key]];
+      const a = [...p.section4[key]];
       a[gi] = { ...a[gi], title: v };
-      return { ...p, [key]: a };
+      return { ...p, section4: { ...p.section4, [key]: a } };
     });
   }, []);
   const addElectiveCourse = useCallback((type, gi) => {
     setDirty(true);
-    const key = type === "prof" ? "prof_electives" : "open_electives";
+    const key = type === "prof" ? "professionalElectives" : "openElectives";
     setPdData((p) => {
-      const a = [...p[key]];
+      const a = [...p.section4[key]];
       a[gi] = {
         ...a[gi],
         courses: [...a[gi].courses, { code: "", title: "", credits: 3 }],
       };
-      return { ...p, [key]: a };
+      return { ...p, section4: { ...p.section4, [key]: a } };
     });
   }, []);
   const removeElectiveCourse = useCallback((type, gi, ci) => {
     setDirty(true);
-    const key = type === "prof" ? "prof_electives" : "open_electives";
+    const key = type === "prof" ? "professionalElectives" : "openElectives";
     setPdData((p) => {
-      const a = [...p[key]];
+      const a = [...p.section4[key]];
       a[gi] = { ...a[gi], courses: a[gi].courses.filter((_, i) => i !== ci) };
-      return { ...p, [key]: a };
+      return { ...p, section4: { ...p.section4, [key]: a } };
     });
   }, []);
   const updateElectiveCourse = useCallback((type, gi, ci, f, v) => {
     setDirty(true);
-    const key = type === "prof" ? "prof_electives" : "open_electives";
+    const key = type === "prof" ? "professionalElectives" : "openElectives";
     setPdData((p) => {
-      const a = p[key].map((grp, i) => {
+      const a = p.section4[key].map((grp, i) => {
         if (i !== gi) return grp;
         const courses = grp.courses.map((c, j) =>
           j === ci ? { ...c, [f]: v } : c,
         );
         return { ...grp, courses };
       });
-      return { ...p, [key]: a };
+      return { ...p, section4: { ...p.section4, [key]: a } };
     });
   }, []);
 
-  // Assign creators
-  const handleAssignCreator = useCallback((si, ci, creator) => {
+  // ── Section 4 — 2026 string-array helpers (Teaching Methods, Student Support, QC Measures) ──
+  const addSection4ArrayItem = useCallback((key) => {
+    setDirty(true);
+    setPdData((p) => ({
+      ...p,
+      section4: { ...p.section4, [key]: [...(p.section4[key] || []), ""] },
+    }));
+  }, []);
+  const updateSection4ArrayItem = useCallback((key, i, v) => {
+    setDirty(true);
+    setPdData((p) => {
+      const a = [...(p.section4[key] || [])];
+      a[i] = v;
+      return { ...p, section4: { ...p.section4, [key]: a } };
+    });
+  }, []);
+  const removeSection4ArrayItem = useCallback((key, i) => {
+    setDirty(true);
+    setPdData((p) => ({
+      ...p,
+      section4: {
+        ...p.section4,
+        [key]: (p.section4[key] || []).filter((_, idx) => idx !== i),
+      },
+    }));
+  }, []);
+
+  // ── Section 4 — 2026 Technical Competency Courses ──
+  const addTechCompetencyCourse = useCallback(() => {
+    setDirty(true);
+    setPdData((p) => ({
+      ...p,
+      section4: {
+        ...p.section4,
+        technicalCompetencyCourses: [
+          ...p.section4.technicalCompetencyCourses,
+          { code: "", title: "", credits: 1 },
+        ],
+      },
+    }));
+  }, []);
+  const updateTechCompetencyCourse = useCallback((i, f, v) => {
+    setDirty(true);
+    setPdData((p) => {
+      const a = p.section4.technicalCompetencyCourses.map((c, j) =>
+        j === i ? { ...c, [f]: v } : c,
+      );
+      return {
+        ...p,
+        section4: { ...p.section4, technicalCompetencyCourses: a },
+      };
+    });
+  }, []);
+  const removeTechCompetencyCourse = useCallback((i) => {
+    setDirty(true);
+    setPdData((p) => ({
+      ...p,
+      section4: {
+        ...p.section4,
+        technicalCompetencyCourses:
+          p.section4.technicalCompetencyCourses.filter((_, idx) => idx !== i),
+      },
+    }));
+  }, []);
+
+  // ── Section 4 — 2026 Assessment & Grading nested object ──
+  const updateAssessmentGrading = useCallback((field, value) => {
+    setDirty(true);
+    setPdData((p) => ({
+      ...p,
+      section4: {
+        ...p.section4,
+        assessmentGrading: { ...p.section4.assessmentGrading, [field]: value },
+      },
+    }));
+  }, []);
+
+  // ── Assign creators (semester courses) ──
+  const handleAssignCreator2024 = useCallback((si, ci, creator) => {
     setDirty(true);
     setPdData((p) => {
       const s = p.semesters.map((sem, i) => {
@@ -1884,11 +2092,31 @@ const CreatePD = () => {
     });
   }, []);
 
+  const handleAssignCreator2026 = useCallback((si, catIdx, ci, creator) => {
+    setDirty(true);
+    setPdData((p) => {
+      const s = p.semesters.map((sem, i) => {
+        if (i !== si) return sem;
+        const cats = sem.categories.map((cat, j) => {
+          if (j !== catIdx) return cat;
+          const courses = cat.courses.map((c, k) =>
+            k === ci
+              ? { ...c, assigneeId: creator.id, assigneeName: creator.name }
+              : c,
+          );
+          return { ...cat, courses };
+        });
+        return { ...sem, categories: cats };
+      });
+      return { ...p, semesters: s };
+    });
+  }, []);
+
   const handleAssignElectiveCreator = useCallback((type, gi, ci, creator) => {
     setDirty(true);
-    const key = type === "prof" ? "prof_electives" : "open_electives";
+    const key = type === "prof" ? "professionalElectives" : "openElectives";
     setPdData((p) => {
-      const a = p[key].map((grp, i) => {
+      const a = p.section4[key].map((grp, i) => {
         if (i !== gi) return grp;
         const courses = grp.courses.map((c, j) =>
           j === ci
@@ -1897,14 +2125,15 @@ const CreatePD = () => {
         );
         return { ...grp, courses };
       });
-      return { ...p, [key]: a };
+      return { ...p, section4: { ...p.section4, [key]: a } };
     });
   }, []);
 
-  const openAssignModal = useCallback((si, ci, c) => {
+  const openAssignModal = useCallback((si, ci, c, catIdx = null) => {
     setCurrentAssignCtx({
       semIndex: si,
       courseIndex: ci,
+      catIdx,
       code: c.code || "New Course",
       currentAssigneeId: c.assigneeId,
     });
@@ -1959,12 +2188,24 @@ const CreatePD = () => {
       setEnhancingSection(sectionTitle);
       const tid = toast.loading(`AI polishing ${sectionTitle}…`);
       try {
+        const sectionData =
+          dataKey === "section4" ? pdData.section4 : pdData[dataKey];
         const { data } = await apiService.aiEnhanceSection({
           sectionName: sectionTitle,
-          sectionData: pdData[dataKey],
+          sectionData,
         });
         if (data.success) {
-          setPdData((p) => ({ ...p, [dataKey]: data.enhancedData }));
+          if (dataKey === "section4") {
+            setPdData((p) => ({
+              ...p,
+              section4: normaliseSection4({
+                ...p.section4,
+                ...data.enhancedData,
+              }),
+            }));
+          } else {
+            setPdData((p) => ({ ...p, [dataKey]: data.enhancedData }));
+          }
           setDirty(true);
           toast.success(`${sectionTitle} polished!`, { id: tid });
         } else {
@@ -1978,7 +2219,7 @@ const CreatePD = () => {
         setEnhancingSection(null);
       }
     },
-    [apiService, pdData],
+    [apiService, pdData, normaliseSection4],
   );
 
   const triggerAIAssistant = useCallback(
@@ -2075,14 +2316,21 @@ const CreatePD = () => {
             (s) => Array.isArray(s?.courses) && s.courses.length > 0,
           ),
 
-      (Array.isArray(pdData.prof_electives) &&
-        pdData.prof_electives.some(
-          (g) => Array.isArray(g?.courses) && g.courses.length > 0,
-        )) ||
-        (Array.isArray(pdData.open_electives) &&
-          pdData.open_electives.some(
-            (g) => Array.isArray(g?.courses) && g.courses.length > 0,
-          )),
+      metaData.schemaVersion === "2026"
+        ? !!(
+            pdData.section4?.programDeliveryAndAttainment?.trim() ||
+            pdData.section4?.attendance?.trim() ||
+            (Array.isArray(pdData.section4?.technicalCompetencyCourses) &&
+              pdData.section4.technicalCompetencyCourses.length > 0)
+          )
+        : (Array.isArray(pdData.section4?.professionalElectives) &&
+            pdData.section4.professionalElectives.some(
+              (g) => Array.isArray(g?.courses) && g.courses.length > 0,
+            )) ||
+          (Array.isArray(pdData.section4?.openElectives) &&
+            pdData.section4.openElectives.some(
+              (g) => Array.isArray(g?.courses) && g.courses.length > 0,
+            )),
     ],
 
     [metaData.programId, metaData.schemaVersion, pdData],
@@ -2691,14 +2939,16 @@ const CreatePD = () => {
               <table className="w-full border-collapse text-xs">
                 <thead className="bg-gray-50/50">
                   <tr>
-                    {["Code", "Title", "Cr", "Type", ""].map((h, i) => (
-                      <th
-                        key={i}
-                        className="px-3 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider"
-                      >
-                        {h}
-                      </th>
-                    ))}
+                    {["Code", "Title", "Cr", "Type", "Assignee", ""].map(
+                      (h, i) => (
+                        <th
+                          key={i}
+                          className="px-3 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider"
+                        >
+                          {h}
+                        </th>
+                      ),
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -2761,6 +3011,12 @@ const CreatePD = () => {
                           <option>Project</option>
                         </select>
                       </td>
+                      <td className="p-2 w-28">
+                        <AssignBtn
+                          course={c}
+                          onClick={() => openAssignModal(si, ci, c, catIdx)}
+                        />
+                      </td>
                       <td className="p-2 text-center w-10">
                         <button
                           onClick={() => removeCourse2026(si, catIdx, ci)}
@@ -2774,7 +3030,7 @@ const CreatePD = () => {
                   {cat.courses.length === 0 && (
                     <tr>
                       <td
-                        colSpan={5}
+                        colSpan={6}
                         className="px-4 py-4 text-center text-xs text-gray-300 italic"
                       >
                         No courses yet. Click + Course.
@@ -2799,6 +3055,7 @@ const CreatePD = () => {
       removeCategory2026,
       updateCourse2026,
       removeCourse2026,
+      openAssignModal,
     ],
   );
 
@@ -3144,14 +3401,16 @@ const CreatePD = () => {
   );
 
   // ═════════════════════════════════════════════════════════════════════════
-  // § 9.10 RENDER: STEP 4 — Electives
+  // § 9.10 RENDER: STEP 4 — Polymorphic (Electives for 2024 / Institutional
+  //        Delivery & Quality fields for 2026)
   // ═════════════════════════════════════════════════════════════════════════
 
-  const renderElectiveSection = useCallback(
+  /** 2024 — Professional / Open elective groups (legacy behaviour, preserved). */
+  const renderElectiveSection2024 = useCallback(
     (type) => {
       const isPE = type === "prof";
-      const key = isPE ? "prof_electives" : "open_electives";
-      const groups = pdData[key];
+      const key = isPE ? "professionalElectives" : "openElectives";
+      const groups = pdData.section4[key] || [];
 
       return (
         <SectionCard
@@ -3186,7 +3445,7 @@ const CreatePD = () => {
                     <OptimizedInput
                       type="number"
                       min="1"
-                      value={grp.sem}
+                      value={grp.semester ?? grp.sem}
                       onChange={(v) => updateElectiveGroupSem(type, gi, v)}
                       className="!w-12 !py-1.5 !px-2 !text-xs !text-center"
                     />
@@ -3294,7 +3553,7 @@ const CreatePD = () => {
       );
     },
     [
-      pdData,
+      pdData.section4,
       addElectiveGroup,
       removeElectiveGroup,
       updateElectiveGroupSem,
@@ -3306,10 +3565,319 @@ const CreatePD = () => {
     ],
   );
 
+  /** Generic editable string-array block (Teaching Methods, Student Support, QC Measures). */
+  const renderStringArraySection = useCallback(
+    (title, key, icon, iconBg, useEditor = false) => (
+      <SectionCard icon={icon} iconBg={iconBg} title={title}>
+        <div className="space-y-2">
+          {(pdData.section4[key] || []).map((item, i) =>
+            useEditor ? (
+              <div key={i} className="flex gap-2 items-start">
+                <div className="flex-1">
+                  <JoditEditor
+                    value={item}
+                    config={joditTiny}
+                    onBlur={(v) => updateSection4ArrayItem(key, i, v)}
+                  />
+                </div>
+                <button
+                  onClick={() => removeSection4ArrayItem(key, i)}
+                  className="text-rose-400 hover:bg-rose-50 p-2 rounded-lg flex-shrink-0"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ) : (
+              <div key={i} className="flex gap-2">
+                <OptimizedInput
+                  value={item}
+                  onChange={(v) => updateSection4ArrayItem(key, i, v)}
+                  placeholder={`Enter ${title.toLowerCase()} item`}
+                />
+                <button
+                  onClick={() => removeSection4ArrayItem(key, i)}
+                  className="text-rose-400 hover:bg-rose-50 p-2 rounded-lg flex-shrink-0"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ),
+          )}
+          <button
+            onClick={() => addSection4ArrayItem(key)}
+            className="flex items-center gap-1 text-xs text-blue-600 font-semibold mt-1"
+          >
+            <Plus size={12} /> Add Item
+          </button>
+        </div>
+      </SectionCard>
+    ),
+    [
+      pdData.section4,
+      updateSection4ArrayItem,
+      removeSection4ArrayItem,
+      addSection4ArrayItem,
+      joditTiny,
+    ],
+  );
+
   const renderStep4 = () => (
     <div className="space-y-5 animate-in fade-in duration-200">
-      {renderElectiveSection("prof")}
-      {renderElectiveSection("open")}
+      {metaData.schemaVersion === "2024" ? (
+        <>
+          {renderElectiveSection2024("prof")}
+          {renderElectiveSection2024("open")}
+        </>
+      ) : (
+        <>
+          {/* Technical Competency Courses */}
+          <SectionCard
+            icon={<BarChart2 size={16} className="text-violet-500" />}
+            iconBg="bg-violet-50"
+            title="Technical Competency Courses"
+            action={
+              <button
+                onClick={addTechCompetencyCourse}
+                className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm"
+              >
+                <Plus size={11} /> Add Course
+              </button>
+            }
+            noPad
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead className="bg-gray-50/60 border-b border-gray-100">
+                  <tr>
+                    {["Code", "Title", "Cr", ""].map((h, i) => (
+                      <th
+                        key={i}
+                        className="px-3 py-2.5 text-left font-semibold text-gray-400 uppercase tracking-wider text-[10px]"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {/* BULLETPROOF FIX: Optional chaining and fallback array */}
+                  {(pdData.section4?.technicalCompetencyCourses || []).map(
+                    (c, i) => (
+                      <tr key={i} className="hover:bg-gray-50/60 group">
+                        <td className="px-2 py-2 w-28">
+                          <OptimizedInput
+                            value={c.code}
+                            onChange={(v) =>
+                              updateTechCompetencyCourse(i, "code", v)
+                            }
+                            className="!py-1.5 !text-xs uppercase !px-2"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <OptimizedInput
+                            value={c.title}
+                            onChange={(v) =>
+                              updateTechCompetencyCourse(i, "title", v)
+                            }
+                            className="!py-1.5 !text-xs !px-2"
+                          />
+                        </td>
+                        <td className="px-2 py-2 w-16">
+                          <OptimizedInput
+                            type="number"
+                            value={c.credits}
+                            onChange={(v) =>
+                              updateTechCompetencyCourse(
+                                i,
+                                "credits",
+                                parseInt(v) || 0,
+                              )
+                            }
+                            className="!py-1.5 !text-xs !text-center"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button
+                            onClick={() => removeTechCompetencyCourse(i)}
+                            className="text-gray-300 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </td>
+                      </tr>
+                    ),
+                  )}
+                  {(!pdData.section4?.technicalCompetencyCourses ||
+                    pdData.section4.technicalCompetencyCourses.length ===
+                      0) && (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-4 py-6 text-center text-xs text-gray-300 italic"
+                      >
+                        No technical competency courses yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+
+          {/* Program Delivery & Attainment */}
+          <SectionCard
+            icon={<BookOpen size={16} className="text-indigo-500" />}
+            iconBg="bg-indigo-50"
+            title="Program Delivery & Attainment"
+            action={
+              <button
+                onClick={() =>
+                  triggerAIAssistant(
+                    "Program Delivery & Attainment",
+                    pdData.section4?.programDeliveryAndAttainment || "",
+                    (res) =>
+                      handleSection4Change("programDeliveryAndAttainment", res),
+                  )
+                }
+                className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 border border-indigo-200"
+              >
+                <Sparkles size={13} /> AI Enhance
+              </button>
+            }
+          >
+            <JoditEditor
+              value={pdData.section4?.programDeliveryAndAttainment || ""}
+              config={joditConfig}
+              onBlur={(v) =>
+                handleSection4Change("programDeliveryAndAttainment", v)
+              }
+            />
+          </SectionCard>
+
+          {renderStringArraySection(
+            "Teaching & Learning Methods",
+            "teachingLearningMethods",
+            <Layers size={16} className="text-blue-500" />,
+            "bg-blue-50",
+          )}
+
+          {/* Attendance Policy */}
+          <SectionCard
+            icon={<CheckCircle size={16} className="text-emerald-500" />}
+            iconBg="bg-emerald-50"
+            title="Attendance Policy"
+            action={
+              <button
+                onClick={() =>
+                  triggerAIAssistant(
+                    "Attendance Policy",
+                    pdData.section4?.attendance || "",
+                    (res) => handleSection4Change("attendance", res),
+                  )
+                }
+                className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 border border-indigo-200"
+              >
+                <Sparkles size={13} /> AI Enhance
+              </button>
+            }
+          >
+            <JoditEditor
+              value={pdData.section4?.attendance || ""}
+              config={joditShort}
+              onBlur={(v) => handleSection4Change("attendance", v)}
+            />
+          </SectionCard>
+
+          {/* Assessment & Grading */}
+          <SectionCard
+            icon={<Hash size={16} className="text-amber-500" />}
+            iconBg="bg-amber-50"
+            title="Assessment & Grading"
+          >
+            <div className="space-y-4">
+              <div>
+                <FieldLabel>Description</FieldLabel>
+                <JoditEditor
+                  value={pdData.section4?.assessmentGrading?.description || ""}
+                  config={joditShort}
+                  onBlur={(v) => updateAssessmentGrading("description", v)}
+                />
+              </div>
+              <div>
+                <FieldLabel>Grade Rules</FieldLabel>
+                <JoditEditor
+                  value={pdData.section4?.assessmentGrading?.gradeRules || ""}
+                  config={joditTiny}
+                  onBlur={(v) => updateAssessmentGrading("gradeRules", v)}
+                />
+              </div>
+              <div>
+                <FieldLabel>Passing Criteria</FieldLabel>
+                <JoditEditor
+                  value={
+                    pdData.section4?.assessmentGrading?.passingCriteria || ""
+                  }
+                  config={joditTiny}
+                  onBlur={(v) => updateAssessmentGrading("passingCriteria", v)}
+                />
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* Award of Degree */}
+          <SectionCard
+            icon={<Award size={16} className="text-amber-500" />}
+            iconBg="bg-amber-50"
+            title="Award of Degree"
+            action={
+              <button
+                onClick={() =>
+                  triggerAIAssistant(
+                    "Award of Degree",
+                    pdData.section4?.awardOfDegree || "",
+                    (res) => handleSection4Change("awardOfDegree", res),
+                  )
+                }
+                className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 border border-indigo-200"
+              >
+                <Sparkles size={13} /> AI Enhance
+              </button>
+            }
+          >
+            <JoditEditor
+              value={pdData.section4?.awardOfDegree || ""}
+              config={joditShort}
+              onBlur={(v) => handleSection4Change("awardOfDegree", v)}
+            />
+          </SectionCard>
+
+          {renderStringArraySection(
+            "Student Support",
+            "studentSupport",
+            <UserPlus size={16} className="text-violet-500" />,
+            "bg-violet-50",
+          )}
+          {renderStringArraySection(
+            "Quality Control Measures",
+            "qualityControlMeasures",
+            <ShieldCheck size={16} className="text-amber-500" />,
+            "bg-amber-50",
+          )}
+
+          {/* Notes */}
+          <SectionCard
+            icon={<Info size={16} className="text-gray-400" />}
+            iconBg="bg-gray-100"
+            title="Additional Notes"
+          >
+            <JoditEditor
+              value={pdData.section4?.notes || ""}
+              config={joditShort}
+              onBlur={(v) => handleSection4Change("notes", v)}
+            />
+          </SectionCard>
+        </>
+      )}
     </div>
   );
 
@@ -3486,19 +4054,30 @@ const CreatePD = () => {
         currentAssigneeId={currentAssignCtx?.currentAssigneeId}
         onSelect={(creator) => {
           if (!currentAssignCtx) return;
-          if (currentAssignCtx.isElective)
+          if (currentAssignCtx.isElective) {
             handleAssignElectiveCreator(
               currentAssignCtx.electiveType,
               currentAssignCtx.groupIndex,
               currentAssignCtx.courseIndex,
               creator,
             );
-          else
-            handleAssignCreator(
+          } else if (
+            currentAssignCtx.catIdx !== null &&
+            currentAssignCtx.catIdx !== undefined
+          ) {
+            handleAssignCreator2026(
+              currentAssignCtx.semIndex,
+              currentAssignCtx.catIdx,
+              currentAssignCtx.courseIndex,
+              creator,
+            );
+          } else {
+            handleAssignCreator2024(
               currentAssignCtx.semIndex,
               currentAssignCtx.courseIndex,
               creator,
             );
+          }
           setIsAssignModalOpen(false);
         }}
       />

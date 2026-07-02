@@ -271,7 +271,6 @@ export const uploadAndParsePD = async (req, res) => {
         .json({ success: false, message: "Unexpected Server Error" });
   }
 };
-
 export const uploadAndDynamicParsePD = async (req, res) => {
   if (!req.file)
     return res
@@ -442,7 +441,7 @@ const handleParsing = async (req, res, isDynamic) => {
       schemaVersion: result.schemaVersion,
       confidence: result.confidence,
       validation: result.validation,
-      parsedData: result.data, // mapped to expected frontend payload
+      parsedData: result.data,
     });
   } catch (error) {
     cleanupFile();
@@ -490,7 +489,7 @@ export const createOrUpdatePD = async (req, res) => {
         total_credits: totalCredits,
         academic_credits: academicCredits,
         status: status || "draft",
-        pd_data: pdData,
+        pd_data: pdData, // Saves full structure including pdData.section4
         created_by: creatorId,
         approved_by: reviewerId || null,
       });
@@ -508,15 +507,13 @@ export const createOrUpdatePD = async (req, res) => {
       created_at: -1,
     });
     if (!existingPD)
-      return res.status(404).json({
-        success: false,
-        message: "Program document not found to update.",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Program document not found." });
 
-    // SCENARIO 2: ASSIGNMENT UPDATE ONLY (No Version Bump)
+    // SCENARIO 2: ASSIGNMENT UPDATE ONLY
     if (isWorkflowUpdate) {
       existingPD.pd_data = pdData;
-      // If submitting to admin simultaneously, update status
       if (
         status &&
         existingPD.status === "draft" &&
@@ -526,7 +523,6 @@ export const createOrUpdatePD = async (req, res) => {
         existingPD.approved_by = reviewerId;
       }
       await existingPD.save();
-
       return res.json({
         success: true,
         message: "Assignments updated successfully",
@@ -535,7 +531,7 @@ export const createOrUpdatePD = async (req, res) => {
       });
     }
 
-    // SCENARIO 3: Editing an existing Draft (In-Place Update)
+    // SCENARIO 3: Editing an existing Draft
     if (existingPD.status === "draft" && status === "draft") {
       existingPD.pd_data = pdData;
       existingPD.program_name = programName;
@@ -550,7 +546,7 @@ export const createOrUpdatePD = async (req, res) => {
       });
     }
 
-    // SCENARIO 4: Submitting an existing Draft to Review (In-Place Update)
+    // SCENARIO 4: Submitting an existing Draft to Review
     if (existingPD.status === "draft" && status === "under_review") {
       existingPD.status = "under_review";
       existingPD.approved_by = reviewerId;
@@ -564,7 +560,7 @@ export const createOrUpdatePD = async (req, res) => {
       });
     }
 
-    // SCENARIO 5: Editing a document that is already Approved or Under Review -> (VERSION BUMP)
+    // SCENARIO 5: VERSION BUMP
     const newVersion = incrementVersion(existingPD.version_no);
     const bumpedPD = await PD.create({
       program_id: programId,
@@ -583,10 +579,7 @@ export const createOrUpdatePD = async (req, res) => {
 
     return res.json({
       success: true,
-      message:
-        status === "under_review"
-          ? `Submitted v${newVersion} for review`
-          : `New Draft v${newVersion} Created`,
+      message: `New Draft v${newVersion} Created`,
       version: newVersion,
       data: bumpedPD,
     });
@@ -599,15 +592,16 @@ export const createOrUpdatePD = async (req, res) => {
 
 // --- HELPER: Format Populated Data for Frontend ---
 // Maps the populated 'assignedCreater' object back into 'assigneeId' and 'assigneeName' for the React UI.
+// Map courses for assigned CDs
 const formatPopulatedPD = (pd) => {
   const pdObj = pd.toObject ? pd.toObject() : pd;
 
   const mapCourses = (courses) => {
-    return courses.map((c) => {
+    return (courses || []).map((c) => {
       if (c.assignedCreater) {
         c.assigneeId = c.assignedCreater._id;
         c.assigneeName = c.assignedCreater.name;
-        delete c.assignedCreater; // Clean up payload
+        delete c.assignedCreater;
       }
       return c;
     });
@@ -622,25 +616,43 @@ const formatPopulatedPD = (pd) => {
     );
   }
 
-  if (pdObj.section4_electives?.professionalElectives) {
-    pdObj.section4_electives.professionalElectives =
-      pdObj.section4_electives.professionalElectives.map((grp) => ({
+  // BULLETPROOF FIX: Guarantee section4 structure for the backend payload
+  pdObj.section4 = pdObj.section4 || {
+    professionalElectives: pdObj.prof_electives || [],
+    openElectives: pdObj.open_electives || [],
+    technicalCompetencyCourses: [],
+    programDeliveryAndAttainment: "",
+    teachingLearningMethods: [""],
+    attendance: "",
+    assessmentGrading: {
+      description: "",
+      components: [],
+      gradeRules: "",
+      passingCriteria: "",
+    },
+    awardOfDegree: "",
+    studentSupport: [""],
+    qualityControlMeasures: [""],
+    notes: "",
+  };
+
+  if (pdObj.section4.professionalElectives) {
+    pdObj.section4.professionalElectives =
+      pdObj.section4.professionalElectives.map((grp) => ({
         ...grp,
         courses: mapCourses(grp.courses),
       }));
   }
 
-  if (pdObj.section4_electives?.openElectives) {
-    pdObj.section4_electives.openElectives =
-      pdObj.section4_electives.openElectives.map((grp) => ({
-        ...grp,
-        courses: mapCourses(grp.courses),
-      }));
+  if (pdObj.section4.openElectives) {
+    pdObj.section4.openElectives = pdObj.section4.openElectives.map((grp) => ({
+      ...grp,
+      courses: mapCourses(grp.courses),
+    }));
   }
 
   return pdObj;
 };
-
 export const getRecentVersions = async (req, res) => {
   try {
     const versions = await PD.find({ program_id: req.params.programId })
@@ -777,7 +789,7 @@ export const enhanceFieldWithAI = async (req, res) => {
 
     // FIX: Changed "gemini-1.5-flash-latest" to "gemini-1.5-flash"
     const model = genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.5-flash",
     });
 
     const systemPrompt = `
@@ -898,7 +910,7 @@ export const parseTableWithAI = async (req, res) => {
 
     // Using JSON mode to guarantee structured output
     const model = genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.5-flash",
       generationConfig: { responseMimeType: "application/json" },
     });
 
@@ -940,17 +952,20 @@ Extract the data accurately, infer missing columns if requested by the user's pr
 };
 
 // Add this inside createrController.js
-
 export const getAssignedCDs = async (req, res) => {
   try {
-    const creatorId = req.id; // From your auth middleware
+    const creatorId = req.id;
 
-    // Find all PDs where this creator is assigned to a course
+    // Search anywhere assigneeId might exist in the polymorphic structure
     const pds = await PD.find({
       $or: [
-        { "pd_data.semesters.courses.assigneeId": creatorId },
-        { "pd_data.prof_electives.courses.assigneeId": creatorId },
-        { "pd_data.open_electives.courses.assigneeId": creatorId },
+        { "pd_data.semesters.courses.assigneeId": creatorId }, // 2024 Schema
+        { "pd_data.semesters.categories.courses.assigneeId": creatorId }, // 2026 Schema
+        {
+          "pd_data.section4.professionalElectives.courses.assigneeId":
+            creatorId,
+        }, // 2024 PEs
+        { "pd_data.section4.openElectives.courses.assigneeId": creatorId }, // 2024 OEs
       ],
     }).populate("created_by", "name");
 
@@ -961,8 +976,9 @@ export const getAssignedCDs = async (req, res) => {
       const pCode = pd.program_id;
       const creatorName = pd.created_by?.name || "Admin";
 
-      // 1. Check Semesters
+      // 1. Check Semesters (Handles BOTH 2024 flat courses AND 2026 nested categories)
       pd.pd_data?.semesters?.forEach((sem) => {
+        // 2024 Courses
         sem.courses?.forEach((c) => {
           if (c.assigneeId === creatorId) {
             assignedCourses.push({
@@ -977,10 +993,27 @@ export const getAssignedCDs = async (req, res) => {
             });
           }
         });
+        // 2026 Categories
+        sem.categories?.forEach((cat) => {
+          cat.courses?.forEach((c) => {
+            if (c.assigneeId === creatorId) {
+              assignedCourses.push({
+                courseCode: c.code,
+                courseTitle: c.title,
+                programName: pName,
+                programCode: pCode,
+                type: c.type || "Theory",
+                credits: c.credits,
+                context: `Semester ${sem.sem_no} (${cat.categoryName})`,
+                pdCreatorName: creatorName,
+              });
+            }
+          });
+        });
       });
 
-      // 2. Check Professional Electives
-      pd.pd_data?.prof_electives?.forEach((grp, gi) => {
+      // 2. Check Professional Electives (Section 4 - 2024 Schema)
+      pd.pd_data?.section4?.professionalElectives?.forEach((grp, gi) => {
         grp.courses?.forEach((c) => {
           if (c.assigneeId === creatorId) {
             assignedCourses.push({
@@ -997,8 +1030,8 @@ export const getAssignedCDs = async (req, res) => {
         });
       });
 
-      // 3. Check Open Electives
-      pd.pd_data?.open_electives?.forEach((grp, gi) => {
+      // 3. Check Open Electives (Section 4 - 2024 Schema)
+      pd.pd_data?.section4?.openElectives?.forEach((grp, gi) => {
         grp.courses?.forEach((c) => {
           if (c.assigneeId === creatorId) {
             assignedCourses.push({

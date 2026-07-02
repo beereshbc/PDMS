@@ -1,351 +1,243 @@
 #!/usr/bin/env python3
 """
-PD Document Parser – Enhanced for GM University 2024 Scheme
-Extracts ALL structured data and returns JSON in the exact format expected by the React frontend.
+Unified Polymorphic PD Document Parser
+Supports both 2024 (Legacy/Flat) and 2026 (Merged Categories) Schemas.
 """
 
 import sys
 import json
 import re
 from pathlib import Path
+from typing import Dict, Any, List, Optional, Tuple
 
 try:
     import pdfplumber
 except ImportError:
     print(json.dumps({
+        "success": False,
         "error": "pdfplumber library not installed. Run: pip install pdfplumber"
     }))
     sys.exit(1)
 
-# ----------------------------------------------------------------------
-# Helper functions
-# ----------------------------------------------------------------------
+# ════════════════════════════════════════════════════════════════════════
+# § 1. SHARED HELPERS & DATA STRUCTURES
+# ════════════════════════════════════════════════════════════════════════
 
 
-def clean_text(text):
-    """Remove excessive whitespace and newlines, but preserve basic structure."""
+def clean_text(text: str) -> str:
     if not text:
         return ""
-    return " ".join(text.split()).strip()
+    return re.sub(r"\s+", " ", str(text)).strip()
 
 
-def safe_int(val, default=0):
-    try:
-        return int(val)
-    except:
+def safe_int(val, default: int = 0) -> int:
+    if val is None:
         return default
+    if isinstance(val, (int, float)):
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return default
+    m = re.search(r"-?\d+", str(val))
+    return int(m.group()) if m else default
 
-# ----------------------------------------------------------------------
-# Main parser
-# ----------------------------------------------------------------------
+
+def roman_to_int(s: str) -> int:
+    s = str(s).upper().strip()
+    if s.isdigit():
+        return int(s)
+    rom_val = {"I": 1, "V": 5, "X": 10}
+    total = 0
+    for i, ch in enumerate(s):
+        v = rom_val.get(ch, 0)
+        if i > 0 and v > rom_val.get(s[i - 1], 0):
+            total += v - 2 * rom_val.get(s[i - 1], 0)
+        else:
+            total += v
+    return total if total > 0 else 0
 
 
-def parse_pdf_document(file_path):
-    """Extract all data and return a dict that matches the frontend pdData shape."""
-    # Default structure (identical to PREPOPULATED_DATA in React)
-    data = {
+def extract_numbered_or_bulleted_items(block: str) -> List[str]:
+    if not block:
+        return []
+    block = block.strip()
+    items = re.split(r"\n?\s*\d+\.\s+", "\n" + block)
+    items = [clean_text(i) for i in items if len(clean_text(i)) > 2]
+    if len(items) > 1:
+        deduped = []
+        for it in items:
+            it = re.sub(r"^(\d+\.\s*)+", "", it).strip()
+            if it:
+                deduped.append(it)
+        return deduped
+    items = re.split(r"\n\s*[-*•]\s+", "\n" + block)
+    items = [clean_text(i) for i in items if len(clean_text(i)) > 2]
+    if len(items) > 1:
+        return items
+    lines = [clean_text(l) for l in block.split("\n") if clean_text(l)]
+    return lines if lines else [clean_text(block)]
+
+
+def create_blank_pd_data() -> Dict[str, Any]:
+    """Provides a strict schema-compliant dictionary to prevent React crashes."""
+    return {
         "details": {
-            "university": "GM University",
-            "faculty": "",
-            "school": "",
-            "department": "",
-            "program_name": "",
-            "director": "",
-            "hod": "",
-            "contact_email": "hod.cse@gmu.edu",
-            "contact_phone": "+91-1234567890"
+            "university": "GM University", "faculty": "", "school": "",
+            "department": "", "program_name": "", "director": "", "hod": "",
+            "contact_email": "", "contact_phone": ""
         },
         "award": {
-            "title": "",
-            "mode": "Full Time",
-            "awarding_body": "GM University",
-            "joint_award": "Not Applicable",
-            "teaching_institution": "Faculty of Engineering and Technology, GM University",
-            "date_program_specs": "",
-            "date_approval": "---",
-            "next_review": "---",
-            "approving_body": "---",
-            "accredited_body": "---",
-            "accreditation_grade": "---",
-            "accreditation_validity": "---",
-            "benchmark": "N/A"
+            "title": "", "mode": "Full Time", "awarding_body": "GM University",
+            "joint_award": "Not Applicable", "teaching_institution": "GM University",
+            "date_program_specs": "", "date_approval": "", "next_review": "",
+            "approving_body": "", "accredited_body": "", "accreditation_grade": "",
+            "accreditation_validity": "", "benchmark": "NEP 2020"
         },
         "overview": "",
-        "peos": [],
-        "pos": [],
-        "psos": [],
-        "credit_def": {"L": 1, "T": 1, "P": 1},
+        "peos": [], "pos": [], "psos": [],
+        "credit_def": {"L": 0, "T": 0, "P": 0},
         "structure_table": [],
         "semesters": [],
         "prof_electives": [],
-        "open_electives": []
+        "open_electives": [],
+        "section4": {
+            "professionalElectives": [],
+            "openElectives": [],
+            "technicalCompetencyCourses": [],
+            "programDeliveryAndAttainment": "",
+            "teachingLearningMethods": [],
+            "attendance": "",
+            "assessmentGrading": {
+                "description": "",
+                "components": [],
+                "gradeRules": "",
+                "passingCriteria": ""
+            },
+            "awardOfDegree": "",
+            "studentSupport": [],
+            "qualityControlMeasures": [],
+            "notes": ""
+        },
+        "parserWarnings": []
     }
 
-    try:
-        with pdfplumber.open(file_path) as pdf:
-            full_text = ""
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    full_text += text + "\n"
-
-            # ----- Metadata (page 2) -----
-            parse_metadata(full_text, data)
-
-            # ----- Program Overview (page 3) -----
-            parse_overview(full_text, data)
-
-            # ----- PEOs, POs, PSOs (pages 3-6) -----
-            parse_peos(full_text, data)
-            parse_pos(full_text, data)
-            parse_psos(full_text, data)
-
-            # ----- Credit definitions & structure table (page 7) -----
-            parse_credit_definitions(full_text, data)
-            parse_structure_table(full_text, data)
-
-            # ----- Semester wise courses (pages 8-15) -----
-            parse_semester_courses(pdf, data)
-
-            # ----- Electives (pages 16-17) -----
-            parse_electives(pdf, data)
-
-    except Exception as e:
-        # Log error but still return whatever was extracted
-        print(f"Parser error: {e}", file=sys.stderr)
-
-    # Ensure at least 8 semesters are present
-    while len(data["semesters"]) < 8:
-        data["semesters"].append(
-            {"sem_no": len(data["semesters"]) + 1, "courses": []})
-    data["semesters"].sort(key=lambda x: x["sem_no"])
-
-    return data
+# ════════════════════════════════════════════════════════════════════════
+# § 2. PARSER: 2024 SCHEMA (Legacy)
+# ════════════════════════════════════════════════════════════════════════
 
 
-def parse_metadata(text, data):
-    """Extract faculty, school, department, director, HOD, award details, etc."""
-    # Faculty
-    m = re.search(r'Faculty\s+(.+?)(?:\n|School)', text, re.IGNORECASE)
+def parse_2024(pdf, full_text: str, data: Dict[str, Any]) -> None:
+    """Extraction logic for 2024 flat-schema PDFs."""
+
+    # --- Metadata ---
+    m = re.search(r'Faculty\s+(.+?)(?:\n|School)', full_text, re.IGNORECASE)
     if m:
         data["details"]["faculty"] = clean_text(m.group(1))
 
-    # School
-    m = re.search(r'School\s+(.+?)(?:\n|Department)', text, re.IGNORECASE)
+    m = re.search(r'School\s+(.+?)(?:\n|Department)', full_text, re.IGNORECASE)
     if m:
         data["details"]["school"] = clean_text(m.group(1))
 
-    # Department
-    m = re.search(r'Department\s+(.+?)(?:\n|Program)', text, re.IGNORECASE)
+    m = re.search(r'Department\s+(.+?)(?:\n|Program)',
+                  full_text, re.IGNORECASE)
     if m:
         data["details"]["department"] = clean_text(m.group(1))
 
-    # Director of School
     m = re.search(r'Director of School\s+(.+?)(?:\n|Head)',
-                  text, re.IGNORECASE)
+                  full_text, re.IGNORECASE)
     if m:
         data["details"]["director"] = clean_text(m.group(1))
 
-    # Head of Department
     m = re.search(r'Head of Department\s+(.+?)(?:\n|\d+\.)',
-                  text, re.IGNORECASE)
+                  full_text, re.IGNORECASE)
     if m:
         data["details"]["hod"] = clean_text(m.group(1))
 
-    # Program Name
-    m = re.search(r'B\.Tech\.?\s+in\s+(.+?)(?:\n|$)', text, re.IGNORECASE)
+    m = re.search(r'B\.Tech\.?\s+in\s+(.+?)(?:\n|$)', full_text, re.IGNORECASE)
     if m:
         data["details"]["program_name"] = clean_text(m.group(1))
     else:
-        # fallback
         data["details"]["program_name"] = "Computer Science & Engineering"
 
-    # ---- Award table details (numbered 1..13) ----
-    # 1. Title of the Award
-    m = re.search(r'1\.\s*Title of the Award\s+(.+?)(?:\n|2\.)',
-                  text, re.IGNORECASE)
-    if m:
-        data["award"]["title"] = clean_text(m.group(1))
+    # --- Award ---
+    award_patterns = [
+        (r'1\.\s*Title of the Award\s+(.+?)(?:\n|2\.)', 'title'),
+        (r'2\.\s*Modes of Study\s+(.+?)(?:\n|3\.)', 'mode'),
+        (r'3\.\s*Awarding Institution.*?\s+(.+?)(?:\n|4\.)', 'awarding_body'),
+        (r'4\.\s*Joint Award\s+(.+?)(?:\n|5\.)', 'joint_award'),
+        (r'5\.\s*Teaching Institution\s+(.+?)(?:\n|6\.)', 'teaching_institution'),
+        (r'6\.\s*Date of Program Specifications\s+(.+?)(?:\n|7\.)', 'date_program_specs')
+    ]
+    for pattern, key in award_patterns:
+        match = re.search(pattern, full_text, re.IGNORECASE | re.DOTALL)
+        if match:
+            data["award"][key] = clean_text(match.group(1))
 
-    # 2. Modes of Study
-    m = re.search(r'2\.\s*Modes of Study\s+(.+?)(?:\n|3\.)',
-                  text, re.IGNORECASE)
-    if m:
-        data["award"]["mode"] = clean_text(m.group(1))
-
-    # 3. Awarding Institution
-    m = re.search(
-        r'3\.\s*Awarding Institution.*?\s+(.+?)(?:\n|4\.)', text, re.IGNORECASE)
-    if m:
-        data["award"]["awarding_body"] = clean_text(m.group(1))
-
-    # 4. Joint Award
-    m = re.search(r'4\.\s*Joint Award\s+(.+?)(?:\n|5\.)', text, re.IGNORECASE)
-    if m:
-        data["award"]["joint_award"] = clean_text(m.group(1))
-
-    # 5. Teaching Institution
-    m = re.search(r'5\.\s*Teaching Institution\s+(.+?)(?:\n|6\.)',
-                  text, re.IGNORECASE | re.DOTALL)
-    if m:
-        data["award"]["teaching_institution"] = clean_text(m.group(1))
-
-    # 6. Date of Program Specifications
-    m = re.search(
-        r'6\.\s*Date of Program Specifications\s+(.+?)(?:\n|7\.)', text, re.IGNORECASE)
-    if m:
-        data["award"]["date_program_specs"] = clean_text(m.group(1))
-
-    # 7. Date of Course Approval – default "---"
-    # 8. Next Review Date – default "---"
-    # 9. Program Approving Regulating Body – default "---"
-    # 10. Program Accredited Body – default "---"
-    # 11. Grade Awarded – default "---"
-    # 12. Program Accreditation Validity – default "---"
-    # 13. Program Benchmark – default "N/A"
-    # (We keep defaults)
-
-
-def parse_overview(text, data):
-    """Extract Program Overview (section 14)."""
+    # --- Outcomes ---
     m = re.search(r'14\.\s*Program Overview.*?\n(.+?)(?=15\.|Program Educational)',
-                  text, re.IGNORECASE | re.DOTALL)
+                  full_text, re.IGNORECASE | re.DOTALL)
     if m:
         data["overview"] = clean_text(m.group(1))
 
+    peo = re.search(r'Program Educational Objectives.*?(?=Program Outcomes|Program Specific|$)',
+                    full_text, re.IGNORECASE | re.DOTALL)
+    if peo:
+        peos = re.findall(
+            r'PEO-(\d+):\s*([^\n]+)\n(.*?)(?=PEO-\d+:|Program Outcomes|Program Specific|$)', peo.group(0), re.DOTALL)
+        data["peos"] = [
+            f"<b>{t.strip()}</b><br/>{d.strip()}" for _, t, d in peos]
 
-def parse_peos(text, data):
-    """Extract PEOs as plain strings (the React component stores them as HTML)."""
-    peo_section = re.search(
-        r'Program Educational Objectives.*?(?=Program Outcomes|Program Specific|$)',
-        text, re.IGNORECASE | re.DOTALL
-    )
-    if peo_section:
-        peo_matches = re.findall(
-            r'PEO-(\d+):\s*([^\n]+)\n(.*?)(?=PEO-\d+:|Program Outcomes|Program Specific|$)',
-            peo_section.group(0), re.DOTALL
-        )
-        for num, title, desc in peo_matches:
-            full_text = f"<b>{title.strip()}</b><br/>{desc.strip()}"
-            data["peos"].append(full_text)
-    if not data["peos"]:
-        # fallback with 3 empty slots
-        data["peos"] = ["", "", ""]
+    po = re.search(r'Program Outcomes.*?(?=Program Specific|$)',
+                   full_text, re.IGNORECASE | re.DOTALL)
+    if po:
+        pos = re.findall(
+            r'PO-(\d+):\s*([^:]+?):\s*(.*?)(?=PO-\d+:|Program Specific|$)', po.group(0), re.DOTALL)
+        data["pos"] = [f"<b>{t.strip()}</b>: {d.strip()}" for _, t, d in pos]
 
+    pso = re.search(r'Program Specific Outcomes.*?(?=Programme Structure|Definition of Credit|Courses and Credits|$)',
+                    full_text, re.IGNORECASE | re.DOTALL)
+    if pso:
+        psos = re.findall(
+            r'PSO-(\d+):\s*([^\n]+)\n(.*?)(?=PSO-\d+:|Programme Structure|Definition of Credit|$)', pso.group(0), re.DOTALL)
+        data["psos"] = [
+            f"<b>{t.strip()}</b><br/>{d.strip()}" for _, t, d in psos]
 
-def parse_pos(text, data):
-    """Extract POs as plain strings (React stores them as HTML)."""
-    po_section = re.search(
-        r'Program Outcomes.*?(?=Program Specific|$)',
-        text, re.IGNORECASE | re.DOTALL
-    )
-    if po_section:
-        po_matches = re.findall(
-            r'PO-(\d+):\s*([^:]+?):\s*(.*?)(?=PO-\d+:|Program Specific|$)',
-            po_section.group(0), re.DOTALL
-        )
-        for num, title, desc in po_matches:
-            full_text = f"<b>{title.strip()}</b>: {desc.strip()}"
-            data["pos"].append(full_text)
-    # If none found, the React component will fallback to STANDARD_POS
-
-
-def parse_psos(text, data):
-    """Extract PSOs as plain strings."""
-    pso_section = re.search(
-        r'Program Specific Outcomes.*?(?=Programme Structure|Definition of Credit|Courses and Credits|$)',
-        text, re.IGNORECASE | re.DOTALL
-    )
-    if pso_section:
-        pso_matches = re.findall(
-            r'PSO-(\d+):\s*([^\n]+)\n(.*?)(?=PSO-\d+:|Programme Structure|Definition of Credit|$)',
-            pso_section.group(0), re.DOTALL
-        )
-        for num, title, desc in pso_matches:
-            full_text = f"<b>{title.strip()}</b><br/>{desc.strip()}"
-            data["psos"].append(full_text)
-    if not data["psos"]:
-        data["psos"] = ["", "", ""]
-
-
-def parse_credit_definitions(text, data):
-    """
-    Extract L:T:P mapping from text like:
-    "1 Hr. Lecture (L) per week 1 Credit"
-    "2 Hr. Tutorial (T) per week 1 Credit"
-    "2 Hr. Practical (P) per week 1 Credit"
-    """
-    # Lecture
+    # --- Credit Defs ---
     m = re.search(r'(\d+)\s*Hr\.?\s*Lecture.*?(\d+)\s*Credit',
-                  text, re.IGNORECASE)
+                  full_text, re.IGNORECASE)
     if m:
         data["credit_def"]["L"] = safe_int(m.group(2))
-    # Tutorial
     m = re.search(r'(\d+)\s*Hr\.?\s*Tutorial.*?(\d+)\s*Credit',
-                  text, re.IGNORECASE)
+                  full_text, re.IGNORECASE)
     if m:
         data["credit_def"]["T"] = safe_int(m.group(2))
-    # Practical
     m = re.search(r'(\d+)\s*Hr\.?\s*Practical.*?(\d+)\s*Credit',
-                  text, re.IGNORECASE)
+                  full_text, re.IGNORECASE)
     if m:
         data["credit_def"]["P"] = safe_int(m.group(2))
 
+    # --- Structure Table ---
+    struct = re.search(r'Sl\. No\. Program -?Category Credits(.+?)(?=Semester|Total|$)',
+                       full_text, re.IGNORECASE | re.DOTALL)
+    if struct:
+        lines = struct.group(1).strip().split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line or not line[0].isdigit():
+                continue
+            m = re.match(
+                r'^(\d+)\.\s+(.*?)\s+(\d+)(?:\s*\(([^)]+)\))?\s*$', line)
+            if m:
+                _, cat, cred, code = m.groups()
+                data["structure_table"].append({"category": clean_text(
+                    cat), "credits": safe_int(cred), "code": code.strip() if code else ""})
 
-def parse_structure_table(text, data):
-    """
-    Extract the credit structure table (page 7).
-    Each row: Sl. No., Category, Credits, and optional Code in parentheses.
-    """
-    struct_section = re.search(
-        r'Sl\. No\. Program -?Category Credits(.+?)(?=Semester|Total|$)',
-        text, re.IGNORECASE | re.DOTALL
-    )
-    if not struct_section:
-        return
-
-    lines = struct_section.group(1).strip().split('\n')
-    for line in lines:
-        line = line.strip()
-        if not line or line[0].isdigit() is False:
-            continue
-
-        # Match pattern: "1. Program-Core courses, elective Courses, open electives 130"
-        # or "2. Technical Competency 10 (SDTCD)"
-        m = re.match(r'^(\d+)\.\s+(.*?)\s+(\d+)(?:\s*\(([^)]+)\))?\s*$', line)
-        if m:
-            num, category, credits, code = m.groups()
-            category = clean_text(category)
-            credits = safe_int(credits)
-            code = code.strip() if code else ""
-            data["structure_table"].append({
-                "category": category,
-                "credits": credits,
-                "code": code
-            })
-    # If no rows found, try a more lenient regex
-    if not data["structure_table"]:
-        rows = re.findall(
-            r'(\d+)\.\s*(.+?)(\d+)\s*(?:\(([^)]+)\))?\s*(?=\d+\.|Total|$)', struct_section.group(0), re.DOTALL)
-        for num, cat, cred, code in rows:
-            data["structure_table"].append({
-                "category": clean_text(cat),
-                "credits": safe_int(cred),
-                "code": code.strip() if code else ""
-            })
-
-
-def parse_semester_courses(pdf, data):
-    """
-    Iterate through all pages, detect semester tables and extract courses.
-    Sets default type="Theory", category="Core". 0-credit courses are also included.
-    """
+    # --- Semesters (Tables) ---
     for page in pdf.pages:
         text = page.extract_text() or ""
         if 'semester' not in text.lower():
             continue
 
-        # Detect semester number
         sem_match = re.search(r'Semester[- ](\d+)', text, re.IGNORECASE)
         if not sem_match:
             continue
@@ -355,7 +247,6 @@ def parse_semester_courses(pdf, data):
         if not tables:
             continue
 
-        # Find the main course table (first table with "Course Code" header)
         table = None
         for tbl in tables:
             for row in tbl[:3]:
@@ -369,159 +260,482 @@ def parse_semester_courses(pdf, data):
         if not table:
             continue
 
-        # Locate header row
-        header_idx = -1
-        for i, row in enumerate(table):
-            if row and any("course code" in str(c).lower() for c in row):
-                header_idx = i
-                break
+        header_idx = next((i for i, r in enumerate(table) if r and any(
+            "course code" in str(c).lower() for c in r)), -1)
         if header_idx == -1:
             continue
 
-        # Ensure semesters list has this semester
         sem_obj = next(
             (s for s in data["semesters"] if s["sem_no"] == sem_no), None)
         if not sem_obj:
-            sem_obj = {"sem_no": sem_no, "courses": []}
+            sem_obj = {"sem_no": sem_no, "courses": [], "categories": []}
             data["semesters"].append(sem_obj)
 
-        # Parse rows
         for row in table[header_idx + 1:]:
             if not row or len(row) < 2:
                 continue
-
             cells = [str(c).strip() if c else "" for c in row]
 
-            # Find course code (UE24... or special codes)
             code = ""
             for cell in cells:
                 if re.match(r'^UE\d{2}[A-Z]{2}\d{4}$', cell) or cell in ["SDTCD", "CASP", "CIBI", "SA", "SASP"]:
                     code = cell
                     break
-
             if not code:
                 continue
 
             code_idx = cells.index(code)
             title = cells[code_idx + 1] if code_idx + 1 < len(cells) else ""
 
-            # Credits: search from end for a digit
-            credits = 0
-            for cell in reversed(cells):
-                if cell.isdigit():
-                    credits = int(cell)
-                    break
-
-            # Default type & category (user can edit later)
+            credits = next((int(c) for c in reversed(cells) if c.isdigit()), 0)
             sem_obj["courses"].append({
-                "code": code,
-                "title": clean_text(title),
-                "credits": credits,
-                "type": "Theory",      # default, override if needed
-                "category": "Core"     # default
+                "code": code, "title": clean_text(title), "credits": credits,
+                "type": "Theory", "category": "Core"
             })
 
-
-def parse_electives(pdf, data):
-    """
-    Extract professional and open electives from pages containing "List of Electives".
-    Groups them by semester and type, outputting the structure expected by frontend.
-    """
+    # --- Electives (Tables) ---
     for page in pdf.pages:
         text = page.extract_text() or ""
-        if "list of" not in text.lower() or "elective" not in text.lower():
+        if "elective" not in text.lower():
             continue
 
-        # Determine if professional or open
         is_prof = "professional" in text.lower()
         is_open = "open" in text.lower()
         if not is_prof and not is_open:
             continue
 
-        # Find semester number(s) on this page
         sem_numbers = re.findall(
             r'(\d+)(?:th|st|nd|rd)?\s*Semester', text, re.IGNORECASE)
         if not sem_numbers:
             continue
-        semester = int(sem_numbers[0])  # use first one
+        semester = int(sem_numbers[0])
 
         tables = page.extract_tables()
         if not tables:
             continue
 
         for table in tables:
-            # Find header row
-            header_idx = -1
-            for i, row in enumerate(table[:3]):
-                row_text = " ".join([str(c) for c in row if c]).lower()
-                if "course code" in row_text and "course title" in row_text:
-                    header_idx = i
-                    break
+            header_idx = next((i for i, r in enumerate(
+                table[:3]) if "course code" in " ".join([str(c) for c in r]).lower()), -1)
             if header_idx == -1:
                 continue
 
-            # Determine if this table belongs to the same semester / type
-            # (Sometimes multiple tables on one page – we rely on page context)
-            elective_type = "prof" if is_prof else "open"
-
-            # Prepare target group
-            target_list = data["prof_electives"] if elective_type == "prof" else data["open_electives"]
+            target_list = data["section4"]["professionalElectives"] if is_prof else data["section4"]["openElectives"]
             group = next(
-                (g for g in target_list if g["sem"] == semester), None)
+                (g for g in target_list if g["semester"] == semester), None)
             if not group:
-                group = {
-                    "sem": semester,
-                    "title": f"{'Professional' if is_prof else 'Open'} Electives - Semester {semester}",
-                    "courses": []
-                }
+                group = {"semester": semester,
+                         "title": f"{'Professional' if is_prof else 'Open'} Electives - Sem {semester}", "courses": []}
                 target_list.append(group)
 
-            # Parse courses
             for row in table[header_idx + 1:]:
                 if not row or len(row) < 2:
                     continue
                 cells = [str(c).strip() if c else "" for c in row]
 
-                # Find course code (UE24...)
-                code = ""
-                for cell in cells:
-                    if re.match(r'^UE\d{2}[A-Z]{2}\d{4}$', cell):
-                        code = cell
-                        break
+                code = next((c for c in cells if re.match(
+                    r'^UE\d{2}[A-Z]{2}\d{4}$', c)), "")
                 if not code:
                     continue
 
                 code_idx = cells.index(code)
                 title = cells[code_idx + 1] if code_idx + \
                     1 < len(cells) else ""
+                credits = next((int(c)
+                               for c in reversed(cells) if c.isdigit()), 3)
 
-                # Credits (default 3 if not found)
-                credits = 3
-                for cell in reversed(cells):
-                    if cell.isdigit():
-                        credits = int(cell)
-                        break
+                group["courses"].append(
+                    {"code": code, "title": clean_text(title), "credits": credits})
 
-                group["courses"].append({
-                    "code": code,
-                    "title": clean_text(title),
-                    "credits": credits
-                })
+    # Ensure legacy root mappings
+    data["prof_electives"] = data["section4"]["professionalElectives"]
+    data["open_electives"] = data["section4"]["openElectives"]
 
 
-# ----------------------------------------------------------------------
-# Entry point
-# ----------------------------------------------------------------------
+# ════════════════════════════════════════════════════════════════════════
+# § 3. PARSER: 2026 SCHEMA (Merged Categories / Dynamic Lines)
+# ════════════════════════════════════════════════════════════════════════
+
+SECTION_HEADING_PATTERNS = [
+    (10, r"Program\s+Overview"), (11, r"Program\s+Educational\s+Objectives"),
+    (12, r"Program\s+Outcomes\b"), (13, r"Program\s+Specific\s+Outcomes"),
+    (14, r"Courses\s+and\s+Credits"), (15,
+                                       r"(?:List\s+of\s+)?Technical\s+Competency\s+Courses"),
+    (16, r"Program\s+Delivery(?:\s+and\s+Attainment)?"), (17,
+                                                          r"Teaching\s+and\s+Learning\s+Methods"),
+    (18, r"Attendance\b"), (19, r"Assessment\s+and\s+Grading"), (20,
+                                                                 r"Award\s+of(?:\s+the)?\s+Degree"),
+    (21, r"Student\s+Support(?:\s+for\s+Learning)?"), (22,
+                                                       r"Quality\s+Control\s+Measures"),
+]
+CODE_TOKEN_RE = re.compile(r"\b[A-Z]{2,6}\d{2}[A-Z]{2,6}(?:\d{1,3}|XX)\b")
+CATEGORY_DIVIDER_LINES = {"academic", "competency and skills",
+                          "professional skills", "sports, culture and environment"}
+NOISE_LINE_RE = re.compile(
+    r"^(s\.?\s*no\.?\s*course code\s*course title\s*credits|page\s*\|\s*\d+|note:.*)$", re.IGNORECASE)
+
+
+def _get_section_spans(full_text: str) -> Dict[int, Tuple[int, int]]:
+    found = []
+    for sec_no, pattern in SECTION_HEADING_PATTERNS:
+        m = re.search(rf"(?m)^\s*{sec_no}\s+(?={pattern})", full_text) or re.search(
+            rf"(?m)^\s*{sec_no}\s*{pattern}", full_text)
+        if m:
+            found.append((sec_no, m.start(), m.end()))
+    found.sort(key=lambda x: x[1])
+    spans = {}
+    for idx, (sec_no, start, _) in enumerate(found):
+        end = found[idx + 1][1] if idx + 1 < len(found) else len(full_text)
+        spans[sec_no] = (start, end)
+    return spans
+
+
+def _get_section_text(full_text: str, spans: Dict[int, Tuple[int, int]], sec_no: int) -> str:
+    if sec_no not in spans:
+        return ""
+    start, end = spans[sec_no]
+    text = full_text[start:end]
+    return re.sub(r"^\s*\d+\s+[^\n]*\n", "", text, count=1).strip()
+
+
+def parse_2026(pdf, full_text: str, data: Dict[str, Any]) -> None:
+    spans = _get_section_spans(full_text)
+
+    # --- Metadata ---
+    m = re.search(
+        r"(?i)Title of the Award\s+(B\.?\s?Tech\.?,?\s*(?:in\s*)?.+?)(?:\n|\s{2,}\d|$)", full_text)
+    if m:
+        data["award"]["title"] = clean_text(m.group(1))
+        prog = re.sub(r"(?i)^B\.?\s?Tech\.?,?\s*(in\s*)?",
+                      "", data["award"]["title"]).strip()
+        if prog:
+            data["details"]["program_name"] = prog
+
+    for regex, key in [
+        (r"(?i)Faculty\s+(?:of\s+)?(.+?)(?:\n|(?=School))", "faculty"),
+        (r"(?i)School\s+(School of .+?)(?:\n|(?=Department))", "school"),
+        (r"(?i)Department\s+(.+?)(?:\n|(?=Program\b))", "department"),
+        (r"(?i)Director of (?:the )?School\s+(Dr\.?.+?|Prof\.?.+?|Mr\.?.+?|Ms\.?.+?|[A-Z].+?)(?:\n|(?=Head))", "director"),
+        (r"(?i)Head of the\s*\n?\s*Department\s+(.+?)(?:\n|(?=\d+\s+Title))", "hod")
+    ]:
+        m = re.search(regex, full_text)
+        if m:
+            data["details"][key] = clean_text(m.group(1))
+
+    # --- Outcomes ---
+    data["overview"] = clean_text(_get_section_text(full_text, spans, 10))
+
+    peo_text = re.sub(r"(?i)^The Program Educational Objectives include:?\s*",
+                      "", _get_section_text(full_text, spans, 11))
+    data["peos"] = [clean_text(p) for p in re.findall(
+        r"(PEO-\d+\s*:.*?)(?=PEO-\d+\s*:|\Z)", peo_text, re.DOTALL) if len(clean_text(p)) > 10]
+
+    po_text = _get_section_text(full_text, spans, 12)
+    data["pos"] = [clean_text(p) for p in re.findall(
+        r"(PO-\d+\s*:.*?)(?=PO-\d+\s*:|\Z)", po_text, re.DOTALL) if len(clean_text(p)) > 10]
+
+    pso_text = re.sub(r"(?i)^Upon completion of the program.*?:?\s*",
+                      "", _get_section_text(full_text, spans, 13))
+    data["psos"] = [clean_text(p) for p in re.findall(
+        r"(PSO-\d+\s*:.*?)(?=PSO-\d+\s*:|\Z)", pso_text, re.DOTALL) if len(clean_text(p)) > 10]
+
+    # --- Credit Def ---
+    l_m = re.search(
+        r"(?i)Lecture\s*\(L\)\s*per week\s*(\d+)\s*Credit", full_text)
+    t_m = re.search(
+        r"(?i)Tutorial\s*\(T\)\s*per week\s*(\d+)\s*Credit", full_text)
+    p_m = re.search(
+        r"(?i)Practical\s*\(P\)\s*per week\s*(\d+)\s*Credit", full_text)
+    if l_m:
+        data["credit_def"]["L"] = safe_int(l_m.group(1))
+    if t_m:
+        data["credit_def"]["T"] = safe_int(t_m.group(1))
+    if p_m:
+        data["credit_def"]["P"] = safe_int(p_m.group(1))
+
+    # --- Structure Table ---
+    st_m = re.search(
+        r"(?i)Program\s*-\s*Category\s+Credits(.*?)(?=Total\s+130|\n\d+\.\s*Courses and Credits|\Z)", full_text, re.DOTALL)
+    if st_m:
+        for line in [l.strip() for l in st_m.group(1).split("\n") if l.strip()]:
+            rm = re.match(
+                r"^(\d+)\s+(.*?)\s+(\d+)\s*(\([A-Z0-9]+\))?\s*$", line)
+            if rm:
+                data["structure_table"].append({"category": clean_text(rm.group(
+                    2)), "credits": safe_int(rm.group(3)), "code": (rm.group(4) or "").strip("()")})
+
+    # --- Semesters (2026 Line-Based Logic) ---
+    sem_matches = list(re.finditer(
+        r"(?im)^Semester[\s-]*([IVX\d]+)\s*$", full_text))
+    for idx, m in enumerate(sem_matches):
+        sem_no = roman_to_int(m.group(1))
+        if sem_no <= 0 or sem_no > 12:
+            continue
+
+        start = m.end()
+        end = sem_matches[idx + 1].start() if idx + \
+            1 < len(sem_matches) else len(full_text)
+        cutoff = re.search(
+            r"(?im)^\s*15\s+(?:List of )?Technical Competency Courses", full_text[start:end])
+        block_text = full_text[start:start +
+                               cutoff.start()] if cutoff else full_text[start:end]
+
+        lines = [l.strip() for l in block_text.split(
+            "\n") if l.strip() and not NOISE_LINE_RE.match(l)]
+        categories, current_cat = [], "Academic"
+        pending_group_courses, pending_group_active = [], False
+
+        def _get_cat(name):
+            for c in categories:
+                if c["categoryName"] == name:
+                    return c
+            c = {"categoryName": name, "totalCategoryCredits": 0, "courses": []}
+            categories.append(c)
+            return c
+
+        i, n = 0, len(lines)
+        while i < n:
+            line = lines[i]
+            low = line.lower()
+
+            if low in DIVIDER_LINES:
+                current_cat = {"academic": "Academic", "competency and skills": "Competency and Skills", "professional skills":
+                               "Professional Skills", "sports, culture and environment": "Sports, Culture and Environment"}.get(low, "Academic")
+                i += 1
+                continue
+
+            if re.match(r"(?i)^(total|overall)\s+\d", line):
+                i += 1
+                continue
+
+            el_head = re.match(
+                r"(?i)^(Professional|Open)\s+Elective[-\s]?(\d+)\s*$", line)
+            if el_head:
+                pending_group_courses, pending_group_active = [], True
+                i += 1
+                continue
+
+            bare_m = re.match(rf"^({CODE_TOKEN_RE.pattern})\s+(.+?)\s*$", line)
+            if pending_group_active and bare_m and not re.search(r"\d+\s*$", line.split()[-1]):
+                title = clean_text(bare_m.group(2))
+                if not re.match(r".*\s\d+$", title):
+                    pending_group_courses.append(
+                        (bare_m.group(1).upper(), title))
+                    i += 1
+                    continue
+
+            std_m = re.match(
+                rf"^(\d+)\s+({CODE_TOKEN_RE.pattern})\s+(.+?)\s+(\d+)\s*$", line)
+            if std_m:
+                code, title, credits = std_m.group(2).upper(), clean_text(
+                    std_m.group(3)), safe_int(std_m.group(4))
+                ctype = "Lab" if "lab" in title.lower(
+                ) else "Project" if "project" in title.lower() else "Theory"
+
+                if pending_group_active:
+                    pending_group_courses.append((code, title))
+                    cat = _get_cat(current_cat)
+                    for gc, gt in pending_group_courses:
+                        cat["courses"].append({"code": gc, "title": gt, "credits": credits, "type": _infer_course_type(
+                            gt), "category": "Professional Elective"})
+                    pending_group_active = False
+                else:
+                    _get_cat(current_cat)["courses"].append(
+                        {"code": code, "title": title, "credits": credits, "type": ctype, "category": current_cat})
+                i += 1
+                continue
+
+            no_title_m = re.match(
+                rf"^(\d+)\s+({CODE_TOKEN_RE.pattern})\s+(\d+)\s*$", line)
+            if no_title_m:
+                code, credits = no_title_m.group(
+                    2).upper(), safe_int(no_title_m.group(3))
+                title = ""
+                if i + 1 < n and (lines[i + 1].startswith("(") or not re.match(r"^\d", lines[i + 1])):
+                    title = clean_text(lines[i + 1].strip("()"))
+                    i += 1
+                _get_cat(current_cat)["courses"].append(
+                    {"code": code, "title": title or "Competitive Learning", "credits": credits, "type": _infer_course_type(title), "category": current_cat})
+                i += 1
+                continue
+
+            i += 1
+
+        for cat in categories:
+            cat["totalCategoryCredits"] = sum(
+                c.get("credits", 0) for c in cat["courses"])
+        if categories:
+            data["semesters"].append(
+                {"sem_no": sem_no, "courses": [], "categories": categories})
+
+    # --- Section 4 Institutional Text (2026 Specific) ---
+    s4 = data["section4"]
+    tc = _get_section_text(full_text, spans, 15)
+    if tc:
+        tlines = [l.strip() for l in tc.split("\n") if l.strip()
+                  and not re.match(r"(?i)^(course|s\.?no|note:)", l)]
+        tech_re = re.compile(r"\bCS\d{2}TSCS\d{2}\b", re.IGNORECASE)
+        i, n = 0, len(tlines)
+        while i < n:
+            l = tlines[i]
+            m1 = re.match(
+                rf"^(\d+)\s+({tech_re.pattern})\s+(.+?)\s+(\d+)\s+(\S+)\s*$", l)
+            if m1:
+                s4["technicalCompetencyCourses"].append({"code": m1.group(2).upper(), "title": clean_text(
+                    m1.group(3)), "credits": safe_int(m1.group(4)), "resource": clean_text(m1.group(5))})
+                i += 1
+                continue
+
+            m2 = re.match(rf"^({tech_re.pattern})\s+(.+?)\s+(\S+)\s*$", l)
+            if m2:
+                code, title, res, cr, desc = m2.group(1).upper(), clean_text(
+                    m2.group(2)), clean_text(m2.group(3)), 2, ""
+                if i+1 < n and re.match(r"^\d+\s+\d+\s*$", tlines[i+1]):
+                    cr = safe_int(tlines[i+1].split()[-1])
+                    i += 1
+                    if i+1 < n and not tech_re.search(tlines[i+1]):
+                        desc = clean_text(tlines[i+1])
+                        i += 1
+                s4["technicalCompetencyCourses"].append(
+                    {"code": code, "title": f"{title} - {desc}" if desc else title, "credits": cr, "resource": res})
+                i += 1
+                continue
+            i += 1
+
+    dl = _get_section_text(full_text, spans, 16)
+    if dl:
+        s4["programDeliveryAndAttainment"] = clean_text(dl)
+
+    s4["teachingLearningMethods"] = extract_numbered_or_bulleted_items(
+        _get_section_text(full_text, spans, 17))
+
+    att = _get_section_text(full_text, spans, 18)
+    if att:
+        s4["attendance"] = clean_text(att)
+
+    ag_txt = _get_section_text(full_text, spans, 19)
+    if ag_txt:
+        comps = re.findall(
+            r"^(.+?)\s*:\s*(\d+%)[^\n]*?(\d+%)\s*$", ag_txt, re.MULTILINE)
+        if comps:
+            s4["assessmentGrading"]["components"] = [
+                {"name": clean_text(n), "weightage": safe_int(t)} for n, _, t in comps]
+        d_m = re.search(
+            r"^(.*?)(?=Assessment Component\s+Weightage)", ag_txt, re.DOTALL)
+        if d_m:
+            s4["assessmentGrading"]["description"] = " ".join(
+                extract_numbered_or_bulleted_items(d_m.group(1)))
+        g_m = re.search(
+            r"(?i)(Based on total marks scored.*?)(?=A minimum of overall|\Z)", ag_txt, re.DOTALL)
+        if g_m:
+            s4["assessmentGrading"]["gradeRules"] = clean_text(g_m.group(1))
+        p_m = re.search(
+            r"(?i)(A minimum of overall.*?)(?=\d+\.\s|\Z)", ag_txt, re.DOTALL)
+        if p_m:
+            s4["assessmentGrading"]["passingCriteria"] = clean_text(
+                p_m.group(1))
+
+    aw = _get_section_text(full_text, spans, 20)
+    if aw:
+        s4["awardOfDegree"] = clean_text(aw)
+
+    s4["studentSupport"] = extract_numbered_or_bulleted_items(
+        _get_section_text(full_text, spans, 21))
+    s4["qualityControlMeasures"] = extract_numbered_or_bulleted_items(
+        _get_section_text(full_text, spans, 22))
+
+
+def _infer_course_type(title: str) -> str:
+    t = title.lower()
+    if "lab" in t or "practical" in t:
+        return "Lab"
+    if "project" in t or "internship" in t:
+        return "Project"
+    return "Theory"
+
+# ════════════════════════════════════════════════════════════════════════
+# § 4. ROUTER AND EXECUTION
+# ════════════════════════════════════════════════════════════════════════
+
+
+def detect_schema_version(file_path: str) -> str:
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            text = "".join([p.extract_text() or "" for p in pdf.pages[:5]])
+            if re.search(r'(?i)2026\s*Scheme', text) or re.search(r'UE26', text):
+                return "2026"
+            return "2024"
+    except Exception:
+        return "2024"
+
+
+def process_pdf(file_path: str, requested_schema: str = "auto") -> Dict[str, Any]:
+    data = create_blank_pd_data()
+    schema = requested_schema if requested_schema in [
+        "2024", "2026"] else detect_schema_version(file_path)
+
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            full_text = "\n".join([(p.extract_text() or "")
+                                  for p in pdf.pages])
+            if not full_text.strip():
+                return {"success": False, "error": "No text found in PDF (might be scanned)."}
+
+            if schema == "2026":
+                parse_2026(pdf, full_text, data)
+            else:
+                parse_2024(pdf, full_text, data)
+
+        # Standardize 8 Semesters minimum
+        while len(data["semesters"]) < 8:
+            data["semesters"].append(
+                {"sem_no": len(data["semesters"]) + 1, "courses": [], "categories": []})
+        data["semesters"].sort(key=lambda x: x["sem_no"])
+
+        # Basic Confidence & Validation logic
+        score = 100
+        warnings = []
+        if not data.get("peos"):
+            score -= 20
+            warnings.append("No PEOs detected.")
+        if not data["details"].get("program_name"):
+            warnings.append("Program Name missing.")
+
+        courses_count = sum(len(s.get("courses", [])) + sum(len(c.get("courses", []))
+                            for c in s.get("categories", [])) for s in data.get("semesters", []))
+        if courses_count < 10:
+            score -= 40
+            warnings.append("Very few or no courses detected.")
+
+        if schema == "2026" and not data["section4"]["technicalCompetencyCourses"]:
+            warnings.append("Technical Competency Courses not found.")
+
+        data["parserWarnings"] = warnings
+
+        return {
+            "success": True,
+            "schemaVersion": schema,
+            "confidence": max(0, score),
+            "warnings": warnings,
+            "data": data
+        }
+
+    except Exception as e:
+        import traceback
+        # Critical: Print stack trace to stderr so it doesn't break stdout JSON!
+        print(traceback.format_exc(), file=sys.stderr)
+        return {"success": False, "error": str(e)}
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "No file path provided"}))
+        print(json.dumps({"success": False, "error": "No file path provided"}))
         sys.exit(1)
 
-    file_path = sys.argv[1]
-    if not Path(file_path).exists():
-        print(json.dumps({"error": "File not found"}))
-        sys.exit(1)
+    pdf_path = sys.argv[1]
+    schema_arg = sys.argv[2] if len(sys.argv) > 2 else "auto"
 
-    result = parse_pdf_document(file_path)
-    # Ensure valid JSON
-    print(json.dumps(result, indent=2))
+    result = process_pdf(pdf_path, schema_arg)
+
+    # GUARANTEE ONLY JSON GOES TO STDOUT
+    print(json.dumps(result, ensure_ascii=False))

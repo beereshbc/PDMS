@@ -710,7 +710,7 @@ export const enhanceFieldWithAI = async (req, res) => {
         .json({ success: false, message: "Gemini API key is not configured." });
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
 
     const systemPrompt = `You are an expert academic curriculum assistant editing: "${fieldName}".
 User's Instructions: "${prompt}"
@@ -747,7 +747,7 @@ export const enhanceSectionWithAI = async (req, res) => {
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.5-flash",
       generationConfig: { responseMimeType: "application/json" },
     });
 
