@@ -178,13 +178,15 @@ export const searchCreaters = async (req, res) => {
 };
 
 export const uploadAndParsePD = async (req, res) => {
-  if (!req.file)
+  if (!req.file) {
     return res
       .status(400)
       .json({ success: false, message: "No file uploaded" });
+  }
 
   const filePath = req.file.path;
   let responseSent = false;
+
   const cleanupFile = () => {
     try {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -192,83 +194,105 @@ export const uploadAndParsePD = async (req, res) => {
   };
 
   try {
-    const scriptPath = path.join(__dirname, "..", "scripts", "pd_parser.py");
+    // Point strictly to the unified, polymorphic parser
+    const scriptPath = path.resolve(__dirname, "..", "scripts", "pd_parser.py");
     const pythonCommand =
       process.env.NODE_ENV === "production" ? "python3" : "python";
 
     if (!fs.existsSync(scriptPath)) {
       cleanupFile();
-      return res
-        .status(500)
-        .json({ success: false, message: "Parser script missing." });
+      return res.status(500).json({
+        success: false,
+        message: "Unified parser script missing at: " + scriptPath,
+      });
     }
 
-    const pythonProcess = spawn(pythonCommand, [scriptPath, filePath]);
-    let dataString = "",
-      errorString = "";
+    // Capture the explicit schema version sent from React!
+    const requestedSchema = req.body.schemaVersion || "auto";
 
+    // Pass the schema as sys.argv[2]
+    const pythonProcess = spawn(pythonCommand, [
+      scriptPath,
+      filePath,
+      requestedSchema,
+    ]);
+
+    let dataString = "";
+    let errorString = "";
+
+    // 2-Minute Timeout for complex 2026 table spatial layouts
     const timeoutId = setTimeout(() => {
       if (!responseSent) {
         pythonProcess.kill("SIGKILL");
         responseSent = true;
         cleanupFile();
-        res
+        return res
           .status(504)
-          .json({ success: false, message: "Parsing timed out (60s)." });
+          .json({ success: false, message: "Parsing timeout (120s)" });
       }
-    }, 60000);
+    }, 120000);
 
     pythonProcess.stdout.on("data", (data) => {
       dataString += data.toString();
     });
+
     pythonProcess.stderr.on("data", (data) => {
       errorString += data.toString();
-    });
-
-    pythonProcess.on("error", (error) => {
-      clearTimeout(timeoutId);
-      cleanupFile();
-      if (!responseSent) {
-        responseSent = true;
-        res
-          .status(500)
-          .json({ success: false, message: "Failed to start Python" });
-      }
+      // Print Python debug/errors to Node console, preventing JSON corruption
+      console.error(`[Python Parser]: ${data.toString().trim()}`);
     });
 
     pythonProcess.on("close", (code) => {
       clearTimeout(timeoutId);
       cleanupFile();
+
       if (responseSent) return;
       responseSent = true;
-      if (code !== 0)
+
+      if (code !== 0) {
         return res.status(500).json({
           success: false,
-          message: "Python script failed",
-          details: errorString,
+          message: "Python parser failed",
+          error: errorString,
         });
+      }
 
       try {
-        const jsonStartIndex = dataString.indexOf("{");
-        const jsonEndIndex = dataString.lastIndexOf("}") + 1;
-        if (jsonStartIndex === -1) throw new Error("No JSON found");
+        // Strictly extract JSON to prevent print() statement pollution
+        const start = dataString.indexOf("{");
+        const end = dataString.lastIndexOf("}") + 1;
 
-        const parsedData = JSON.parse(
-          dataString.slice(jsonStartIndex, jsonEndIndex),
-        );
-        return res.json({ success: true, parsedData });
-      } catch (e) {
-        return res
-          .status(500)
-          .json({ success: false, message: "Invalid parser output" });
+        if (start === -1) throw new Error("No JSON found in Python output");
+
+        const parsed = JSON.parse(dataString.substring(start, end));
+        console.log(parsed.data);
+
+        // Let React handle the unified payload mapping
+        return res.json({
+          success: true,
+          schemaVersion: parsed.schemaVersion,
+          confidence: parsed.confidence,
+          warnings: parsed.warnings,
+          parsedData: parsed.data,
+        });
+      } catch (err) {
+        console.error("Parse mapping error:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Invalid JSON returned from parser",
+          raw: dataString,
+        });
       }
     });
   } catch (error) {
     cleanupFile();
-    if (!responseSent)
-      res
-        .status(500)
-        .json({ success: false, message: "Unexpected Server Error" });
+    if (!responseSent) {
+      res.status(500).json({
+        success: false,
+        message: "Server error",
+        error: error.message,
+      });
+    }
   }
 };
 

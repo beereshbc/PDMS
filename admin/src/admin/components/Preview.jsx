@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -7,10 +7,193 @@ import {
   ZoomOut,
   RefreshCw,
   X,
+  List,
+  Search,
+  ChevronDown,
+  Download,
+  CheckCircle,
+  Copy,
 } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
 import parse from "html-react-parser";
 import { toast } from "react-hot-toast";
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   UTILITY HELPERS
+───────────────────────────────────────────────────────────────────────────── */
+
+const splitObjective = (html = "", defaultTitle = "") => {
+  if (!html) return { title: defaultTitle, description: "" };
+  const m = html.match(/<b>(.*?)<\/b>/);
+  const title = m ? m[1].trim() : defaultTitle;
+  const description = html
+    .replace(/<b>.*?<\/b>/, "")
+    .replace(/^<br\/?>/, "")
+    .trim();
+  return { title, description };
+};
+
+const sumCredits = (courses = []) =>
+  courses.reduce((acc, c) => acc + (parseFloat(c.credits) || 0), 0);
+
+const sumSemCredits = (sem, is2026) => {
+  if (is2026) {
+    return (sem.categories || []).reduce(
+      (acc, cat) => acc + sumCredits(cat.courses || []),
+      0,
+    );
+  }
+  return sumCredits(sem.courses || []);
+};
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   STYLES (Black & White Academic Theme for the Document)
+───────────────────────────────────────────────────────────────────────────── */
+
+const STYLES = `
+  :root {
+    --bg-shell: #0f172a;
+    --font-doc: 'Times New Roman', Times, Georgia, serif;
+    --font-ui: 'Segoe UI', system-ui, sans-serif;
+    --bar-h: 54px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  /* ── Shell & UI ──────────────────────────────────────────────── */
+  .pd-shell { background: var(--bg-shell); min-height: 100vh; padding-top: var(--bar-h); display: flex; flex-direction: column; align-items: center; padding-bottom: 100px; }
+  .preview-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.98); z-index: 9999; overflow-y: auto; padding-top: var(--bar-h); padding-bottom: 80px; }
+
+  .pd-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 10000; height: var(--bar-h); background: #0b1120; border-bottom: 1px solid #1e293b; display: flex; align-items: center; padding: 0 16px; gap: 10px; font-family: var(--font-ui); }
+  .pd-bar-l { display: flex; align-items: center; gap: 8px; flex: 1; }
+  .pd-bar-c { display: flex; align-items: center; gap: 6px; }
+  .pd-bar-r { display: flex; align-items: center; gap: 6px; flex: 1; justify-content: flex-end; }
+
+  .pd-btn { display: flex; align-items: center; gap: 5px; background: none; border: none; cursor: pointer; color: #94a3b8; font-size: 12px; font-weight: 500; padding: 6px 10px; border-radius: 5px; transition: 0.2s; }
+  .pd-btn:hover { background: #1e293b; color: #f8fafc; }
+  .pd-btn.active { color: #fff; background: #334155; }
+
+  .pd-search-wrap { display: flex; align-items: center; background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 4px 10px; gap: 6px; }
+  .pd-search-wrap input { background: none; border: none; outline: none; color: #f8fafc; font-size: 11.5px; width: 160px; font-family: var(--font-ui); }
+  .pd-search-wrap input::placeholder { color: #64748b; }
+
+  .pd-action { display: flex; align-items: center; gap: 6px; background: #ffffff; color: #000; border: none; cursor: pointer; padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; transition: 0.2s; font-family: var(--font-ui); }
+  .pd-action:hover { background: #f1f5f9; }
+
+  /* Dropdown */
+  .pd-dropdown-wrap { position: relative; }
+  .pd-dropdown { position: absolute; top: calc(100% + 8px); right: 0; z-index: 10100; background: #0b1120; border: 1px solid #1e293b; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); min-width: 200px; overflow: hidden; }
+  .pd-dropdown-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; cursor: pointer; border: none; background: none; width: 100%; text-align: left; color: #e2e8f0; transition: 0.15s; }
+  .pd-dropdown-item:hover { background: #1e293b; }
+  .pd-dropdown-item-label { font-size: 12px; font-weight: 600; font-family: var(--font-ui); }
+  .pd-dropdown-item-sub { font-size: 10px; color: #64748b; font-family: var(--font-ui); }
+
+  /* TOC Sidebar */
+  .pd-toc-panel { position: fixed; top: var(--bar-h); right: 0; bottom: 0; z-index: 9998; width: 280px; background: #0b1120; border-left: 1px solid #1e293b; overflow-y: auto; padding: 20px 0; transform: translateX(100%); transition: transform 0.3s ease; }
+  .pd-toc-panel.open { transform: translateX(0); box-shadow: -8px 0 32px rgba(0,0,0,0.5); }
+  .pd-toc-title { font-size: 11px; font-weight: 700; color: #fff; text-transform: uppercase; padding: 0 20px 12px; border-bottom: 1px solid #1e293b; margin-bottom: 10px; font-family: var(--font-ui); display: flex; align-items: center; gap: 6px; }
+  .pd-toc-item { display: flex; align-items: center; gap: 8px; padding: 7px 20px; cursor: pointer; font-size: 12px; color: #94a3b8; transition: 0.15s; border: none; background: none; width: 100%; text-align: left; font-family: var(--font-ui); }
+  .pd-toc-item:hover { color: #fff; background: #1e293b; }
+  .pd-toc-item.sub { padding-left: 36px; font-size: 11px; color: #64748b; }
+  .pd-toc-num { font-size: 10px; font-weight: 700; color: #fff; min-width: 24px; }
+
+  /* Progress Bar */
+  .pd-progress { position: fixed; top: var(--bar-h); left: 0; right: 0; height: 3px; z-index: 10001; background: #1e293b; }
+  .pd-progress-bar { height: 100%; background: #ffffff; transition: width 0.1s linear; }
+
+  /* Scaler */
+  .pd-scaler { transform-origin: top center; transition: transform 0.15s ease; display: flex; justify-content: center; padding: 40px 20px; width: 100%; }
+
+  /* ── A4 BLACK & WHITE DOCUMENT ───────────────────────────────── */
+  .pd-doc {
+    width: 210mm; min-height: 297mm; background: #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.1), 0 10px 40px rgba(0,0,0,0.3);
+    padding: 20mm 20mm 25mm 20mm; box-sizing: border-box;
+    font-family: var(--font-doc); font-size: 11pt; line-height: 1.6; color: #000;
+  }
+
+  /* Cover Page */
+  .pd-cover { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; min-height: 250mm; page-break-after: always; border: 3px double #000; padding: 20mm;}
+  .pd-cover-uni { font-size: 26pt; font-weight: bold; color: #000; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px; }
+  .pd-cover-type { font-size: 14pt; font-weight: bold; text-transform: uppercase; color: #000; margin-top: 20px; letter-spacing: 2px;}
+  .pd-cover-scheme { font-size: 12pt; text-transform: uppercase; color: #333; margin-top: 5px; }
+  .pd-cover-program { font-size: 22pt; font-weight: bold; color: #000; text-transform: uppercase; margin: 40px 0; padding: 20px 0; border-top: 1px solid #000; border-bottom: 1px solid #000; }
+  .pd-cover-school { margin-top: auto; font-size: 12pt; font-weight: bold; color: #000; text-transform: uppercase; }
+
+  /* Typography & Sections */
+  .pd-int-hdr { text-align: center; border-bottom: 2px solid #000; padding-bottom: 15px; margin-bottom: 25px; }
+  .pd-int-hdr-prog { font-size: 16pt; font-weight: bold; text-transform: uppercase; color: #000; }
+  
+  .pd-sec-major { font-size: 12pt; font-weight: bold; background: #000; color: #fff; padding: 6px 12px; margin: 30px 0 15px; text-transform: uppercase; -webkit-print-color-adjust: exact; print-color-adjust: exact; page-break-after: avoid; }
+  .pd-sec-minor { font-size: 11pt; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 4px; margin: 20px 0 10px; color: #000; page-break-after: avoid; }
+
+  /* Tables */
+  .pd-doc table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10.5pt; }
+  .pd-doc th { background: #e0e0e0 !important; color: #000 !important; font-weight: bold; text-align: center; padding: 6px 10px; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pd-doc td { border: 1px solid #000; padding: 6px 10px; vertical-align: top; color: #000; }
+  .pd-doc tfoot td { background: #f5f5f5 !important; font-weight: bold; text-align: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Helpers */
+  .w-serial { width: 50px; text-align: center; } .w-code { width: 120px; font-weight: bold; } .w-cr { width: 60px; text-align: center; }
+  .w-label { width: 250px; font-weight: bold; background: #f9f9f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pd-tc { text-align: center; } .pd-tj { text-align: justify; } .pd-fb { font-weight: bold; }
+
+  /* Rich Text */
+  .pd-rich p { margin: 0 0 8px; text-align: justify; }
+  .pd-rich ul, .pd-rich ol { margin: 4px 0 10px 0; padding-left: 24px; }
+  .pd-rich li { margin-bottom: 4px; text-align: justify; }
+  .pd-rich table th { background: #e0e0e0 !important; border: 1px solid #000 !important; }
+  .pd-rich table td { border: 1px solid #000 !important; }
+
+  .pd-credit-box { border: 1px solid #000; background: #f9f9f9; padding: 10px 15px; margin-bottom: 15px; font-weight: bold; text-align: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pd-sem-hdr { font-size: 11pt; font-weight: bold; text-align: left; margin: 25px 0 10px; border-bottom: 1px solid #ccc; padding-bottom: 4px; text-transform: uppercase; }
+  .pd-cat-hdr { font-size: 10.5pt; font-weight: bold; text-align: left; margin: 15px 0 8px; color: #333; }
+
+  .pd-sig { display: flex; justify-content: space-between; margin-top: 60px; }
+  .pd-sig-box { width: 40%; text-align: center; border-top: 1px solid #000; padding-top: 8px; font-weight: bold; }
+
+  .pd-page-break { page-break-after: always; }
+  .pd-mb-2 { margin-bottom: 8px; }
+
+  /* ── Print Overrides ─────────────────────────────────────────── */
+  @media print {
+    body * { visibility: hidden !important; }
+    .print-area, .print-area * { visibility: visible !important; }
+    .print-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; }
+    .no-print { display: none !important; }
+    .pd-scaler { transform: none !important; padding: 0 !important; margin: 0 !important; }
+    .pd-shell, .preview-overlay { background: transparent !important; padding: 0 !important; }
+    .pd-doc { box-shadow: none !important; width: 100% !important; margin: 0 !important; padding: 0 !important; border: none !important; }
+    @page { size: A4 portrait; margin: 15mm; }
+  }
+`;
+
+const SecMajor = ({ children, id }) => (
+  <div id={id} className="pd-sec-major">
+    {children}
+  </div>
+);
+const SecMinor = ({ children, id }) => (
+  <div id={id} className="pd-sec-minor">
+    {children}
+  </div>
+);
+
+const ObjBlock = ({ html, prefix, idx }) => {
+  const { title, description } = splitObjective(html, `${prefix}-${idx + 1}`);
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontWeight: "bold", marginBottom: 2 }}>
+        {prefix}-{idx + 1}: {title}
+      </div>
+      {description && <div className="pd-rich">{parse(description)}</div>}
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MAIN
+───────────────────────────────────────────────────────────────────────────── */
 
 const Preview = ({
   isModal = false,
@@ -23,8 +206,8 @@ const Preview = ({
   const params = useParams();
   const { axios, createrToken } = useAppContext();
 
-  const componentRef = useRef(null);
-  const scalingWrapperRef = useRef(null);
+  const docRef = useRef(null);
+  const shellRef = useRef(null);
 
   const [data, setData] = useState(
     passedPdData && passedMetaData
@@ -36,6 +219,11 @@ const Preview = ({
 
   const [loading, setLoading] = useState(!data && !!params.id);
   const [zoom, setZoom] = useState(1.0);
+  const [tocOpen, setTocOpen] = useState(false);
+  const [ddOpen, setDdOpen] = useState(false);
+  const [searchQ, setSearchQ] = useState("");
+  const [progress, setProgress] = useState(0);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (isModal) {
@@ -47,13 +235,6 @@ const Preview = ({
   }, [isModal]);
 
   useEffect(() => {
-    if (passedPdData && passedMetaData) {
-      setData({ pdData: passedPdData, metaData: passedMetaData });
-      setLoading(false);
-    }
-  }, [passedPdData, passedMetaData]);
-
-  useEffect(() => {
     const loadDocument = async () => {
       if (data) return;
       if (!params.id) {
@@ -61,39 +242,68 @@ const Preview = ({
         navigate("/creator/history");
         return;
       }
-
       try {
         const res = await axios.get(`/api/creater/pd/fetch/${params.id}`, {
           headers: { createrToken },
         });
         if (res.data.success) {
           const pd = res.data.pd;
-          // Unified 2024 / 2026 data mapping directly from `pd.pd_data`
-          const pdData = pd.pd_data || {};
+
+          // Map MongoDB schema to the common pdData expected by UI
+          // Handle both 2024 (flat courses) and 2026 (nested categories + polymorphic section4)
+          const pData = pd.pd_data || {};
 
           setData({
             metaData: {
               programName: pd.program_name,
               programCode: pd.program_id,
-              schemeYear: pd.scheme_year,
+              schemaVersion: pd.scheme_year || "2024",
+              schemeYear: pd.scheme_year || "2024",
               versionNo: pd.version_no,
               effectiveAy: pd.effective_ay,
             },
-            pdData: pdData,
+            pdData: {
+              details: {
+                university: pData.details?.university || "GM UNIVERSITY",
+                faculty: pData.details?.faculty || "",
+                school: pData.details?.school || "",
+                department: pData.details?.department || "",
+                program_name: pData.details?.program_name || pd.program_name,
+                director: pData.details?.director || "",
+                hod: pData.details?.hod || "",
+              },
+              award: pData.award || {},
+              overview: pData.overview || "",
+              peos: pData.peos || [],
+              pos: pData.pos || [],
+              psos: pData.psos || [],
+              credit_def: pData.credit_def || { L: 0, T: 0, P: 0 },
+              structure_table: pData.structure_table || [],
+              semesters: (pData.semesters || []).map((s) => ({
+                sem_no: s.sem_no,
+                courses: s.courses || [],
+                categories: s.categories || [],
+              })),
+              section4: pData.section4 || {
+                professionalElectives: pData.prof_electives || [],
+                openElectives: pData.open_electives || [],
+              },
+              // Fallbacks for older 2024 structure directly on root
+              prof_electives: pData.prof_electives || [],
+              open_electives: pData.open_electives || [],
+            },
           });
         } else {
-          toast.error(res.data.message || "Failed to load document");
+          toast.error(res.data.message || "Failed to load");
           navigate("/creator/history");
         }
-      } catch (error) {
-        console.error("Fetch error:", error);
+      } catch {
         toast.error("Error loading document");
         navigate("/creator/history");
       } finally {
         setLoading(false);
       }
     };
-
     if (!isModal && !data && params.id) loadDocument();
     else if (!isModal && !data && !params.id && !location.state)
       navigate("/creator/history");
@@ -102,802 +312,802 @@ const Preview = ({
 
   useEffect(() => {
     if (!loading && data && location.state?.autoPrint) {
-      const timer = setTimeout(() => {
-        window.print();
-      }, 800);
-      return () => clearTimeout(timer);
+      const t = setTimeout(() => window.print(), 800);
+      return () => clearTimeout(t);
     }
   }, [loading, data, location.state?.autoPrint]);
 
-  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.1, 2.0));
-  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.1, 0.5));
+  useEffect(() => {
+    const el = shellRef.current;
+    if (!el) return;
+    const handler = () => {
+      setProgress(
+        el.scrollHeight > el.clientHeight
+          ? (el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100
+          : 0,
+      );
+    };
+    el.addEventListener("scroll", handler);
+    return () => el.removeEventListener("scroll", handler);
+  }, []);
 
-  const splitObjective = (htmlString, defaultTitle = "") => {
-    if (!htmlString) return { title: defaultTitle, description: "" };
-    const titleMatch = htmlString.match(/<b>(.*?)<\/b>/);
-    const title = titleMatch ? titleMatch[1].trim() : defaultTitle;
-    let description = htmlString
-      .replace(/<b>.*?<\/b>/, "")
-      .replace(/^<br\/?>/, "")
-      .trim();
-    return { title, description };
-  };
-
-  const generateFilename = () => {
-    if (!data) return "Program_Document.pdf";
-    const program = data.pdData?.details?.program_name || "Program";
-    const sanitizedProgram = program
-      .replace(/[^\w\s-]/g, "")
-      .replace(/\s+/g, "_")
-      .trim();
-    const branch =
-      data.pdData?.details?.department || data.metaData?.programCode || "CSE";
-    const sanitizedBranch = branch
-      .replace(/[^\w\s-]/g, "")
-      .replace(/\s+/g, "_")
-      .trim();
-    const version = data.metaData?.versionNo?.replace(/\./g, "_") || "1_0_0";
-    const now = new Date();
-    const date = now.toISOString().slice(0, 10);
-    const time = `${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}-${String(now.getSeconds()).padStart(2, "0")}`;
-    return `${sanitizedProgram}_${sanitizedBranch}_v${version}_${date}_${time}.pdf`;
-  };
-
-  const handlePrint = async () => {
-    const filename = generateFilename();
-    alert("File Name Copied...Please Paste while Saving..");
-    try {
-      await navigator.clipboard.writeText(filename);
-      toast.success(`📋 Copied file name: ${filename}`);
-    } catch (err) {
-      console.error("Clipboard error:", err);
+  const handleSearch = (e) => {
+    if (e.key === "Enter" && searchQ) {
+      window.find(searchQ, false, false, true, false, true, false);
     }
-    window.print();
   };
+
+  const scrollTo = (id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setTocOpen(false);
+    }
+  };
+
+  const generateFilename = useCallback(() => {
+    if (!data) return "Program_Document.pdf";
+    const { pdData, metaData } = data;
+    const prog = (pdData.details?.program_name || "Program")
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, "_")
+      .trim();
+    const ver = (metaData.versionNo || "1_0_0").replace(/\./g, "_");
+    return `PD_${prog}_v${ver}.pdf`;
+  }, [data]);
+
+  const handleDownloadPDF = useCallback(() => {
+    const filename = generateFilename();
+    document.title = filename;
+    toast.success("Ready! Select 'Save as PDF' in the print dialog.", {
+      duration: 4000,
+    });
+    setTimeout(() => {
+      window.print();
+      document.title = "PDMS Creator";
+    }, 500);
+    setDdOpen(false);
+  }, [generateFilename]);
+
+  const handleCopyFilename = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(generateFilename());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+      toast.success("Filename copied!");
+    } catch {
+      toast.error("Could not copy");
+    }
+    setDdOpen(false);
+  }, [generateFilename]);
 
   if (loading)
     return (
-      <div className="flex justify-center items-center h-screen bg-gray-100">
-        <RefreshCw className="animate-spin text-gray-500" size={40} />
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          background: "#0f172a",
+        }}
+      >
+        <RefreshCw
+          style={{ animation: "spin 1s linear infinite", color: "#fff" }}
+          size={40}
+        />
       </div>
     );
-  if (!data || !data.pdData) return null;
+  if (!data) return null;
 
   const { pdData, metaData } = data;
-  const sumCredits = (courses) =>
-    (courses || []).reduce((acc, c) => acc + (parseFloat(c.credits) || 0), 0);
+  const is2026 = metaData.schemaVersion === "2026";
+  const sec4 = pdData.section4 || {};
 
-  // Safe Fallbacks
-  const details = pdData.details || {};
-  const award = pdData.award || {};
-  const structureTable = pdData.structure_table || [];
-  const semesters = pdData.semesters || [];
-  const section4 = pdData.section4 || {};
+  // Build Dynamic TOC
+  const TOC_SECTIONS = [
+    { id: "cover", num: "—", label: "Cover Page" },
+    { id: "prog-details", num: "—", label: "Program & Award Details" },
+    { id: "sec-14", num: "14", label: "Program Overview" },
+    { id: "sec-15", num: "15", label: "Program Educational Objectives" },
+    { id: "sec-16", num: "16", label: "Program Outcomes" },
+    { id: "sec-17", num: "17", label: "Program Specific Outcomes" },
+    { id: "sec-18", num: "18", label: "Programme Structure" },
+    { id: "sec-19", num: "19", label: "Credit Definitions" },
+    { id: "sec-20", num: "20", label: "Semester-wise Courses" },
+  ];
 
-  // Fallbacks for arrays to ensure mapping works regardless of schema structure
-  const profElectives =
-    pdData.prof_electives || section4.professionalElectives || [];
-  const openElectives = pdData.open_electives || section4.openElectives || [];
-
-  const generatedTimestamp = new Date().toLocaleString("en-IN", {
-    dateStyle: "long",
-    timeStyle: "short",
-  });
-
-  const styles = `
-    .preview-overlay { position: fixed; inset: 0; background-color: rgba(82, 86, 89, 0.98); z-index: 9999; overflow-y: auto; padding-top: 60px; padding-bottom: 60px; }
-    .pd-preview-wrapper { background-color: #525659; padding: 40px 0; min-height: 100vh; overflow: auto; display: flex; justify-content: center; font-family: Arial, Helvetica, sans-serif; }
-    .scaling-wrapper { transform-origin: top center; transition: transform 0.15s ease; will-change: transform; width: 100%; display: flex; justify-content: center; }
-    .doc-container { width: 210mm; min-height: 297mm; padding: 20mm; background-color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.3); box-sizing: border-box; color: #000; font-size: 10.5pt; line-height: 1.5; margin: 0 auto; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; page-break-inside: auto; border: 1px solid #000; }
-    thead { display: table-header-group; } tfoot { display: table-footer-group; }
-    tr { page-break-inside: avoid; page-break-after: auto; }
-    th, td { border: 1px solid #000; padding: 6px 8px; text-align: left; vertical-align: top; }
-    th { background-color: #f0f0f0; font-weight: bold; text-align: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    td { background-color: white; }
-    .text-center { text-align: center; } .text-right { text-align: right; } .text-justify { text-align: justify; }
-    .font-bold { font-weight: bold; } .italic { font-style: italic; } .uppercase { text-transform: uppercase; }
-    .mb-2 { margin-bottom: 0.5rem; } .mb-4 { margin-bottom: 1rem; }
-    .w-40px { width: 40px; text-align: center; } .w-100px { width: 100px; } .w-200px { width: 200px; font-weight: bold; } .w-300px { width: 300px; font-weight: bold; }
-    .cover-page { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; height: 257mm; page-break-after: always; }
-    .uni-name { font-size: 36pt; font-weight: bold; color: #000; margin-bottom: 40px; text-transform: uppercase; }
-    .doc-type-title { font-size: 22pt; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; }
-    .scheme-title { font-size: 20pt; font-weight: bold; margin-bottom: 10px; text-transform: uppercase; }
-    .sem-range { font-size: 16pt; margin-bottom: 60px; text-transform: uppercase; }
-    .program-title { font-size: 24pt; font-weight: bold; line-height: 1.4; margin-top: 40px; text-transform: uppercase; }
-    h1.internal-header { font-size: 18pt; font-weight: bold; text-align: center; text-transform: uppercase; margin: 20px 0 10px; }
-    h2.section-header { font-size: 14pt; font-weight: bold; text-align: center; margin: 30px 0 15px; text-transform: uppercase; }
-    h3.sem-header { font-size: 12pt; font-weight: bold; text-align: center; margin: 15px 0 10px; text-transform: uppercase; }
-    h4.cat-header { font-size: 10.5pt; font-weight: bold; margin: 10px 0; color: #333; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
-    .page-break { page-break-after: always; display: block; height: 0; }
-    @media print {
-        body * { visibility: hidden !important; } .print-area, .print-area * { visibility: visible !important; }
-        .print-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; }
-        .no-print { display: none !important; } .scaling-wrapper { transform: none !important; margin: 0 !important; }
-        .doc-container { box-shadow: none; margin: 0; width: 100%; padding: 10mm; } @page { size: A4; margin: 15mm; }
-    }
-  `;
+  if (is2026) {
+    TOC_SECTIONS.push(
+      { id: "sec-21", num: "21", label: "Technical Competency Courses" },
+      { id: "sec-22", num: "22", label: "Program Delivery & Attainment" },
+      { id: "sec-23", num: "23", label: "Teaching & Learning Methods" },
+      { id: "sec-24", num: "24", label: "Attendance Policy" },
+      { id: "sec-25", num: "25", label: "Assessment & Grading" },
+      { id: "sec-26", num: "26", label: "Award of Degree" },
+      { id: "sec-27", num: "27", label: "Student Support" },
+      { id: "sec-28", num: "28", label: "Quality Control Measures" },
+      { id: "sec-29", num: "29", label: "Additional Notes" },
+    );
+  } else {
+    TOC_SECTIONS.push(
+      { id: "sec-21", num: "21", label: "Professional Electives", sub: true },
+      { id: "sec-22", num: "22", label: "Open Electives", sub: true },
+    );
+  }
 
   return (
-    <div className={isModal ? "preview-overlay" : "pd-preview-wrapper"}>
-      <style>{styles}</style>
-      <div className="no-print fixed top-0 left-0 right-0 bg-white border-b shadow-sm p-2 flex justify-between items-center z-[10000] px-4 h-14">
-        <button
-          onClick={isModal ? onClose : () => navigate(-1)}
-          className="flex items-center gap-2 text-gray-700 hover:text-black font-medium"
-        >
-          {isModal ? <X size={18} /> : <ArrowLeft size={18} />}{" "}
-          {isModal ? "Close Preview" : "Back"}
-        </button>
-        <div className="flex items-center gap-2 bg-gray-100 rounded px-2 py-1">
+    <div ref={shellRef} className={isModal ? "preview-overlay" : "pd-shell"}>
+      <style>{STYLES}</style>
+      <div className="pd-progress no-print">
+        <div className="pd-progress-bar" style={{ width: `${progress}%` }} />
+      </div>
+
+      {/* ── TOOLBAR ─────────────────────────────────────────────────── */}
+      <div className="pd-bar no-print">
+        <div className="pd-bar-l">
           <button
-            onClick={handleZoomOut}
-            className="p-1 hover:bg-gray-200 rounded"
+            className="pd-btn"
+            onClick={isModal ? onClose : () => navigate(-1)}
           >
-            <ZoomOut size={16} />
+            {isModal ? <X size={14} /> : <ArrowLeft size={14} />}{" "}
+            {isModal ? "Close" : "Back"}
           </button>
-          <span className="text-xs font-semibold w-10 text-center">
-            {Math.round(zoom * 100)}%
-          </span>
+          <div className="pd-search-wrap">
+            <Search size={12} style={{ color: "#64748b" }} />
+            <input
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+              onKeyDown={handleSearch}
+              placeholder="Search (Press Enter)…"
+            />
+          </div>
           <button
-            onClick={handleZoomIn}
-            className="p-1 hover:bg-gray-200 rounded"
+            className={`pd-btn ${tocOpen ? "active" : ""}`}
+            onClick={() => setTocOpen((o) => !o)}
           >
-            <ZoomIn size={16} />
+            <List size={14} /> TOC
           </button>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handlePrint}
-            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+        <div className="pd-bar-c">
+          <div
+            className="pd-search-wrap"
+            style={{
+              background: "none",
+              border: "none",
+              fontSize: "12px",
+              color: "#94a3b8",
+            }}
           >
-            <Printer size={16} /> Print
+            {Math.round(zoom * 100)}%
+          </div>
+          <button
+            className="pd-btn"
+            onClick={() => setZoom((z) => Math.max(z - 0.1, 0.5))}
+          >
+            <ZoomOut size={14} />
           </button>
+          <button
+            className="pd-btn"
+            onClick={() => setZoom((z) => Math.min(z + 0.1, 2.0))}
+          >
+            <ZoomIn size={14} />
+          </button>
+        </div>
+        <div className="pd-bar-r">
+          <div className="pd-dropdown-wrap">
+            <button className="pd-action" onClick={() => setDdOpen((o) => !o)}>
+              <Download size={14} /> Export <ChevronDown size={11} />
+            </button>
+            {ddOpen && (
+              <div className="pd-dropdown">
+                <div
+                  className="pd-dropdown-header"
+                  style={{
+                    padding: "8px 14px",
+                    fontSize: "10px",
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    borderBottom: "1px solid #1e293b",
+                  }}
+                >
+                  Export Options
+                </div>
+                <button
+                  className="pd-dropdown-item"
+                  onClick={handleDownloadPDF}
+                >
+                  <Printer size={15} />
+                  <div>
+                    <div className="pd-dropdown-item-label">Save as PDF</div>
+                    <div className="pd-dropdown-item-sub">
+                      Opens print dialog
+                    </div>
+                  </div>
+                </button>
+                <button
+                  className="pd-dropdown-item"
+                  onClick={handleCopyFilename}
+                >
+                  {copied ? (
+                    <CheckCircle size={15} style={{ color: "#4ade80" }} />
+                  ) : (
+                    <Copy size={15} />
+                  )}
+                  <div>
+                    <div className="pd-dropdown-item-label">
+                      {copied ? "Copied!" : "Copy Filename"}
+                    </div>
+                    <div className="pd-dropdown-item-sub">
+                      Paste when saving
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
+      {/* TOC Panel */}
+      <div className={`pd-toc-panel no-print ${tocOpen ? "open" : ""}`}>
+        <div className="pd-toc-title">
+          <List size={12} /> Table of Contents
+        </div>
+        {TOC_SECTIONS.map((s, i) => (
+          <button
+            key={i}
+            onClick={() => scrollTo(s.id)}
+            className={`pd-toc-item ${s.sub ? "sub" : ""}`}
+          >
+            <span className="pd-toc-num">{s.num}</span>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── PRINT AREA ──────────────────────────────────────────────── */}
       <div className="print-area">
         <div
-          ref={scalingWrapperRef}
-          className="scaling-wrapper"
+          className="pd-scaler"
           style={{
             transform: `scale(${zoom})`,
-            marginTop: isModal ? "20px" : "60px",
+            marginTop: isModal ? "20px" : "0",
           }}
         >
-          <div ref={componentRef} className="doc-container">
-            {/* COVER PAGE */}
-            <div className="cover-page">
-              <div className="uni-name">
-                {details.university || "GM UNIVERSITY"}
+          <div ref={docRef} className="pd-doc">
+            {/* ── COVER ─────────────────────────────────────────── */}
+            <div id="cover" className="pd-cover">
+              <div className="pd-cover-uni">
+                {pdData.details?.university || "GM UNIVERSITY"}
               </div>
-              <div className="doc-type-title">PROGRAM DOCUMENT</div>
-              <div className="scheme-title">{metaData.schemeYear} SCHEME</div>
-              <div className="sem-range">I - VIII SEMESTER</div>
-              <div className="program-title">
-                {award.title?.toUpperCase() ||
+              <div className="pd-cover-type">Program Document</div>
+              <div className="pd-cover-scheme">
+                {metaData.schemeYear} Scheme
+              </div>
+              <div className="pd-cover-program">
+                {pdData.award?.title?.toUpperCase() ||
                   metaData.programName?.toUpperCase() ||
                   "PROGRAM NAME"}
               </div>
-              <div
-                style={{
-                  marginTop: "80px",
-                  fontSize: "14pt",
-                  fontWeight: "bold",
-                }}
-              >
-                {details.school}
+              <div className="pd-cover-school">
+                {pdData.details?.school}
                 <br />
-                {details.faculty}
+                {pdData.details?.faculty}
               </div>
             </div>
 
-            <h1 className="internal-header">
-              {details.program_name || metaData.programName}
-            </h1>
-            <div
-              className="text-center font-bold mb-4"
-              style={{ fontSize: "11pt" }}
-            >
-              Version: {metaData.versionNo}{" "}
-              {metaData.effectiveAy &&
-                `| Effective Academic Year: ${metaData.effectiveAy}`}
+            <div id="prog-details" className="pd-int-hdr">
+              <div className="pd-int-hdr-prog">
+                {pdData.details?.program_name || metaData.programName}
+              </div>
+              <div className="pd-int-hdr-meta">
+                Version: {metaData.versionNo}{" "}
+                {metaData.effectiveAy &&
+                  ` · Effective A.Y: ${metaData.effectiveAy}`}
+              </div>
             </div>
 
-            {/* DETAILS TABLE */}
-            <table>
-              <tbody>
-                <tr>
-                  <td className="w-200px">Faculty</td>
-                  <td>{details.faculty}</td>
-                </tr>
-                <tr>
-                  <td className="w-200px">School</td>
-                  <td>{details.school}</td>
-                </tr>
-                <tr>
-                  <td className="w-200px">Department</td>
-                  <td>{details.department}</td>
-                </tr>
-                <tr>
-                  <td className="w-200px">Program</td>
-                  <td>{details.program_name}</td>
-                </tr>
-                <tr>
-                  <td className="w-200px">Director of School</td>
-                  <td>{details.director}</td>
-                </tr>
-                <tr>
-                  <td className="w-200px">Head of Department</td>
-                  <td>{details.hod}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            {/* AWARD DETAILS TABLE */}
+            <SecMajor>Program Details</SecMajor>
             <table>
               <tbody>
                 {[
-                  { id: "1.", label: "Title of the Award", val: award.title },
-                  { id: "2.", label: "Modes of Study", val: award.mode },
+                  ["Faculty", pdData.details?.faculty],
+                  ["School", pdData.details?.school],
+                  ["Department", pdData.details?.department],
+                  ["Program", pdData.details?.program_name],
+                  ["Director of School", pdData.details?.director],
+                  ["Head of Department", pdData.details?.hod],
+                ].map(([lbl, val]) => (
+                  <tr key={lbl}>
+                    <td className="w-label">{lbl}</td>
+                    <td>{val || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <SecMajor>Award Details</SecMajor>
+            <table>
+              <tbody>
+                {[
+                  {
+                    id: "1.",
+                    label: "Title of the Award",
+                    val: pdData.award?.title,
+                  },
+                  {
+                    id: "2.",
+                    label: "Modes of Study",
+                    val: pdData.award?.mode,
+                  },
                   {
                     id: "3.",
-                    label: "Awarding Institution / Body",
-                    val: award.awarding_body,
+                    label: "Awarding Institution",
+                    val: pdData.award?.awarding_body,
                   },
-                  { id: "4.", label: "Joint Award", val: award.joint_award },
+                  {
+                    id: "4.",
+                    label: "Joint Award",
+                    val: pdData.award?.joint_award,
+                  },
                   {
                     id: "5.",
                     label: "Teaching Institution",
-                    val: award.teaching_institution,
+                    val: pdData.award?.teaching_institution,
                   },
                   {
                     id: "6.",
-                    label: "Date of Program Specifications",
-                    val: award.date_program_specs,
+                    label: "Date of Program Specs",
+                    val: pdData.award?.date_program_specs,
                   },
                   {
                     id: "7.",
                     label: "Date of Course Approval",
-                    val: award.date_approval,
+                    val: pdData.award?.date_approval,
                   },
                   {
                     id: "8.",
                     label: "Next Review Date",
-                    val: award.next_review,
+                    val: pdData.award?.next_review,
                   },
                   {
                     id: "9.",
                     label: "Program Approving Body",
-                    val: award.approving_body,
+                    val: pdData.award?.approving_body,
                   },
                   {
                     id: "10.",
                     label: "Program Accredited Body",
-                    val: award.accredited_body,
+                    val: pdData.award?.accredited_body,
                   },
                   {
                     id: "11.",
                     label: "Grade Awarded",
-                    val: award.accreditation_grade,
+                    val: pdData.award?.accreditation_grade,
                   },
                   {
                     id: "12.",
                     label: "Accreditation Validity",
-                    val: award.accreditation_validity,
+                    val: pdData.award?.accreditation_validity,
                   },
                   {
                     id: "13.",
                     label: "Program Benchmark",
-                    val: award.benchmark,
+                    val: pdData.award?.benchmark,
                   },
                 ].map((row) => (
                   <tr key={row.id}>
-                    <td className="w-40px font-bold">{row.id}</td>
-                    <td className="w-300px">{row.label}</td>
+                    <td className="w-serial">{row.id}</td>
+                    <td className="w-label">{row.label}</td>
                     <td>{row.val || "—"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            {/* 14. PROGRAM OVERVIEW */}
-            <table>
-              <tbody>
-                <tr>
-                  <td className="w-40px font-bold">14.</td>
-                  <td>
-                    <div className="font-bold mb-2">PROGRAM OVERVIEW</div>
-                    <div className="text-justify">
-                      {parse(pdData.overview || "")}
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <SecMajor id="sec-14">14. Program Overview</SecMajor>
+            <div className="pd-rich pd-tj">
+              {parse(pdData.overview || "<p>Not provided.</p>")}
+            </div>
 
-            {/* 15. PEOs */}
-            <table>
-              <tbody>
-                <tr>
-                  <td className="w-40px font-bold">15.</td>
-                  <td>
-                    <div className="font-bold mb-2">
-                      PROGRAM EDUCATIONAL OBJECTIVES (PEOs)
-                    </div>
-                    {(pdData.peos || []).map((peo, i) => {
-                      if (!peo) return null;
-                      const { title, description } = splitObjective(
-                        peo,
-                        `PEO-${i + 1}`,
-                      );
-                      return (
-                        <div key={i} style={{ marginBottom: "12px" }}>
-                          <div
-                            className="font-bold"
-                            style={{ marginBottom: "2px" }}
-                          >
-                            PEO-{i + 1}: {title}
-                          </div>
-                          <div>{parse(description)}</div>
-                        </div>
-                      );
-                    })}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <SecMajor id="sec-15">
+              15. Program Educational Objectives (PEOs)
+            </SecMajor>
+            {pdData.peos?.map(
+              (peo, i) =>
+                peo && <ObjBlock key={i} html={peo} prefix="PEO" idx={i} />,
+            )}
 
-            {/* 16. POs */}
-            <table>
-              <tbody>
-                <tr>
-                  <td className="w-40px font-bold">16.</td>
-                  <td>
-                    <div className="font-bold mb-2">PROGRAM OUTCOMES (POs)</div>
-                    {(pdData.pos || []).map((po, i) => {
-                      if (!po) return null;
-                      const { title, description } = splitObjective(
-                        po,
-                        `PO-${i + 1}`,
-                      );
-                      return (
-                        <div key={i} style={{ marginBottom: "12px" }}>
-                          <div
-                            className="font-bold"
-                            style={{ marginBottom: "2px" }}
-                          >
-                            PO-{i + 1}: {title}
-                          </div>
-                          <div>{parse(description)}</div>
-                        </div>
-                      );
-                    })}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <SecMajor id="sec-16">16. Program Outcomes (POs)</SecMajor>
+            {pdData.pos?.map(
+              (po, i) =>
+                po && <ObjBlock key={i} html={po} prefix="PO" idx={i} />,
+            )}
 
-            {/* 17. PSOs */}
-            <table>
-              <tbody>
-                <tr>
-                  <td className="w-40px font-bold">17.</td>
-                  <td>
-                    <div className="font-bold mb-2">
-                      PROGRAM SPECIFIC OUTCOMES (PSOs)
-                    </div>
-                    <p className="italic mb-2">
-                      Upon successful completion of the program, graduates will
-                      possess the capability to:
-                    </p>
-                    {(pdData.psos || []).map((pso, i) => {
-                      if (!pso) return null;
-                      const { title, description } = splitObjective(
-                        pso,
-                        `PSO-${i + 1}`,
-                      );
-                      return (
-                        <div key={i} style={{ marginBottom: "12px" }}>
-                          <div
-                            className="font-bold"
-                            style={{ marginBottom: "2px" }}
-                          >
-                            PSO-{i + 1}: {title}
-                          </div>
-                          <div>{parse(description)}</div>
-                        </div>
-                      );
-                    })}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <SecMajor id="sec-17">
+              17. Program Specific Outcomes (PSOs)
+            </SecMajor>
+            {pdData.psos?.map(
+              (pso, i) =>
+                pso && <ObjBlock key={i} html={pso} prefix="PSO" idx={i} />,
+            )}
 
-            {/* 18. PROGRAMME STRUCTURE */}
+            <SecMajor id="sec-18">18. Programme Structure</SecMajor>
+            <div className="pd-credit-box">
+              1 Hr. Lecture (L) per week = {pdData.credit_def?.L ?? 0} Credit
+              &nbsp;|&nbsp; 2 Hr. Tutorial (T) per week ={" "}
+              {pdData.credit_def?.T ?? 0} Credit &nbsp;|&nbsp; 2 Hr. Practical
+              (P) per week = {pdData.credit_def?.P ?? 0} Credit
+            </div>
             <table>
-              <tbody>
+              <thead>
                 <tr>
-                  <td className="w-40px font-bold">18.</td>
+                  <th>Category</th>
+                  <th className="w-cr">Credits</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(pdData.structure_table || []).map((row, i) => (
+                  <tr key={i}>
+                    <td>{row.category || "—"}</td>
+                    <td className="pd-tc pd-fb">{row.credits ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td
+                    className="pd-tr w-label"
+                    style={{ paddingRight: 14, textAlign: "right" }}
+                  >
+                    Total Credits
+                  </td>
                   <td>
-                    <div className="font-bold mb-2">PROGRAMME STRUCTURE</div>
-                    <div
-                      className="mb-4 p-2 border"
-                      style={{
-                        border: "1px solid black",
-                        backgroundColor: "#fafafa",
-                      }}
-                    >
-                      <span className="font-bold">Definition of Credit:</span>
-                      <br />1 Hr. Lecture (L) per week :{" "}
-                      {pdData.credit_def?.L || 1} Credit |&nbsp; 2 Hr. Tutorial
-                      (T) per week : {pdData.credit_def?.T || 1} Credit |&nbsp;
-                      2 Hr. Practical (P) per week : {pdData.credit_def?.P || 1}{" "}
-                      Credit
-                    </div>
-                    {structureTable.length > 0 && (
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Category Name</th>
-                            <th className="text-center">Credits</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {structureTable.map((row, i) => (
-                            <tr key={i}>
-                              <td>{row.category || "—"}</td>
-                              <td className="text-center">
-                                {row.credits ?? 0}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr
-                            style={{
-                              backgroundColor: "#f0f0f0",
-                              fontWeight: "bold",
-                            }}
-                          >
-                            <td
-                              className="text-right"
-                              style={{ paddingRight: "15px" }}
-                            >
-                              Total Credits:
-                            </td>
-                            <td className="text-center">
-                              {structureTable.reduce(
-                                (acc, r) => acc + (parseFloat(r.credits) || 0),
-                                0,
-                              )}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
+                    {(pdData.structure_table || []).reduce(
+                      (a, r) => a + (parseFloat(r.credits) || 0),
+                      0,
                     )}
                   </td>
                 </tr>
+              </tfoot>
+            </table>
+
+            <SecMajor id="sec-19">19. Credit Definitions (L-T-P)</SecMajor>
+            <table style={{ width: "55%", margin: "0 auto" }}>
+              <thead>
+                <tr>
+                  <th>Component</th>
+                  <th>Credits per Hour</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ["Lecture (L)", pdData.credit_def?.L ?? 0],
+                  ["Tutorial (T)", pdData.credit_def?.T ?? 0],
+                  ["Practical (P)", pdData.credit_def?.P ?? 0],
+                ].map(([lbl, val]) => (
+                  <tr key={lbl}>
+                    <td className="pd-tc">{lbl}</td>
+                    <td className="pd-tc pd-fb">{val}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
 
-            <div className="page-break"></div>
+            <div className="pd-page-break" />
 
-            {/* 20. SEMESTER-WISE COURSES (Handles both 2024 Array and 2026 Categories) */}
-            <h2 className="section-header">20. SEMESTER-WISE COURSES</h2>
-            {semesters.map((sem) => {
-              const hasCategories = sem.categories && sem.categories.length > 0;
-              const hasCourses = sem.courses && sem.courses.length > 0;
+            <SecMajor id="sec-20">20. Semester-wise Courses</SecMajor>
+            {(pdData.semesters || []).map((sem) => {
+              const hasCourses = is2026
+                ? sem.categories?.some((cat) => cat.courses?.length > 0)
+                : sem.courses?.length > 0;
 
-              if (!hasCategories && !hasCourses) return null;
+              if (!hasCourses) return null;
 
               return (
                 <div
                   key={sem.sem_no}
-                  style={{ marginBottom: "25px", pageBreakInside: "auto" }}
+                  style={{ marginBottom: 28, pageBreakInside: "avoid" }}
                 >
-                  <h3 className="sem-header">Semester {sem.sem_no}</h3>
+                  <div className="pd-sem-hdr">Semester {sem.sem_no}</div>
 
-                  {/* Handle 2026 Nested Categories */}
-                  {hasCategories ? (
-                    sem.categories.map(
-                      (cat, catIdx) =>
-                        cat.courses &&
-                        cat.courses.length > 0 && (
-                          <div key={catIdx}>
-                            <h4 className="cat-header">{cat.categoryName}</h4>
-                            <table>
-                              <thead>
-                                <tr>
-                                  <th className="w-40px">S.No</th>
-                                  <th className="w-100px">Code</th>
-                                  <th>Course Title</th>
-                                  <th className="w-40px">Cr</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {cat.courses.map((c, i) => (
-                                  <tr key={i}>
-                                    <td className="text-center">{i + 1}</td>
-                                    <td>{c.code || "—"}</td>
-                                    <td>{c.title || "—"}</td>
-                                    <td className="text-center">
-                                      {c.credits ?? 0}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                              <tfoot>
-                                <tr
-                                  style={{
-                                    backgroundColor: "#f0f0f0",
-                                    fontWeight: "bold",
-                                  }}
-                                >
-                                  <td
-                                    colSpan="3"
-                                    className="text-right"
-                                    style={{ paddingRight: "15px" }}
-                                  >
-                                    Category Total:
-                                  </td>
-                                  <td className="text-center">
-                                    {sumCredits(cat.courses)}
+                  {is2026 ? (
+                    /* ── 2026 CATEGORIZED SEMESTER TABLE ── */
+                    sem.categories.map((cat, idx) => {
+                      if (!cat.courses || cat.courses.length === 0) return null;
+                      return (
+                        <div key={idx} style={{ marginBottom: 15 }}>
+                          <div className="pd-cat-hdr">{cat.categoryName}</div>
+                          <table>
+                            <thead>
+                              <tr>
+                                <th className="w-serial">S.No</th>
+                                <th className="w-code">Course Code</th>
+                                <th>Course Title</th>
+                                <th className="w-cr">Credits</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {cat.courses.map((c, i) => (
+                                <tr key={i}>
+                                  <td className="pd-tc">{i + 1}</td>
+                                  <td className="w-code">{c.code || "—"}</td>
+                                  <td>{c.title || "—"}</td>
+                                  <td className="pd-tc pd-fb">
+                                    {c.credits ?? 0}
                                   </td>
                                 </tr>
-                              </tfoot>
-                            </table>
-                          </div>
-                        ),
-                    )
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })
                   ) : (
-                    // Handle 2024 Flat Courses
+                    /* ── 2024 FLAT SEMESTER TABLE ── */
                     <table>
                       <thead>
                         <tr>
-                          <th className="w-40px">S.No</th>
-                          <th className="w-100px">Code</th>
+                          <th className="w-serial">S.No</th>
+                          <th className="w-code">Course Code</th>
                           <th>Course Title</th>
-                          <th className="w-40px">Cr</th>
+                          <th className="w-cr">Credits</th>
                         </tr>
                       </thead>
                       <tbody>
                         {sem.courses.map((c, i) => (
                           <tr key={i}>
-                            <td className="text-center">{i + 1}</td>
-                            <td>{c.code || "—"}</td>
+                            <td className="pd-tc">{i + 1}</td>
+                            <td className="w-code">{c.code || "—"}</td>
                             <td>{c.title || "—"}</td>
-                            <td className="text-center">{c.credits ?? 0}</td>
+                            <td className="pd-tc pd-fb">{c.credits ?? 0}</td>
                           </tr>
                         ))}
                       </tbody>
-                      <tfoot>
-                        <tr
-                          style={{
-                            backgroundColor: "#f0f0f0",
-                            fontWeight: "bold",
-                          }}
-                        >
-                          <td
-                            colSpan="3"
-                            className="text-right"
-                            style={{ paddingRight: "15px" }}
-                          >
-                            Total:
-                          </td>
-                          <td className="text-center">
-                            {sumCredits(sem.courses)}
-                          </td>
-                        </tr>
-                      </tfoot>
                     </table>
                   )}
+
+                  {/* Semester Total */}
+                  <table style={{ marginTop: is2026 ? -10 : 0 }}>
+                    <tfoot>
+                      <tr>
+                        <td
+                          className="w-label"
+                          style={{ paddingRight: 14, textAlign: "right" }}
+                        >
+                          Semester Total
+                        </td>
+                        <td className="w-cr pd-tc pd-fb">
+                          {sumSemCredits(sem, is2026)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
               );
             })}
 
-            <div className="page-break"></div>
+            <div className="pd-page-break" />
 
-            {/* PROFESSIONAL ELECTIVES */}
-            {profElectives.length > 0 && (
+            {/* ── CONDITIONAL SECTION 21+ RENDERING based on Schema Version ── */}
+            {is2026 ? (
               <>
-                <h2 className="section-header">PROFESSIONAL ELECTIVES</h2>
-                {profElectives.map((group, i) => (
-                  <div
-                    key={i}
-                    style={{ marginBottom: "25px", pageBreakInside: "avoid" }}
-                  >
-                    <div
-                      style={{
-                        fontWeight: "bold",
-                        marginBottom: "8px",
-                        fontSize: "11pt",
-                      }}
-                    >
-                      {group.title || `Professional Electives`} (Semester{" "}
-                      {group.sem || group.semester || "—"})
-                    </div>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th className="w-40px">#</th>
-                          <th className="w-100px">Code</th>
-                          <th>Title</th>
-                          <th className="w-40px">Cr</th>
+                <SecMajor id="sec-21">
+                  21. Technical Competency Courses
+                </SecMajor>
+                {sec4.technicalCompetencyCourses?.length > 0 ? (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th className="w-serial">#</th>
+                        <th className="w-code">Code</th>
+                        <th>Title</th>
+                        <th className="w-cr">Credits</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sec4.technicalCompetencyCourses.map((c, i) => (
+                        <tr key={i}>
+                          <td className="pd-tc">{i + 1}</td>
+                          <td className="w-code">{c.code || "—"}</td>
+                          <td>{c.title || "—"}</td>
+                          <td className="pd-tc pd-fb">{c.credits ?? 0}</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {(group.courses || []).map((c, idx) => (
-                          <tr key={idx}>
-                            <td className="text-center">{idx + 1}</td>
-                            <td>{c.code || "—"}</td>
-                            <td>{c.title || "—"}</td>
-                            <td className="text-center">{c.credits ?? 0}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
-              </>
-            )}
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p>No technical competency courses specified.</p>
+                )}
 
-            {/* OPEN ELECTIVES */}
-            {openElectives.length > 0 && (
-              <>
-                <h2 className="section-header">OPEN ELECTIVES</h2>
-                {openElectives.map((group, i) => (
-                  <div
-                    key={i}
-                    style={{ marginBottom: "25px", pageBreakInside: "avoid" }}
-                  >
-                    <div
-                      style={{
-                        fontWeight: "bold",
-                        marginBottom: "8px",
-                        fontSize: "11pt",
-                      }}
-                    >
-                      {group.title || `Open Electives`} (Semester{" "}
-                      {group.sem || group.semester || "—"})
-                    </div>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th className="w-40px">#</th>
-                          <th className="w-100px">Code</th>
-                          <th>Title</th>
-                          <th className="w-40px">Cr</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(group.courses || []).map((c, idx) => (
-                          <tr key={idx}>
-                            <td className="text-center">{idx + 1}</td>
-                            <td>{c.code || "—"}</td>
-                            <td>{c.title || "—"}</td>
-                            <td className="text-center">{c.credits ?? 0}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
-              </>
-            )}
+                <SecMajor id="sec-22">
+                  22. Program Delivery & Attainment
+                </SecMajor>
+                <div className="pd-rich pd-tj">
+                  {parse(
+                    sec4.programDeliveryAndAttainment || "<p>Not provided.</p>",
+                  )}
+                </div>
 
-            {/* 2026: SECTION 4 INSTITUTIONAL TEXT EXTENSIONS */}
-            {section4 && Object.keys(section4).length > 0 && (
-              <>
-                {section4.technicalCompetencyCourses &&
-                  section4.technicalCompetencyCourses.length > 0 && (
-                    <div
-                      style={{ marginBottom: "25px", pageBreakInside: "avoid" }}
-                    >
-                      <h2 className="section-header">
-                        TECHNICAL COMPETENCY COURSES
-                      </h2>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th className="w-100px">Code</th>
-                            <th>Title</th>
-                            <th>Resource Platform</th>
-                            <th className="w-40px">Cr</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {section4.technicalCompetencyCourses.map((c, idx) => (
-                            <tr key={idx}>
-                              <td>{c.code}</td>
-                              <td>{c.title}</td>
-                              <td>{c.resource || "—"}</td>
-                              <td className="text-center">{c.credits}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                <SecMajor id="sec-23">23. Teaching & Learning Methods</SecMajor>
+                <div className="pd-rich">
+                  <ul>
+                    {sec4.teachingLearningMethods?.map(
+                      (m, i) => m && <li key={i}>{parse(m)}</li>,
+                    )}
+                  </ul>
+                  {(!sec4.teachingLearningMethods ||
+                    sec4.teachingLearningMethods.filter(Boolean).length ===
+                      0) && <p>Not provided.</p>}
+                </div>
+
+                <SecMajor id="sec-24">24. Attendance Policy</SecMajor>
+                <div className="pd-rich pd-tj">
+                  {parse(sec4.attendance || "<p>Not provided.</p>")}
+                </div>
+
+                <SecMajor id="sec-25">25. Assessment & Grading</SecMajor>
+                <div className="pd-rich pd-tj">
+                  {parse(
+                    sec4.assessmentGrading?.description ||
+                      "<p>Not provided.</p>",
                   )}
 
-                {section4.assessmentGrading &&
-                  section4.assessmentGrading.components &&
-                  section4.assessmentGrading.components.length > 0 && (
-                    <div
-                      style={{ marginBottom: "25px", pageBreakInside: "avoid" }}
-                    >
-                      <h2 className="section-header">ASSESSMENT AND GRADING</h2>
-                      <p>
-                        {parse(section4.assessmentGrading.description || "")}
-                      </p>
+                  {sec4.assessmentGrading?.gradeRules && (
+                    <>
+                      <div className="pd-sec-minor">Grading Rules</div>
+                      {parse(sec4.assessmentGrading.gradeRules)}
+                    </>
+                  )}
+                  {sec4.assessmentGrading?.passingCriteria && (
+                    <>
+                      <div className="pd-sec-minor">Passing Criteria</div>
+                      {parse(sec4.assessmentGrading.passingCriteria)}
+                    </>
+                  )}
+                </div>
 
-                      <table
-                        style={{
-                          marginTop: "15px",
-                          width: "70%",
-                          margin: "15px auto",
-                        }}
+                <SecMajor id="sec-26">26. Award of Degree</SecMajor>
+                <div className="pd-rich pd-tj">
+                  {parse(sec4.awardOfDegree || "<p>Not provided.</p>")}
+                </div>
+
+                <div className="pd-page-break" />
+
+                <SecMajor id="sec-27">
+                  27. Student Support for Learning
+                </SecMajor>
+                <div className="pd-rich">
+                  <ul>
+                    {sec4.studentSupport?.map(
+                      (m, i) => m && <li key={i}>{parse(m)}</li>,
+                    )}
+                  </ul>
+                  {(!sec4.studentSupport ||
+                    sec4.studentSupport.filter(Boolean).length === 0) && (
+                    <p>Not provided.</p>
+                  )}
+                </div>
+
+                <SecMajor id="sec-28">28. Quality Control Measures</SecMajor>
+                <div className="pd-rich">
+                  <ul>
+                    {sec4.qualityControlMeasures?.map(
+                      (m, i) => m && <li key={i}>{parse(m)}</li>,
+                    )}
+                  </ul>
+                  {(!sec4.qualityControlMeasures ||
+                    sec4.qualityControlMeasures.filter(Boolean).length ===
+                      0) && <p>Not provided.</p>}
+                </div>
+
+                {sec4.notes && (
+                  <>
+                    <SecMajor id="sec-29">29. Additional Notes</SecMajor>
+                    <div className="pd-rich pd-tj">{parse(sec4.notes)}</div>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                {/* ── 2024 Legacy Electives ── */}
+                {/* Fallback to checking root arrays if section4 is missing on older docs */}
+                {(sec4.professionalElectives?.length > 0 ||
+                  pdData.prof_electives?.length > 0) && (
+                  <div id="sec-21">
+                    <SecMajor>21. Professional Electives</SecMajor>
+                    {(sec4.professionalElectives?.length
+                      ? sec4.professionalElectives
+                      : pdData.prof_electives
+                    ).map((group, i) => (
+                      <div
+                        key={i}
+                        style={{ marginBottom: 24, pageBreakInside: "avoid" }}
                       >
-                        <thead>
-                          <tr>
-                            <th>Assessment Component</th>
-                            <th className="w-100px">Weightage</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {section4.assessmentGrading.components.map(
-                            (c, idx) => (
+                        <SecMinor>
+                          {group.title} — Sem {group.semester || group.sem}
+                        </SecMinor>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th className="w-serial">#</th>
+                              <th className="w-code">Code</th>
+                              <th>Title</th>
+                              <th className="w-cr">Credits</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.courses.map((c, idx) => (
                               <tr key={idx}>
-                                <td>{c.name}</td>
-                                <td className="text-center">{c.weightage}</td>
+                                <td className="pd-tc">{idx + 1}</td>
+                                <td className="w-code">{c.code || "—"}</td>
+                                <td>{c.title || "—"}</td>
+                                <td className="pd-tc pd-fb">
+                                  {c.credits ?? 0}
+                                </td>
                               </tr>
-                            ),
-                          )}
-                        </tbody>
-                      </table>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-                      {section4.assessmentGrading.gradeRules && (
-                        <div className="mt-4">
-                          <h4 className="font-bold">Grading Rules:</h4>
-                          <p>{parse(section4.assessmentGrading.gradeRules)}</p>
-                        </div>
-                      )}
-                      {section4.assessmentGrading.passingCriteria && (
-                        <div className="mt-2">
-                          <h4 className="font-bold">Passing Criteria:</h4>
-                          <p>
-                            {parse(section4.assessmentGrading.passingCriteria)}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                {section4.awardOfDegree && (
-                  <div style={{ marginBottom: "25px" }}>
-                    <h2 className="section-header">AWARD OF DEGREE</h2>
-                    <p className="text-justify">
-                      {parse(section4.awardOfDegree)}
-                    </p>
+                {(sec4.openElectives?.length > 0 ||
+                  pdData.open_electives?.length > 0) && (
+                  <div id="sec-22">
+                    <SecMajor>22. Open Electives</SecMajor>
+                    {(sec4.openElectives?.length
+                      ? sec4.openElectives
+                      : pdData.open_electives
+                    ).map((group, i) => (
+                      <div
+                        key={i}
+                        style={{ marginBottom: 24, pageBreakInside: "avoid" }}
+                      >
+                        <SecMinor>
+                          {group.title} — Sem {group.semester || group.sem}
+                        </SecMinor>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th className="w-serial">#</th>
+                              <th className="w-code">Code</th>
+                              <th>Title</th>
+                              <th className="w-cr">Credits</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.courses.map((c, idx) => (
+                              <tr key={idx}>
+                                <td className="pd-tc">{idx + 1}</td>
+                                <td className="w-code">{c.code || "—"}</td>
+                                <td>{c.title || "—"}</td>
+                                <td className="pd-tc pd-fb">
+                                  {c.credits ?? 0}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
                   </div>
                 )}
               </>
             )}
 
-            {/* FOOTER */}
-            <div
-              style={{
-                marginTop: "50px",
-                textAlign: "center",
-                fontSize: "8pt",
-                color: "#666",
-                borderTop: "1px solid #ccc",
-                paddingTop: "10px",
-              }}
-            >
-              {details.program_name || metaData.programName} • Version{" "}
-              {metaData.versionNo} • Generated on: {generatedTimestamp}
+            <div className="pd-sig">
+              <div className="pd-sig-box">
+                <div className="pd-sig-line">Director of School</div>
+              </div>
+              <div className="pd-sig-box">
+                <div className="pd-sig-line">Head of Department</div>
+              </div>
             </div>
+            {/* End of Print Area */}
           </div>
         </div>
       </div>
