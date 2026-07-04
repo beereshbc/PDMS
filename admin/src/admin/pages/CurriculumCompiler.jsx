@@ -9,6 +9,7 @@ import {
   Loader2,
   BarChart3,
   ChevronRight,
+  Eye,
 } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
 import { toast } from "react-hot-toast";
@@ -42,6 +43,7 @@ const CurriculumCompiler = () => {
   const [loadingList, setLoadingList] = useState(true);
   const [checking, setChecking] = useState(false);
   const [compiling, setCompiling] = useState(false);
+  const [downloading, setDownloading] = useState(false); // NEW: separate state for download
 
   const [searchTerm, setSearch] = useState("");
 
@@ -71,7 +73,7 @@ const CurriculumCompiler = () => {
     setSelectedPd(pd);
     setReadiness(null);
     setChecking(true);
-    setCompiledBookData(null); // Reset print data when changing programs
+    setCompiledBookData(null);
     try {
       const { data } = await axios.get(
         `/api/admin/compiler/readiness/${pd._id}`,
@@ -89,8 +91,8 @@ const CurriculumCompiler = () => {
     }
   };
 
-  // ── COMPILE & PRINT WORKFLOW ──
-  const handleCompileAndPrint = async () => {
+  // ── PREVIEW (Print) WORKFLOW ──
+  const handlePreview = async () => {
     if (pct < 100) return toast.error("Curriculum is not 100% complete!");
 
     setCompiling(true);
@@ -119,6 +121,53 @@ const CurriculumCompiler = () => {
       console.error(err);
       toast.error("Failed to compile curriculum book.", { id: toastId });
       setCompiling(false);
+    }
+  };
+
+  // ── NEW: DOWNLOAD CURRICULUM BOOK (Merged with Cover PDF) ──
+  const handleDownload = async () => {
+    if (pct < 100) {
+      return toast.error("Curriculum is not 100% complete!");
+    }
+
+    setDownloading(true);
+    const toastId = toast.loading("Generating Curriculum Book...");
+
+    try {
+      const response = await axios.get(
+        `/api/admin/compiler/download/${selectedPd._id}`,
+        {
+          headers: { Authorization: `Bearer ${adminToken}` },
+          responseType: "blob", // Important: treat as binary file
+        }
+      );
+
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute(
+        "download",
+        `${selectedPd.program_id}_Curriculum_Book.pdf`
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast.success("Curriculum Book downloaded successfully!", {
+        id: toastId,
+      });
+    } catch (error) {
+      console.error("Download error:", error);
+      // Check if it's a known error (cover not found)
+      const message =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to generate curriculum book.";
+      toast.error(message, { id: toastId });
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -373,7 +422,7 @@ const CurriculumCompiler = () => {
                   ))}
                 </div>
 
-                {/* Fixed Bottom Compile Bar */}
+                {/* Fixed Bottom Action Bar with TWO buttons */}
                 <div className="p-5 bg-white border-t border-stone-200 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] flex flex-col sm:flex-row items-center justify-between gap-4 flex-shrink-0">
                   <div className="flex items-center gap-2.5 text-stone-600 text-sm bg-stone-50 px-4 py-2 rounded-xl border border-stone-100">
                     <FileText size={16} className="text-amber-600" />
@@ -381,26 +430,47 @@ const CurriculumCompiler = () => {
                     <strong>{readiness.totalApproved} CDs</strong>.
                   </div>
 
-                  <button
-                    onClick={handleCompileAndPrint}
-                    disabled={pct < 100 || compiling}
-                    className={`flex items-center justify-center gap-2 px-8 py-3 rounded-xl font-bold transition-all text-sm w-full sm:w-auto ${
-                      pct === 100
-                        ? "bg-amber-800 text-white hover:bg-amber-900 shadow-xl shadow-amber-900/20 active:scale-95"
-                        : "bg-stone-100 text-stone-400 border border-stone-200 cursor-not-allowed"
-                    }`}
-                  >
-                    {compiling ? (
-                      <Loader2 size={16} className="animate-spin" />
-                    ) : (
-                      <Download size={16} />
-                    )}
-                    {compiling
-                      ? "Compiling..."
-                      : pct === 100
-                        ? "Compile & Download PDF"
-                        : `${readiness.totalRequired - readiness.totalApproved} Courses Missing`}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* PREVIEW BUTTON (existing print flow) */}
+                    <button
+                      onClick={handlePreview}
+                      disabled={pct < 100 || compiling}
+                      className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all text-sm w-full sm:w-auto ${
+                        pct === 100
+                          ? "bg-stone-700 text-white hover:bg-stone-800 shadow-lg active:scale-95"
+                          : "bg-stone-100 text-stone-400 border border-stone-200 cursor-not-allowed"
+                      }`}
+                    >
+                      {compiling ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Eye size={16} />
+                      )}
+                      {compiling ? "Compiling..." : "Preview"}
+                    </button>
+
+                    {/* NEW DOWNLOAD BUTTON (merged with cover) */}
+                    <button
+                      onClick={handleDownload}
+                      disabled={pct < 100 || downloading}
+                      className={`flex items-center justify-center gap-2 px-8 py-3 rounded-xl font-bold transition-all text-sm w-full sm:w-auto ${
+                        pct === 100
+                          ? "bg-amber-800 text-white hover:bg-amber-900 shadow-xl shadow-amber-900/20 active:scale-95"
+                          : "bg-stone-100 text-stone-400 border border-stone-200 cursor-not-allowed"
+                      }`}
+                    >
+                      {downloading ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Download size={16} />
+                      )}
+                      {downloading
+                        ? "Generating..."
+                        : pct === 100
+                          ? "Download Curriculum Book"
+                          : `${readiness.totalRequired - readiness.totalApproved} Courses Missing`}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

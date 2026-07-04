@@ -1,3 +1,4 @@
+// backend/controllers/adminController.js
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import Admin from "../models/Admin.js";
@@ -5,6 +6,17 @@ import Creater from "../models/Creater.js";
 import ProgramDocument from "../models/pd/ProgramDocument.js";
 import CourseDocument from "../models/cd/CourseDocument.js";
 import PD from "../models/pd/PD.js";
+
+// ─── PDF GENERATION IMPORTS ───────────────────────────────────────────────
+import { generateCurriculumHTML } from "../utils/curriculumHtmlGenerator.js";
+import { generateCurriculumPDF } from "../services/pdfGenerator.js";
+import { mergeWithCover, getCoverPDF } from "../utils/pdfMerger.js";
+import { PDFDocument } from "pdf-lib";
+import { decoratePDF } from "../utils/headerFooter.js";
+
+
+
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER: Resolve the admin's jurisdiction into a list of Creater ObjectIds.
@@ -863,5 +875,147 @@ export const getAllPDsForAdmin = async (req, res) => {
   } catch (error) {
     console.error("getAllPDsForAdmin:", error);
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. DOWNLOAD CURRICULUM BOOK (NEW) - Merges Cover PDF + Generated PDF
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * DOWNLOAD CURRICULUM BOOK
+ * Generates the full curriculum PDF (HTML → PDF), merges with the static
+ * cover PDF, and sends the final merged PDF as a download.
+ *
+ * Endpoint: GET /api/admin/compiler/download/:programId
+ * Auth: Admin only (authAdmin middleware)
+ */
+// backend/controllers/adminController.js
+// backend/controllers/adminController.js
+// ─── ADD THIS IMPORT ───────────────────────────────────────────────────────
+export const downloadCurriculumBook = async (req, res) => {
+  try {
+    const { programId } = req.params;
+    const adminId = req.admin._id;
+
+    // ── 1. Fetch Program Document ──────────────────────────────────────────
+    const pd = await PD.findOne({
+      _id: programId,
+      approved_by: adminId,
+    }).populate("created_by", "name email");
+
+    if (!pd) {
+      return res.status(404).json({
+        success: false,
+        message: "Program Document not found or unauthorized.",
+      });
+    }
+
+    // ── 2. Extract course codes ──────────────────────────────────────────
+    const courseCodes = [];
+    const pdData = pd.pd_data || {};
+
+    pdData.semesters?.forEach((sem) => {
+      sem.courses?.forEach((c) => courseCodes.push(c.code));
+      sem.categories?.forEach((cat) =>
+        cat.courses?.forEach((c) => courseCodes.push(c.code))
+      );
+    });
+    pdData.prof_electives?.forEach((grp) =>
+      grp.courses?.forEach((c) => courseCodes.push(c.code))
+    );
+    pdData.open_electives?.forEach((grp) =>
+      grp.courses?.forEach((c) => courseCodes.push(c.code))
+    );
+    pdData.section4?.professionalElectives?.forEach((grp) =>
+      grp.courses?.forEach((c) => courseCodes.push(c.code))
+    );
+    pdData.section4?.openElectives?.forEach((grp) =>
+      grp.courses?.forEach((c) => courseCodes.push(c.code))
+    );
+    pdData.section4?.technicalCompetencyCourses?.forEach((c) =>
+      courseCodes.push(c.code)
+    );
+
+    const uniqueCourseCodes = [...new Set(courseCodes)];
+
+    // ── 3. Fetch all APPROVED Course Documents ─────────────────────────────
+    const cds = await CourseDocument.find({
+      courseCode: { $in: uniqueCourseCodes },
+      status: "Approved",
+    })
+      .populate("section1_identity")
+      .populate("section2_outcomes")
+      .populate("section3_syllabus")
+      .populate("section4_resources");
+
+    // ── 4. Format the data ──────────────────────────────────────────────────
+    const formattedCDs = cds.map((cd) => buildFormattedCD(cd));
+    formattedCDs.sort(
+      (a, b) =>
+        uniqueCourseCodes.indexOf(a.courseCode) -
+        uniqueCourseCodes.indexOf(b.courseCode)
+    );
+
+    const bookData = {
+      programData: {
+        program_id: pd.program_id,
+        program_name: pd.program_name,
+        scheme_year: pd.scheme_year,
+        version_no: pd.version_no,
+        effective_ay: pd.effective_ay,
+        total_credits: pd.total_credits,
+        pd_data: pd.pd_data,
+      },
+      courses: formattedCDs,
+    };
+
+    // ── 5. Generate FULL Curriculum HTML (TOC included inside) ─────────────
+    console.log("📄 Generating Curriculum HTML (with TOC inside)...");
+    const fullHtml = generateCurriculumHTML(bookData, { includeTOC: true });
+    const curriculumPdfBuffer = await generateCurriculumPDF(fullHtml);
+
+    // ── 6. Merge with cover PDF (if exists) ────────────────────────────────
+    let mergedPdfBuffer = curriculumPdfBuffer;
+    let coverPageCount = 0;
+
+    try {
+      const coverBuffer = getCoverPDF();
+      if (coverBuffer) {
+        const coverPdfDoc = await PDFDocument.load(coverBuffer);
+        coverPageCount = coverPdfDoc.getPageCount();
+        console.log(`📄 Cover has ${coverPageCount} pages.`);
+
+        console.log("📑 Merging Cover + Curriculum...");
+        mergedPdfBuffer = await mergeWithCover(curriculumPdfBuffer);
+        console.log(`✅ Merged PDF size: ${mergedPdfBuffer.length} bytes`);
+      }
+    } catch (coverError) {
+      console.warn("Cover PDF not found or could not be merged, using curriculum only.");
+      coverPageCount = 0;
+    }
+
+    // ── 7. DECORATE PDF with headers, footers, and page numbers ────────────
+    console.log("🎨 Decorating PDF (GMU style)...");
+    const finalPdfBuffer = await decoratePDF(mergedPdfBuffer, {
+      coverPageCount: coverPageCount,
+      headerText: `${pd.program_name} – ${pd.scheme_year}`,
+      universityName: "GM University",
+    });
+
+    // ── 8. Send the final decorated PDF ────────────────────────────────────
+    const filename = `${pd.program_id}_Curriculum_Book.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
+    res.send(finalPdfBuffer);
+
+    console.log(`✅ Curriculum Book downloaded: ${filename}`);
+  } catch (error) {
+    console.error("downloadCurriculumBook error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to generate curriculum book.",
+      error: error.message,
+    });
   }
 };
