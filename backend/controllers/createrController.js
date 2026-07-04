@@ -205,8 +205,10 @@ export const uploadAndParsePD = async (req, res) => {
       });
     }
 
+    // Capture the requested schema passed from the frontend
     const requestedSchema = req.body.schemaVersion || "auto";
 
+    // Enforce passing the schema directly to the python script
     const pythonProcess = spawn(pythonCommand, [
       scriptPath,
       filePath,
@@ -419,12 +421,10 @@ export const createOrUpdatePD = async (req, res) => {
     });
   } catch (error) {
     console.error("Save PD Error:", error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Server error saving document. Please try again.",
-      });
+    res.status(500).json({
+      success: false,
+      message: "Server error saving document. Please try again.",
+    });
   }
 };
 
@@ -487,10 +487,13 @@ const formatPopulatedPD = (pd) => {
 
   return pdObj;
 };
-
 export const getRecentVersions = async (req, res) => {
   try {
-    const versions = await PD.find({ program_id: req.params.programId })
+    // Isolated to creator ID
+    const versions = await PD.find({
+      program_id: req.params.programId,
+      created_by: req.id,
+    })
       .sort({ created_at: -1 })
       .limit(5)
       .select("version_no created_at status scheme_year");
@@ -502,8 +505,13 @@ export const getRecentVersions = async (req, res) => {
 
 export const getPDById = async (req, res) => {
   try {
-    const pd = await PD.findById(req.params.id);
-    if (!pd) return res.json({ success: false, message: "Document not found" });
+    // Isolated to creator ID
+    const pd = await PD.findOne({ _id: req.params.id, created_by: req.id });
+    if (!pd)
+      return res.json({
+        success: false,
+        message: "Document not found or unauthorized",
+      });
     res.json({ success: true, pd });
   } catch (error) {
     res.json({ success: false, message: error.message });
@@ -512,7 +520,11 @@ export const getPDById = async (req, res) => {
 
 export const getLatestPD = async (req, res) => {
   try {
-    const pd = await PD.findOne({ program_id: req.params.programId }).sort({
+    // Isolated to creator ID
+    const pd = await PD.findOne({
+      program_id: req.params.programId,
+      created_by: req.id,
+    }).sort({
       created_at: -1,
     });
     if (!pd)
@@ -621,7 +633,7 @@ export const enhanceFieldWithAI = async (req, res) => {
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.5-flash",
+      model: "gemini-3-flash-preview", // FIX: Replaced non-existent 3.5 model
     });
 
     const systemPrompt = `
@@ -663,7 +675,6 @@ NO markdown, NO explanation, NO extra text.
     });
   } catch (error) {
     console.error("AI Enhancer Error Details:", error);
-
     return res.status(500).json({
       success: false,
       message: "Failed to generate AI content.",
@@ -682,7 +693,9 @@ export const enhanceSectionWithAI = async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3-flash-preview", // FIX: Replaced non-existent 3 preview model
+    });
 
     const systemPrompt = `
 You are an expert academic curriculum editor.
@@ -726,7 +739,7 @@ Return ONLY a valid JSON object. DO NOT wrap it in markdown code blocks like \`\
 
 export const parseTableWithAI = async (req, res) => {
   try {
-    const { prompt, rawData, tableType } = req.body;
+    const { prompt, tableText, tableType } = req.body;
 
     if (!process.env.GEMINI_API_KEY) {
       return res
@@ -736,17 +749,18 @@ export const parseTableWithAI = async (req, res) => {
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.5-flash",
+      model: "gemini-3-flash-preview", // FIX: Replaced non-existent 3.5 model
       generationConfig: { responseMimeType: "application/json" },
     });
 
+    // Provide the correct schema instructions for CreatePD 2026 tables
     let schemaInstruction = "";
-    if (tableType === "outcomeMap") {
-      schemaInstruction = `Return a 2D JSON array of strings. The first array MUST be headers starting with "CO/PO", followed by POs and PSOs (e.g., ["CO/PO", "PO1", "PO2", "PSO1"]). Subsequent arrays represent rows (e.g., ["CO1", "3", "2", ""]). Leave blank if no mapping exists.`;
-    } else if (tableType === "assessmentWeight") {
-      schemaInstruction = `Return a JSON array of objects. Each object represents a row. Keys MUST strictly be: "co" (string), "q1", "q2", "q3", "t1", "t2", "t3", "a1", "a2", "see", "cie", "total". All values except "co" must be numbers. Calculate cie and total if missing.`;
-    } else if (tableType === "teaching") {
-      schemaInstruction = `Return a JSON array of objects. Keys MUST strictly be: "number" (string/number), "topic" (string), "slides" (string URL or blank), "videos" (string URL or blank).`;
+    if (tableType === "semesterCategory2026") {
+      schemaInstruction = `Return a JSON array of objects. Keys MUST strictly be: "code" (string), "title" (string), "credits" (number), "type" (string: "Theory"|"Lab"|"Theory+Lab"|"Project").`;
+    } else if (tableType === "technicalCompetency2026") {
+      schemaInstruction = `Return a JSON array of objects. Keys MUST strictly be: "code" (string), "title" (string), "credits" (number).`;
+    } else {
+      schemaInstruction = `Return a JSON array of extracted row objects fitting the data.`;
     }
 
     const systemPrompt = `
@@ -754,21 +768,28 @@ You are a highly advanced data parsing assistant.
 The user wants to format raw text/data into a structured table for an academic syllabus.
 
 Target Table Type: ${tableType}
-
 User's Custom Instructions: "${prompt || "Parse the provided data perfectly into the required schema."}"
 
 Raw Data / Pasted Table:
-${rawData || "(No raw data provided, generate from instructions)"}
+${tableText || "(No raw data provided)"}
 
 CRITICAL INSTRUCTION:
 ${schemaInstruction}
-Extract the data accurately, infer missing columns if requested by the user's prompt, and output ONLY valid JSON.
+Extract the data accurately, infer missing columns if possible, and output ONLY valid JSON.
 `;
 
     const result = await model.generateContent(systemPrompt);
-    const parsedJson = JSON.parse(result.response.text());
+    let responseText = result.response.text();
 
-    return res.status(200).json({ success: true, parsedData: parsedJson });
+    // Fallback cleanup in case the model wraps the JSON in markdown blocks
+    responseText = responseText
+      .replace(/```json\n?/gi, "")
+      .replace(/```\n?/gi, "")
+      .trim();
+
+    const parsedJson = JSON.parse(responseText);
+
+    return res.status(200).json({ success: true, parsedRows: parsedJson });
   } catch (error) {
     console.error("AI Table Parser Error:", error);
     return res

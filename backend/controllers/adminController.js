@@ -863,17 +863,19 @@ export const compileCurriculumBook = async (req, res) => {
 export const getAllPDsForAdmin = async (req, res) => {
   try {
     const adminId = req.admin._id;
-    // Fetch ALL PDs assigned to or approved by this admin
+    // Ensure scheme_year is included in the selection
     const pds = await PD.find({ approved_by: adminId })
       .populate(
         "created_by",
         "name email designation department school faculty",
       )
+      .select(
+        "program_id program_name status updated_at version_no scheme_year pd_data",
+      )
       .sort({ updated_at: -1 });
 
     res.status(200).json({ success: true, pds });
   } catch (error) {
-    console.error("getAllPDsForAdmin:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

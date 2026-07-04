@@ -17,6 +17,7 @@ import {
 import { useAppContext } from "../context/AppContext";
 import parse from "html-react-parser";
 import { toast } from "react-hot-toast";
+import html2pdf from "html2pdf.js";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    UTILITY HELPERS
@@ -357,18 +358,50 @@ const Preview = ({
   }, [data]);
 
   const handleDownloadPDF = useCallback(() => {
+    const element = docRef.current;
+    if (!element) {
+      toast.error("Document not ready");
+      return;
+    }
+
+    // Generate filename (same as before)
     const filename = generateFilename();
-    document.title = filename;
-    toast.success("Ready! Select 'Save as PDF' in the print dialog.", {
-      duration: 4000,
-    });
-    setTimeout(() => {
-      window.print();
-      document.title = "PDMS Creator";
-    }, 500);
+
+    // Options for html2pdf
+    const opt = {
+      margin: 0, // No extra margin; content fills the page
+      filename: filename,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: {
+        scale: 2, // Higher resolution
+        useCORS: true,
+        logging: false,
+      },
+      jsPDF: {
+        unit: "mm",
+        format: "a4",
+        orientation: "portrait",
+      },
+      pagebreak: { mode: ["avoid-all", "css", "legacy"] }, // Respect CSS page breaks
+    };
+
+    // Generate and download the PDF
+    html2pdf()
+      .set(opt)
+      .from(element)
+      .save()
+      .then(() => {
+        toast.success("PDF downloaded!");
+      })
+      .catch((err) => {
+        console.error(err);
+        toast.error("PDF generation failed. Falling back to print dialog.");
+        // Fallback to window.print() if html2pdf fails
+        window.print();
+      });
+
     setDdOpen(false);
   }, [generateFilename]);
-
   const handleCopyFilename = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(generateFilename());
