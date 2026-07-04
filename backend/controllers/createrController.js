@@ -9,7 +9,6 @@ import Section4_Electives from "../models/pd/Section4_Electives.js";
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// --- REQUIRED IMPORTS FOR FILE PARSING ---
 import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
@@ -194,7 +193,6 @@ export const uploadAndParsePD = async (req, res) => {
   };
 
   try {
-    // Point strictly to the unified, polymorphic parser
     const scriptPath = path.resolve(__dirname, "..", "scripts", "pd_parser.py");
     const pythonCommand =
       process.env.NODE_ENV === "production" ? "python3" : "python";
@@ -207,10 +205,8 @@ export const uploadAndParsePD = async (req, res) => {
       });
     }
 
-    // Capture the explicit schema version sent from React!
     const requestedSchema = req.body.schemaVersion || "auto";
 
-    // Pass the schema as sys.argv[2]
     const pythonProcess = spawn(pythonCommand, [
       scriptPath,
       filePath,
@@ -220,7 +216,6 @@ export const uploadAndParsePD = async (req, res) => {
     let dataString = "";
     let errorString = "";
 
-    // 2-Minute Timeout for complex 2026 table spatial layouts
     const timeoutId = setTimeout(() => {
       if (!responseSent) {
         pythonProcess.kill("SIGKILL");
@@ -238,7 +233,6 @@ export const uploadAndParsePD = async (req, res) => {
 
     pythonProcess.stderr.on("data", (data) => {
       errorString += data.toString();
-      // Print Python debug/errors to Node console, preventing JSON corruption
       console.error(`[Python Parser]: ${data.toString().trim()}`);
     });
 
@@ -258,16 +252,13 @@ export const uploadAndParsePD = async (req, res) => {
       }
 
       try {
-        // Strictly extract JSON to prevent print() statement pollution
         const start = dataString.indexOf("{");
         const end = dataString.lastIndexOf("}") + 1;
 
         if (start === -1) throw new Error("No JSON found in Python output");
 
         const parsed = JSON.parse(dataString.substring(start, end));
-        console.log(parsed.data);
 
-        // Let React handle the unified payload mapping
         return res.json({
           success: true,
           schemaVersion: parsed.schemaVersion,
@@ -313,7 +304,6 @@ export const createOrUpdatePD = async (req, res) => {
       effectiveAy,
       totalCredits,
       academicCredits,
-      isNewProgram,
       status,
       pdData,
       reviewerId,
@@ -322,18 +312,31 @@ export const createOrUpdatePD = async (req, res) => {
 
     const creatorId = req.id;
 
+    // Defensive check
+    if (!pdData || typeof pdData !== "object") {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid document data structure." });
+    }
+
+    // Find the latest document for this program and scheme year to prevent E11000 duplicate keys
+    const existingPD = await PD.findOne({
+      program_id: programId,
+      scheme_year: schemeYear,
+    }).sort({ created_at: -1 });
+
     // SCENARIO 1: Brand New Program
-    if (isNewProgram) {
+    if (!existingPD) {
       const newPD = await PD.create({
         program_id: programId,
         program_name: programName,
         scheme_year: schemeYear,
         version_no: "1.0.0",
         effective_ay: effectiveAy,
-        total_credits: totalCredits,
-        academic_credits: academicCredits,
+        total_credits: totalCredits || 0,
+        academic_credits: academicCredits || 0,
         status: status || "draft",
-        pd_data: pdData, // Saves full structure including pdData.section4
+        pd_data: pdData,
         created_by: creatorId,
         approved_by: reviewerId || null,
       });
@@ -346,14 +349,6 @@ export const createOrUpdatePD = async (req, res) => {
         data: newPD,
       });
     }
-
-    const existingPD = await PD.findOne({ program_id: programId }).sort({
-      created_at: -1,
-    });
-    if (!existingPD)
-      return res
-        .status(404)
-        .json({ success: false, message: "Program document not found." });
 
     // SCENARIO 2: ASSIGNMENT UPDATE ONLY
     if (isWorkflowUpdate) {
@@ -375,36 +370,31 @@ export const createOrUpdatePD = async (req, res) => {
       });
     }
 
-    // SCENARIO 3: Editing an existing Draft
-    if (existingPD.status === "draft" && status === "draft") {
+    // SCENARIO 3: Editing an existing Draft or Rejected doc
+    if (existingPD.status === "draft" || existingPD.status === "rejected") {
       existingPD.pd_data = pdData;
       existingPD.program_name = programName;
       existingPD.scheme_year = schemeYear;
       existingPD.effective_ay = effectiveAy;
+      existingPD.total_credits = totalCredits;
+      existingPD.academic_credits = academicCredits;
+
+      if (status) existingPD.status = status;
+      if (reviewerId) existingPD.approved_by = reviewerId;
+
       await existingPD.save();
       return res.json({
         success: true,
-        message: "Draft Updated Successfully",
+        message:
+          status === "under_review"
+            ? "Submitted to Admin for Review"
+            : "Draft Updated Successfully",
         version: existingPD.version_no,
         data: existingPD,
       });
     }
 
-    // SCENARIO 4: Submitting an existing Draft to Review
-    if (existingPD.status === "draft" && status === "under_review") {
-      existingPD.status = "under_review";
-      existingPD.approved_by = reviewerId;
-      existingPD.pd_data = pdData;
-      await existingPD.save();
-      return res.json({
-        success: true,
-        message: "Submitted to Admin for Review",
-        version: existingPD.version_no,
-        data: existingPD,
-      });
-    }
-
-    // SCENARIO 5: VERSION BUMP
+    // SCENARIO 4: VERSION BUMP (Document is already under_review or approved)
     const newVersion = incrementVersion(existingPD.version_no);
     const bumpedPD = await PD.create({
       program_id: programId,
@@ -428,15 +418,16 @@ export const createOrUpdatePD = async (req, res) => {
       data: bumpedPD,
     });
   } catch (error) {
+    console.error("Save PD Error:", error);
     res
       .status(500)
-      .json({ success: false, message: "Server error saving document." });
+      .json({
+        success: false,
+        message: "Server error saving document. Please try again.",
+      });
   }
 };
 
-// --- HELPER: Format Populated Data for Frontend ---
-// Maps the populated 'assignedCreater' object back into 'assigneeId' and 'assigneeName' for the React UI.
-// Map courses for assigned CDs
 const formatPopulatedPD = (pd) => {
   const pdObj = pd.toObject ? pd.toObject() : pd;
 
@@ -460,7 +451,6 @@ const formatPopulatedPD = (pd) => {
     );
   }
 
-  // BULLETPROOF FIX: Guarantee section4 structure for the backend payload
   pdObj.section4 = pdObj.section4 || {
     professionalElectives: pdObj.prof_electives || [],
     openElectives: pdObj.open_electives || [],
@@ -497,6 +487,7 @@ const formatPopulatedPD = (pd) => {
 
   return pdObj;
 };
+
 export const getRecentVersions = async (req, res) => {
   try {
     const versions = await PD.find({ program_id: req.params.programId })
@@ -563,10 +554,9 @@ export const getDashboardStats = async (req, res) => {
 
 export const getCreatorHistory = async (req, res) => {
   try {
-    // Fetch all PDs created by the user, sorted newest first
     const allPDs = await PD.find({ created_by: req.id })
       .sort({ updated_at: -1 })
-      .lean(); // Use lean for faster processing
+      .lean();
 
     const groupedMap = new Map();
 
@@ -590,7 +580,6 @@ export const getCreatorHistory = async (req, res) => {
         versionNo: pd.version_no,
         status: pd.status,
         updatedAt: pd.updated_at,
-        // Fallback checks both fields to ensure the comment is captured
         changeSummary: pd.review_comment || pd.change_summary || "",
         pdData: pd.pd_data,
       });
@@ -605,6 +594,7 @@ export const getCreatorHistory = async (req, res) => {
       .json({ success: false, message: "Failed to fetch document history" });
   }
 };
+
 export const getAdminsForReview = async (req, res) => {
   try {
     const admins = await Admin.find({ role: "admin", status: "active" }).select(
@@ -630,8 +620,6 @@ export const enhanceFieldWithAI = async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-    // FIX: Changed "gemini-1.5-flash-latest" to "gemini-1.5-flash"
     const model = genAI.getGenerativeModel({
       model: "gemini-3.5-flash",
     });
@@ -664,7 +652,6 @@ NO markdown, NO explanation, NO extra text.
 
     let enhancedText = result.response.text();
 
-    // Clean markdown artifacts
     enhancedText = enhancedText
       .replace(/```html\n?/gi, "")
       .replace(/```\n?/gi, "")
@@ -683,8 +670,6 @@ NO markdown, NO explanation, NO extra text.
     });
   }
 };
-
-// Add this inside createrController.js
 
 export const enhanceSectionWithAI = async (req, res) => {
   try {
@@ -723,7 +708,6 @@ Return ONLY a valid JSON object. DO NOT wrap it in markdown code blocks like \`\
 
     let enhancedText = result.response.text();
 
-    // Clean markdown artifacts just in case Gemini includes them
     enhancedText = enhancedText
       .replace(/```json\n?/gi, "")
       .replace(/```\n?/gi, "")
@@ -751,8 +735,6 @@ export const parseTableWithAI = async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-    // Using JSON mode to guarantee structured output
     const model = genAI.getGenerativeModel({
       model: "gemini-3.5-flash",
       generationConfig: { responseMimeType: "application/json" },
@@ -795,21 +777,18 @@ Extract the data accurately, infer missing columns if requested by the user's pr
   }
 };
 
-// Add this inside createrController.js
 export const getAssignedCDs = async (req, res) => {
   try {
     const creatorId = req.id;
-
-    // Search anywhere assigneeId might exist in the polymorphic structure
     const pds = await PD.find({
       $or: [
-        { "pd_data.semesters.courses.assigneeId": creatorId }, // 2024 Schema
-        { "pd_data.semesters.categories.courses.assigneeId": creatorId }, // 2026 Schema
+        { "pd_data.semesters.courses.assigneeId": creatorId },
+        { "pd_data.semesters.categories.courses.assigneeId": creatorId },
         {
           "pd_data.section4.professionalElectives.courses.assigneeId":
             creatorId,
-        }, // 2024 PEs
-        { "pd_data.section4.openElectives.courses.assigneeId": creatorId }, // 2024 OEs
+        },
+        { "pd_data.section4.openElectives.courses.assigneeId": creatorId },
       ],
     }).populate("created_by", "name");
 
@@ -820,9 +799,7 @@ export const getAssignedCDs = async (req, res) => {
       const pCode = pd.program_id;
       const creatorName = pd.created_by?.name || "Admin";
 
-      // 1. Check Semesters (Handles BOTH 2024 flat courses AND 2026 nested categories)
       pd.pd_data?.semesters?.forEach((sem) => {
-        // 2024 Courses
         sem.courses?.forEach((c) => {
           if (c.assigneeId === creatorId) {
             assignedCourses.push({
@@ -837,7 +814,6 @@ export const getAssignedCDs = async (req, res) => {
             });
           }
         });
-        // 2026 Categories
         sem.categories?.forEach((cat) => {
           cat.courses?.forEach((c) => {
             if (c.assigneeId === creatorId) {
@@ -856,7 +832,6 @@ export const getAssignedCDs = async (req, res) => {
         });
       });
 
-      // 2. Check Professional Electives (Section 4 - 2024 Schema)
       pd.pd_data?.section4?.professionalElectives?.forEach((grp, gi) => {
         grp.courses?.forEach((c) => {
           if (c.assigneeId === creatorId) {
@@ -874,7 +849,6 @@ export const getAssignedCDs = async (req, res) => {
         });
       });
 
-      // 3. Check Open Electives (Section 4 - 2024 Schema)
       pd.pd_data?.section4?.openElectives?.forEach((grp, gi) => {
         grp.courses?.forEach((c) => {
           if (c.assigneeId === creatorId) {

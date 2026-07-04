@@ -1190,25 +1190,6 @@ const CreatePD = () => {
     },
     [apiService],
   );
-
-  const fetchLatestPD = useCallback(async () => {
-    if (!metaData.programCode) return toast.error("Select a program first.");
-    setLoading(true);
-    try {
-      const { data } = await apiService.fetchLatest(metaData.programCode);
-      if (data.success) {
-        populateForm(data.pd);
-        toast.success("Loaded latest version.");
-      } else {
-        toast.error("No previous versions found.");
-      }
-    } catch {
-      toast.error("Failed to load data.");
-    } finally {
-      setLoading(false);
-    }
-  }, [metaData.programCode, apiService]);
-
   const fetchFullPD = useCallback(
     async (pdId) => {
       setLoading(true);
@@ -1229,6 +1210,31 @@ const CreatePD = () => {
     },
     [apiService, fetchRecentVersions],
   );
+
+  const fetchLatestPD = useCallback(async () => {
+    if (!metaData.programCode) return toast.error("Select a program first.");
+    setLoading(true);
+    try {
+      const { data } = await apiService.fetchVersions(metaData.programCode);
+      if (data.success && data.versions?.length > 0) {
+        setRecentVersions(data.versions);
+
+        // Prefer fetching the latest draft of the CURRENTLY selected schema,
+        // otherwise fallback to the absolute latest document in history.
+        const targetVersion =
+          data.versions.find((v) => v.scheme_year === metaData.schemaVersion) ||
+          data.versions[0];
+
+        await fetchFullPD(targetVersion._id);
+      } else {
+        toast.error("No previous versions found.");
+      }
+    } catch {
+      toast.error("Failed to load data.");
+    } finally {
+      setLoading(false);
+    }
+  }, [metaData.programCode, metaData.schemaVersion, apiService, fetchFullPD]);
 
   /** Normalize a raw section4 payload to guarantee both 2024 & 2026 shapes exist. */
   const normaliseSection4 = useCallback((raw) => {
@@ -1628,19 +1634,63 @@ const CreatePD = () => {
   }, []);
 
   const handleSchemaChange = useCallback(
-    (e) => {
+    async (e) => {
       const newSchema = e.target.value;
+
       if (
         dirty &&
         !window.confirm(
-          `Switching to Schema ${newSchema} may alter the layout. Proceed?`,
+          `Switching to Schema ${newSchema} may alter the layout and discard unsaved changes. Proceed?`,
         )
       )
         return;
+
+      // Update the UI immediately
       setMetaData((p) => ({ ...p, schemaVersion: newSchema }));
-      setDirty(true);
+
+      if (!metaData.programCode) {
+        setDirty(true);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        // Look through our fetched history to see if a document exists for this schema year
+        const existingForSchema = recentVersions.find(
+          (v) => String(v.scheme_year) === String(newSchema),
+        );
+
+        if (existingForSchema) {
+          // Found an existing document for this schema year -> Auto-fetch it!
+          await fetchFullPD(existingForSchema._id);
+        } else {
+          // No history for this specific schema year -> Give them a clean slate
+          toast(`No history for Schema ${newSchema}. Starting fresh.`, {
+            icon: "💡",
+          });
+
+          setPdData((prev) => ({
+            ...BLANK_PD_DATA,
+            details: prev.details, // Keep the institutional details populated
+            award: prev.award,
+          }));
+
+          setMetaData((p) => ({
+            ...p,
+            schemaVersion: newSchema,
+            isNew: true, // Ensures it saves safely as a new 1.0.0 for this specific schema year
+            versionNo: "1.0.0",
+            status: "draft",
+          }));
+          setDirty(true);
+        }
+      } catch (err) {
+        console.error("Error switching schema", err);
+      } finally {
+        setLoading(false);
+      }
     },
-    [dirty],
+    [dirty, metaData.programCode, recentVersions, fetchFullPD],
   );
 
   const handleParseModeChange = useCallback((e) => {
@@ -2138,32 +2188,60 @@ const CreatePD = () => {
 
   // Program selection
   const handleProgramSelect = useCallback(
-    (program) => {
-      setMetaData((p) => ({
-        ...p,
-        programId: program.id,
-        programCode: program.code,
-        programName: program.name,
-        isNew: true,
-      }));
-      setPdData((prev) => ({
-        ...prev,
-        details: {
-          ...prev.details,
-          university: program.college || creatorProfile?.college || "",
-          faculty: program.faculty || creatorProfile?.faculty || "",
-          school: program.school || creatorProfile?.school || "",
-          department: program.department,
-          program_name: program.name,
-        },
-        award: { ...prev.award, title: program.name },
-      }));
+    async (program) => {
       setShowProgramDropdown(false);
       setSearchProgram("");
-      setDirty(true);
-      fetchRecentVersions(program.code);
+      setLoading(true);
+
+      try {
+        // 1. Fetch version history to populate the sidebar
+        const { data } = await apiService.fetchVersions(program.code);
+        let fetchedVersions = [];
+
+        if (data.success && data.versions) {
+          fetchedVersions = data.versions;
+          setRecentVersions(fetchedVersions);
+        }
+
+        if (fetchedVersions.length > 0) {
+          // 2. EXISTING DOCUMENT FOUND: Load the absolute most recent one
+          await fetchFullPD(fetchedVersions[0]._id);
+        } else {
+          // 3. NO HISTORY: Initialize a completely new blank state
+          setMetaData((p) => ({
+            ...p,
+            programId: program.id,
+            programCode: program.code,
+            programName: program.name,
+            isNew: true, // Triggers backend to save as v1.0.0
+            versionNo: "1.0.0",
+            status: "draft",
+          }));
+
+          setPdData((prev) => ({
+            ...BLANK_PD_DATA,
+            details: {
+              ...BLANK_PD_DATA.details,
+              university: program.college || creatorProfile?.college || "",
+              faculty: program.faculty || creatorProfile?.faculty || "",
+              school: program.school || creatorProfile?.school || "",
+              department: program.department,
+              program_name: program.name,
+            },
+            award: { ...BLANK_PD_DATA.award, title: program.name },
+          }));
+
+          setDirty(true);
+          toast.success("Initialized new program document.", { icon: "✨" });
+        }
+      } catch (error) {
+        console.error("Error fetching latest document:", error);
+        toast.error("Failed to fetch history. Starting fresh.");
+      } finally {
+        setLoading(false);
+      }
     },
-    [creatorProfile, fetchRecentVersions],
+    [apiService, creatorProfile, fetchFullPD],
   );
 
   // AI section polish
@@ -2221,10 +2299,13 @@ const CreatePD = () => {
     async (status = "draft", reviewerId = null) => {
       if (!metaData.programId) return toast.error("Select a program first.");
       setLoading(true);
+
       const payload = {
         programId: metaData.programCode,
         programName: metaData.programName,
-        schemeYear: metaData.schemaVersion, // map schemaVersion → schemeYear for backend
+        // CRITICAL FIX: Mapping the correct user-input schemeYear
+        schemeYear: metaData.schemeYear || metaData.schemaVersion,
+        schemaVersion: metaData.schemaVersion,
         effectiveAy: metaData.effectiveAy,
         totalCredits: metaData.totalCredits,
         academicCredits: metaData.academicCredits,
@@ -2233,6 +2314,7 @@ const CreatePD = () => {
         pdData,
         reviewerId,
       };
+
       try {
         const { data } = await apiService.savePD(payload);
         if (data.success) {
@@ -2261,7 +2343,6 @@ const CreatePD = () => {
     },
     [metaData, pdData, apiService, fetchRecentVersions],
   );
-
   const handleSaveAndNext = useCallback(async () => {
     await handleSave("draft");
     setActiveStep((p) => Math.min(4, p + 1));

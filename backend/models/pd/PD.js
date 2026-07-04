@@ -24,9 +24,10 @@ const PDSchema = new mongoose.Schema({
   change_summary: { type: String },
   review_comment: { type: String, default: "" },
 
-  // Polymorphic JSON payload. The structure inside changes based on scheme_year
-  pd_data: { type: mongoose.Schema.Types.Mixed, required: true },
-
+  pd_data: {
+    type: mongoose.Schema.Types.Mixed,
+    required: true,
+  },
   created_by: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Creater",
