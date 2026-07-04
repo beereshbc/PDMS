@@ -330,7 +330,7 @@ const incrementVersion = (v = "1.0.0") => {
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
-// § 4. CENTRALIZED API SERVICE (avoids raw axios calls scattered in JSX)
+// § 4. CENTRALIZED API SERVICE
 // ═════════════════════════════════════════════════════════════════════════════
 
 const buildApiService = (axios, createrToken) => {
@@ -341,38 +341,28 @@ const buildApiService = (axios, createrToken) => {
   };
 
   return {
-    importStable: (formData, signal) =>
-      axios.post("/api/creater/pd/import", formData, {
-        headers: multipartHeaders,
-        timeout: 300000, // 5 Minutes
-        signal,
-      }),
-
     importAuto: (formData, schema, parseMode, signal) => {
-      // Dynamic logic removed; defaults to the standard import endpoint
+      // CRITICAL FIX: Explicitly append the schema version so Node.js receives it
+      formData.append("schemaVersion", schema);
+
+      // We now use a single unified endpoint, because the Python script handles both!
       return axios.post("/api/creater/pd/import", formData, {
         headers: multipartHeaders,
-        timeout: 300000,
+        timeout: 120000, // 2 Minutes
         signal,
       });
     },
 
     savePD: (payload) =>
       axios.post("/api/creater/pd/save", payload, { headers }),
-
     fetchLatest: (code) =>
       axios.get(`/api/creater/pd/latest/${code}`, { headers }),
-
     fetchById: (id) => axios.get(`/api/creater/pd/fetch/${id}`, { headers }),
-
     fetchVersions: (code) =>
       axios.get(`/api/creater/pd/versions/${code}`, { headers }),
-
     fetchAdmins: () => axios.get("/api/creater/pd/review-admins", { headers }),
-
     aiEnhanceField: (body) =>
       axios.post("/api/creater/pd/ai-enhance", body, { headers }),
-
     aiEnhanceSection: (body) =>
       axios.post("/api/creater/pd/ai-enhance-section", body, { headers }),
   };
@@ -1200,25 +1190,6 @@ const CreatePD = () => {
     },
     [apiService],
   );
-
-  const fetchLatestPD = useCallback(async () => {
-    if (!metaData.programCode) return toast.error("Select a program first.");
-    setLoading(true);
-    try {
-      const { data } = await apiService.fetchLatest(metaData.programCode);
-      if (data.success) {
-        populateForm(data.pd);
-        toast.success("Loaded latest version.");
-      } else {
-        toast.error("No previous versions found.");
-      }
-    } catch {
-      toast.error("Failed to load data.");
-    } finally {
-      setLoading(false);
-    }
-  }, [metaData.programCode, apiService]);
-
   const fetchFullPD = useCallback(
     async (pdId) => {
       setLoading(true);
@@ -1239,6 +1210,31 @@ const CreatePD = () => {
     },
     [apiService, fetchRecentVersions],
   );
+
+  const fetchLatestPD = useCallback(async () => {
+    if (!metaData.programCode) return toast.error("Select a program first.");
+    setLoading(true);
+    try {
+      const { data } = await apiService.fetchVersions(metaData.programCode);
+      if (data.success && data.versions?.length > 0) {
+        setRecentVersions(data.versions);
+
+        // Prefer fetching the latest draft of the CURRENTLY selected schema,
+        // otherwise fallback to the absolute latest document in history.
+        const targetVersion =
+          data.versions.find((v) => v.scheme_year === metaData.schemaVersion) ||
+          data.versions[0];
+
+        await fetchFullPD(targetVersion._id);
+      } else {
+        toast.error("No previous versions found.");
+      }
+    } catch {
+      toast.error("Failed to load data.");
+    } finally {
+      setLoading(false);
+    }
+  }, [metaData.programCode, metaData.schemaVersion, apiService, fetchFullPD]);
 
   /** Normalize a raw section4 payload to guarantee both 2024 & 2026 shapes exist. */
   const normaliseSection4 = useCallback((raw) => {
@@ -1450,6 +1446,10 @@ const CreatePD = () => {
    * Core upload function.
    * isRetry = true → fallback from dynamic to stable parser.
    */
+  // ═════════════════════════════════════════════════════════════════════════
+  // § REPLACE inside the CreatePD component body
+  // ═════════════════════════════════════════════════════════════════════════
+
   const processPDFUpload = useCallback(
     async (file, isRetry = false) => {
       if (file.type !== "application/pdf") {
@@ -1470,6 +1470,8 @@ const CreatePD = () => {
 
       const formData = new FormData();
       formData.append("pdFile", file);
+      // Explicitly append schema version again just to be 100% safe
+      formData.append("schemaVersion", metaData.schemaVersion);
 
       // Simulate early step transitions while HTTP request is in-flight
       const step1Timer = setTimeout(
@@ -1479,7 +1481,7 @@ const CreatePD = () => {
             stepId: "detect",
             status: "uploading",
             progress: 25,
-            message: "Analysing document layout…",
+            message: `Analysing document layout for ${metaData.schemaVersion} schema…`,
           }),
         800,
       );
@@ -1518,6 +1520,7 @@ const CreatePD = () => {
           message: "Mapping to database structure…",
         });
         await new Promise((r) => setTimeout(r, 400));
+
         dispatchUpload({
           type: "STEP",
           stepId: "validate",
@@ -1525,6 +1528,7 @@ const CreatePD = () => {
           message: "Validating structure…",
         });
         await new Promise((r) => setTimeout(r, 300));
+
         dispatchUpload({
           type: "STEP",
           stepId: "complete",
@@ -1592,7 +1596,7 @@ const CreatePD = () => {
         )
           return;
 
-        // Auto-retry: fall back to stable parser once
+        // Auto-retry fallback
         if (!isRetry && metaData.parseMode === "auto") {
           toast("Dynamic parser failed — retrying with stable engine…", {
             icon: "🔄",
@@ -1619,8 +1623,7 @@ const CreatePD = () => {
       apiService,
       normaliseParsedData,
     ],
-  ); // eslint-disable-line react-hooks/exhaustive-deps
-
+  );
   // ═════════════════════════════════════════════════════════════════════════
   // § 9.4  DATA MUTATION HELPERS (all stable refs via useCallback)
   // ═════════════════════════════════════════════════════════════════════════
@@ -1631,19 +1634,63 @@ const CreatePD = () => {
   }, []);
 
   const handleSchemaChange = useCallback(
-    (e) => {
+    async (e) => {
       const newSchema = e.target.value;
+
       if (
         dirty &&
         !window.confirm(
-          `Switching to Schema ${newSchema} may alter the layout. Proceed?`,
+          `Switching to Schema ${newSchema} may alter the layout and discard unsaved changes. Proceed?`,
         )
       )
         return;
+
+      // Update the UI immediately
       setMetaData((p) => ({ ...p, schemaVersion: newSchema }));
-      setDirty(true);
+
+      if (!metaData.programCode) {
+        setDirty(true);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        // Look through our fetched history to see if a document exists for this schema year
+        const existingForSchema = recentVersions.find(
+          (v) => String(v.scheme_year) === String(newSchema),
+        );
+
+        if (existingForSchema) {
+          // Found an existing document for this schema year -> Auto-fetch it!
+          await fetchFullPD(existingForSchema._id);
+        } else {
+          // No history for this specific schema year -> Give them a clean slate
+          toast(`No history for Schema ${newSchema}. Starting fresh.`, {
+            icon: "💡",
+          });
+
+          setPdData((prev) => ({
+            ...BLANK_PD_DATA,
+            details: prev.details, // Keep the institutional details populated
+            award: prev.award,
+          }));
+
+          setMetaData((p) => ({
+            ...p,
+            schemaVersion: newSchema,
+            isNew: true, // Ensures it saves safely as a new 1.0.0 for this specific schema year
+            versionNo: "1.0.0",
+            status: "draft",
+          }));
+          setDirty(true);
+        }
+      } catch (err) {
+        console.error("Error switching schema", err);
+      } finally {
+        setLoading(false);
+      }
     },
-    [dirty],
+    [dirty, metaData.programCode, recentVersions, fetchFullPD],
   );
 
   const handleParseModeChange = useCallback((e) => {
@@ -2141,32 +2188,60 @@ const CreatePD = () => {
 
   // Program selection
   const handleProgramSelect = useCallback(
-    (program) => {
-      setMetaData((p) => ({
-        ...p,
-        programId: program.id,
-        programCode: program.code,
-        programName: program.name,
-        isNew: true,
-      }));
-      setPdData((prev) => ({
-        ...prev,
-        details: {
-          ...prev.details,
-          university: program.college || creatorProfile?.college || "",
-          faculty: program.faculty || creatorProfile?.faculty || "",
-          school: program.school || creatorProfile?.school || "",
-          department: program.department,
-          program_name: program.name,
-        },
-        award: { ...prev.award, title: program.name },
-      }));
+    async (program) => {
       setShowProgramDropdown(false);
       setSearchProgram("");
-      setDirty(true);
-      fetchRecentVersions(program.code);
+      setLoading(true);
+
+      try {
+        // 1. Fetch version history to populate the sidebar
+        const { data } = await apiService.fetchVersions(program.code);
+        let fetchedVersions = [];
+
+        if (data.success && data.versions) {
+          fetchedVersions = data.versions;
+          setRecentVersions(fetchedVersions);
+        }
+
+        if (fetchedVersions.length > 0) {
+          // 2. EXISTING DOCUMENT FOUND: Load the absolute most recent one
+          await fetchFullPD(fetchedVersions[0]._id);
+        } else {
+          // 3. NO HISTORY: Initialize a completely new blank state
+          setMetaData((p) => ({
+            ...p,
+            programId: program.id,
+            programCode: program.code,
+            programName: program.name,
+            isNew: true, // Triggers backend to save as v1.0.0
+            versionNo: "1.0.0",
+            status: "draft",
+          }));
+
+          setPdData((prev) => ({
+            ...BLANK_PD_DATA,
+            details: {
+              ...BLANK_PD_DATA.details,
+              university: program.college || creatorProfile?.college || "",
+              faculty: program.faculty || creatorProfile?.faculty || "",
+              school: program.school || creatorProfile?.school || "",
+              department: program.department,
+              program_name: program.name,
+            },
+            award: { ...BLANK_PD_DATA.award, title: program.name },
+          }));
+
+          setDirty(true);
+          toast.success("Initialized new program document.", { icon: "✨" });
+        }
+      } catch (error) {
+        console.error("Error fetching latest document:", error);
+        toast.error("Failed to fetch history. Starting fresh.");
+      } finally {
+        setLoading(false);
+      }
     },
-    [creatorProfile, fetchRecentVersions],
+    [apiService, creatorProfile, fetchFullPD],
   );
 
   // AI section polish
@@ -2224,10 +2299,13 @@ const CreatePD = () => {
     async (status = "draft", reviewerId = null) => {
       if (!metaData.programId) return toast.error("Select a program first.");
       setLoading(true);
+
       const payload = {
         programId: metaData.programCode,
         programName: metaData.programName,
-        schemeYear: metaData.schemaVersion, // map schemaVersion → schemeYear for backend
+        // CRITICAL FIX: Mapping the correct user-input schemeYear
+        schemeYear: metaData.schemeYear || metaData.schemaVersion,
+        schemaVersion: metaData.schemaVersion,
         effectiveAy: metaData.effectiveAy,
         totalCredits: metaData.totalCredits,
         academicCredits: metaData.academicCredits,
@@ -2236,6 +2314,7 @@ const CreatePD = () => {
         pdData,
         reviewerId,
       };
+
       try {
         const { data } = await apiService.savePD(payload);
         if (data.success) {
@@ -2264,7 +2343,6 @@ const CreatePD = () => {
     },
     [metaData, pdData, apiService, fetchRecentVersions],
   );
-
   const handleSaveAndNext = useCallback(async () => {
     await handleSave("draft");
     setActiveStep((p) => Math.min(4, p + 1));
@@ -2402,10 +2480,8 @@ const CreatePD = () => {
                   onChange={handleSchemaChange}
                   className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 appearance-none"
                 >
-                  <option value="2026">
-                    PD Schema 2026 (Merged / Dynamic)
-                  </option>
-                  <option value="2024">PD Schema 2024 (Legacy / Flat)</option>
+                  <option value="2026">PD Schema 2026</option>
+                  <option value="2024">PD Schema 2024</option>
                 </select>
                 <ChevronRight
                   className="pointer-events-none absolute right-3 top-2.5 rotate-90 text-gray-400"
@@ -2503,45 +2579,11 @@ const CreatePD = () => {
             className="text-xs font-semibold px-2 py-1.5 bg-violet-50 text-violet-700 border border-violet-200 rounded-lg outline-none cursor-pointer"
           >
             <option value="auto">Auto Mode</option>
-            <option value="stable">Stable (2024)</option>
-            <option value="dynamic">Dynamic AI (2026+)</option>
+            {/* <option value="stable">Stable (2024)</option>
+            <option value="dynamic">Dynamic AI (2026+)</option> */}
           </select>
         }
       >
-        {/* Mode explanation */}
-        <div className="flex flex-wrap gap-2 mb-4 text-[10px]">
-          {[
-            {
-              mode: "auto",
-              label: "Auto",
-              desc: "Detects schema & routes automatically",
-              color: "bg-violet-50 text-violet-600 border-violet-200",
-            },
-            {
-              mode: "stable",
-              label: "Stable",
-              desc: "Fast parser for 2024-schema PDFs",
-              color: "bg-blue-50 text-blue-600 border-blue-200",
-            },
-            {
-              mode: "dynamic",
-              label: "Dynamic AI",
-              desc: "LLM-assisted for complex layouts",
-              color: "bg-indigo-50 text-indigo-600 border-indigo-200",
-            },
-          ].map((m) => (
-            <div
-              key={m.mode}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border font-semibold ${m.color} ${metaData.parseMode === m.mode ? "ring-2 ring-offset-1 ring-current" : "opacity-60"}`}
-            >
-              <span>{m.label}</span>
-              <span className="opacity-70 font-normal hidden sm:inline">
-                — {m.desc}
-              </span>
-            </div>
-          ))}
-        </div>
-
         {/* Drop zone */}
         <div
           className={`relative border-2 border-dashed rounded-2xl p-6 text-center transition-all ${
