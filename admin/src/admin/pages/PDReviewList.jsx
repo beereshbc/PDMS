@@ -22,6 +22,7 @@ import {
   Users,
   Filter,
   GraduationCap,
+  Zap,
 } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
 import { toast } from "react-hot-toast";
@@ -57,6 +58,7 @@ const getStatusLabel = (status) => {
 };
 
 const STATUS_OPTIONS = ["All", "under_review", "approved", "rejected", "draft"];
+const SCHEMA_OPTIONS = ["All", "2026", "2024"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENTS
@@ -90,15 +92,20 @@ const StatusPill = ({ value, active, onClick }) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ASSIGNMENT MODAL COMPONENT
+// ASSIGNMENT MODAL COMPONENT (Upgraded for 2024 + 2026 Support)
 // ─────────────────────────────────────────────────────────────────────────────
 const AssignmentModal = ({ isOpen, onClose, pd }) => {
   if (!isOpen || !pd) return null;
 
   const pdData = pd.pd_data || {};
   const semesters = pdData.semesters || [];
-  const profElectives = pdData.prof_electives || [];
-  const openElectives = pdData.open_electives || [];
+
+  // Polymorphic Section 4 extraction
+  const sec4 = pdData.section4 || {};
+  const profElectives =
+    pdData.prof_electives || sec4.professionalElectives || [];
+  const openElectives = pdData.open_electives || sec4.openElectives || [];
+  const techCompetency = sec4.technicalCompetencyCourses || [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -108,9 +115,16 @@ const AssignmentModal = ({ isOpen, onClose, pd }) => {
             <h3 className="text-xl font-black text-stone-800">
               Course Assignments
             </h3>
-            <p className="text-sm font-medium text-stone-500 mt-1">
-              Assigned creators for {pd.program_name} ({pd.program_id})
-            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-sm font-medium text-stone-500">
+                {pd.program_name} ({pd.program_id})
+              </p>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-widest ${pd.scheme_year === "2026" ? "bg-indigo-100 text-indigo-700" : "bg-blue-100 text-blue-700"}`}
+              >
+                {pd.scheme_year || "2024"} Schema
+              </span>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -121,60 +135,98 @@ const AssignmentModal = ({ isOpen, onClose, pd }) => {
         </div>
 
         <div className="p-6 overflow-y-auto flex-1 space-y-6 bg-stone-50/50">
-          {semesters.map((sem, idx) => (
-            <div
-              key={idx}
-              className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden"
-            >
-              <div className="bg-stone-100/50 px-5 py-3 border-b border-stone-200 flex items-center gap-2">
-                <Layers size={16} className="text-stone-500" />
-                <h4 className="font-bold text-stone-800 text-sm">
-                  Semester {sem.sem_no}
+          {semesters.map((sem, idx) => {
+            // Polymorphic course extraction (handles both 2024 flat and 2026 categories)
+            const flatCourses = sem.courses || [];
+            const catCourses = (sem.categories || []).flatMap((cat) =>
+              (cat.courses || []).map((c) => ({
+                ...c,
+                categoryLabel: cat.categoryName,
+              })),
+            );
+            const allCourses = [...flatCourses, ...catCourses];
+
+            return (
+              <div
+                key={idx}
+                className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden"
+              >
+                <div className="bg-stone-100/50 px-5 py-3 border-b border-stone-200 flex items-center gap-2">
+                  <Layers size={16} className="text-stone-500" />
+                  <h4 className="font-bold text-stone-800 text-sm">
+                    Semester {sem.sem_no}
+                  </h4>
+                </div>
+                <div className="divide-y divide-stone-100">
+                  {allCourses.length > 0 ? (
+                    allCourses.map((course, cIdx) => (
+                      <div
+                        key={cIdx}
+                        className="px-5 py-3.5 flex items-center justify-between gap-4 hover:bg-stone-50 transition-colors"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-stone-800 text-sm truncate">
+                            {course.code} - {course.title}
+                          </p>
+                          <p className="text-[11px] font-semibold text-stone-500 mt-1 uppercase tracking-wider">
+                            {course.type} •{" "}
+                            {course.categoryLabel || course.category}
+                          </p>
+                        </div>
+                        <div className="flex-shrink-0 w-48 text-right">
+                          {course.assigneeId ? (
+                            <div className="inline-flex items-center gap-2 text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 shadow-sm">
+                              <User size={14} />
+                              <span className="text-xs font-bold truncate">
+                                {course.assigneeName}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-2 text-stone-500 bg-stone-100 px-3 py-1.5 rounded-lg border border-stone-200 shadow-sm">
+                              <AlertCircle size={14} />
+                              <span className="text-xs font-bold">
+                                Unassigned
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-4 text-center text-xs font-medium text-stone-400 italic">
+                      No courses in this semester.
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* 2026 Technical Competency Check */}
+          {techCompetency.length > 0 && (
+            <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+              <div className="bg-indigo-50/50 px-5 py-3 border-b border-indigo-100 flex items-center gap-2">
+                <Zap size={16} className="text-indigo-500" />
+                <h4 className="font-bold text-indigo-900 text-sm">
+                  Technical Competency Courses (2026)
                 </h4>
               </div>
               <div className="divide-y divide-stone-100">
-                {sem.courses?.length > 0 ? (
-                  sem.courses.map((course, cIdx) => (
-                    <div
-                      key={cIdx}
-                      className="px-5 py-3.5 flex items-center justify-between gap-4 hover:bg-stone-50 transition-colors"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-bold text-stone-800 text-sm truncate">
-                          {course.code} - {course.title}
-                        </p>
-                        <p className="text-[11px] font-semibold text-stone-500 mt-1 uppercase tracking-wider">
-                          {course.type} • {course.category}
-                        </p>
-                      </div>
-                      <div className="flex-shrink-0 w-48 text-right">
-                        {course.assigneeId ? (
-                          <div className="inline-flex items-center gap-2 text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 shadow-sm">
-                            <User size={14} />
-                            <span className="text-xs font-bold truncate">
-                              {course.assigneeName}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="inline-flex items-center gap-2 text-stone-500 bg-stone-100 px-3 py-1.5 rounded-lg border border-stone-200 shadow-sm">
-                            <AlertCircle size={14} />
-                            <span className="text-xs font-bold">
-                              Unassigned
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                {techCompetency.map((course, cIdx) => (
+                  <div
+                    key={cIdx}
+                    className="px-5 py-3.5 flex items-center justify-between gap-4 hover:bg-stone-50 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-stone-800 text-sm truncate">
+                        {course.code} - {course.title}
+                      </p>
                     </div>
-                  ))
-                ) : (
-                  <div className="p-4 text-center text-xs font-medium text-stone-400 italic">
-                    No courses in this semester.
                   </div>
-                )}
+                ))}
               </div>
             </div>
-          ))}
-          {/* Electives rendering omitted for brevity but they follow the exact same structure as above */}
+          )}
         </div>
       </div>
     </div>
@@ -197,7 +249,16 @@ const ActionModal = ({ isOpen, onClose, pd, onActionSubmit, submitting }) => {
     { label: "Section 1 – Program Info", ok: !!pdData.award?.title },
     { label: "Section 2 – Objectives", ok: !!pdData.overview },
     { label: "Section 3 – Structure", ok: !!(pdData.semesters?.length > 0) },
-    { label: "Section 4 – Electives", ok: !!pdData.prof_electives },
+    {
+      label: "Section 4 – Details",
+      // Fixed for 2026/2024 polymorphism
+      ok: !!(
+        pdData.prof_electives?.length > 0 ||
+        pdData.section4?.technicalCompetencyCourses?.length > 0 ||
+        pdData.section4?.professionalElectives?.length > 0 ||
+        pdData.section4?.programDeliveryAndAttainment
+      ),
+    },
   ];
   const score = checks.filter((c) => c.ok).length;
   const pct = Math.round((score / checks.length) * 100);
@@ -446,6 +507,7 @@ const PDReviewList = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [schemaFilter, setSchemaFilter] = useState("All");
 
   const [previewData, setPreviewData] = useState(null);
   const [assignmentData, setAssignmentData] = useState(null);
@@ -456,7 +518,6 @@ const PDReviewList = () => {
   const fetchAllPDs = useCallback(async () => {
     setLoading(true);
     try {
-      // Changed from /reviews/pds to /pds/all
       const { data } = await axios.get("/api/admin/pds/all", {
         headers: { Authorization: `Bearer ${adminToken}` },
       });
@@ -476,7 +537,7 @@ const PDReviewList = () => {
     if (adminToken) fetchAllPDs();
   }, [adminToken, fetchAllPDs]);
 
-  // Handle Search Filtering, Status Filtering AND Deduplication
+  // Handle Search Filtering, Status Filtering, Schema Filtering AND Deduplication
   const latestFilteredPds = useMemo(() => {
     // 1. Deduplicate by program_id, keeping the newest version
     const map = new Map();
@@ -497,7 +558,14 @@ const PDReviewList = () => {
       matched = matched.filter((pd) => pd.status === statusFilter);
     }
 
-    // 3. Filter by search term
+    // 3. Filter by schema
+    if (schemaFilter !== "All") {
+      matched = matched.filter(
+        (pd) => (pd.scheme_year || "2024") === schemaFilter,
+      );
+    }
+
+    // 4. Filter by search term
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       matched = matched.filter(
@@ -512,7 +580,7 @@ const PDReviewList = () => {
     return matched.sort(
       (a, b) => new Date(b.updated_at) - new Date(a.updated_at),
     );
-  }, [pds, searchTerm, statusFilter]);
+  }, [pds, searchTerm, statusFilter, schemaFilter]);
 
   const handlePreviewClick = (pd) => {
     setPreviewData({
@@ -520,7 +588,8 @@ const PDReviewList = () => {
       metaData: {
         programName: pd.program_name,
         programCode: pd.program_id,
-        schemeYear: pd.scheme_year,
+        schemaVersion: pd.scheme_year || "2024", // Critical for Preview.jsx
+        schemeYear: pd.scheme_year || "2024",
         versionNo: pd.version_no,
         effectiveAy: pd.effective_ay,
       },
@@ -607,16 +676,42 @@ const PDReviewList = () => {
               )}
             </div>
 
-            {/* Status Tabs */}
-            <div className="flex flex-wrap items-center gap-1.5 bg-stone-100 p-1.5 rounded-xl w-full md:w-auto overflow-x-auto scrollbar-hide">
-              {STATUS_OPTIONS.map((s) => (
-                <StatusPill
-                  key={s}
-                  value={s}
-                  active={statusFilter === s}
-                  onClick={() => setStatusFilter(s)}
-                />
-              ))}
+            <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
+              {/* Schema Filter */}
+              <div className="flex items-center bg-stone-50 border border-stone-200 rounded-xl overflow-hidden p-1 shadow-sm">
+                <span className="text-[10px] font-bold text-stone-500 px-2 uppercase tracking-widest hidden sm:block">
+                  Schema:
+                </span>
+                {SCHEMA_OPTIONS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSchemaFilter(s)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      schemaFilter === s
+                        ? s === "2026"
+                          ? "bg-indigo-600 text-white shadow-sm"
+                          : s === "2024"
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : "bg-stone-800 text-white shadow-sm"
+                        : "text-stone-500 hover:bg-stone-200"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+
+              {/* Status Tabs */}
+              <div className="flex flex-wrap items-center gap-1.5 bg-stone-100 p-1.5 rounded-xl w-full md:w-auto overflow-x-auto scrollbar-hide">
+                {STATUS_OPTIONS.map((s) => (
+                  <StatusPill
+                    key={s}
+                    value={s}
+                    active={statusFilter === s}
+                    onClick={() => setStatusFilter(s)}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -640,7 +735,7 @@ const PDReviewList = () => {
               No Documents Found
             </h3>
             <p className="text-stone-500 text-sm mt-2 max-w-md font-medium">
-              {searchTerm || statusFilter !== "All"
+              {searchTerm || statusFilter !== "All" || schemaFilter !== "All"
                 ? "No program documents matched your specific search or filter criteria."
                 : "There are no program documents currently available in your jurisdiction."}
             </p>
@@ -650,12 +745,16 @@ const PDReviewList = () => {
             {latestFilteredPds.map((pd) => (
               <div
                 key={pd._id}
-                className="bg-white rounded-3xl border border-stone-200 shadow-sm hover:shadow-lg hover:border-amber-300 transition-all flex flex-col overflow-hidden group"
+                className={`bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all flex flex-col overflow-hidden group ${pd.scheme_year === "2026" ? "border-indigo-100 hover:border-indigo-300" : "border-stone-200 hover:border-blue-300"}`}
               >
                 {/* Card Header */}
-                <div className="p-6 border-b border-stone-100 flex items-start justify-between gap-4 bg-stone-50/30">
+                <div
+                  className={`p-6 border-b flex items-start justify-between gap-4 ${pd.scheme_year === "2026" ? "bg-indigo-50/30 border-indigo-50" : "bg-stone-50/30 border-stone-100"}`}
+                >
                   <div className="flex items-start gap-4 min-w-0">
-                    <div className="p-3.5 bg-amber-100 text-amber-700 rounded-2xl flex-shrink-0 border border-amber-200 shadow-sm">
+                    <div
+                      className={`p-3.5 rounded-2xl flex-shrink-0 border shadow-sm ${pd.scheme_year === "2026" ? "bg-indigo-100 text-indigo-700 border-indigo-200" : "bg-amber-100 text-amber-700 border-amber-200"}`}
+                    >
                       <FileText size={24} />
                     </div>
                     <div className="min-w-0">
@@ -666,10 +765,17 @@ const PDReviewList = () => {
                         {pd.program_name || "Untitled Program"}
                       </h2>
                       <div className="flex items-center flex-wrap gap-2">
+                        {/* Schema Tag - The key addition requested */}
+                        <span
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest border shadow-sm ${pd.scheme_year === "2026" ? "text-indigo-700 bg-indigo-50 border-indigo-200" : "text-blue-700 bg-blue-50 border-blue-200"}`}
+                        >
+                          {pd.scheme_year || "2024"} Schema
+                        </span>
+
                         <span className="text-[10px] font-bold bg-white text-stone-700 px-2.5 py-1 rounded-full border border-stone-200 uppercase tracking-widest shadow-sm">
                           {pd.program_id}
                         </span>
-                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full border border-amber-200 uppercase tracking-widest shadow-sm">
+                        <span className="text-[10px] font-bold text-stone-800 bg-stone-100 px-2.5 py-1 rounded-full border border-stone-200 uppercase tracking-widest shadow-sm">
                           v{pd.version_no}
                         </span>
                         <span

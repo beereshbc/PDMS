@@ -683,13 +683,49 @@ def process_pdf(file_path: str, requested_schema: str = "auto") -> Dict[str, Any
 
             if schema == "2026":
                 parse_2026(pdf, full_text, data)
+
+                # 🔴 STRICT 2026 DB SCHEMA SEPARATION 🔴
+                # Remove 2024 flat structures so it parses and saves cleanly as 2026
+                data.pop("prof_electives", None)
+                data.pop("open_electives", None)
+                if "section4" in data:
+                    data["section4"].pop("professionalElectives", None)
+                    data["section4"].pop("openElectives", None)
+
+                # 2026 uses categories only, remove flat courses array
+                for sem in data.get("semesters", []):
+                    sem.pop("courses", None)
+                    if "categories" not in sem:
+                        sem["categories"] = []
+
             else:
                 parse_2024(pdf, full_text, data)
 
+                # 🔴 STRICT 2024 DB SCHEMA SEPARATION 🔴
+                # Remove 2026 dynamic structures so it parses and saves cleanly as 2024
+                sec4 = data.get("section4", {})
+                sec4.pop("technicalCompetencyCourses", None)
+                sec4.pop("teachingLearningMethods", None)
+                sec4.pop("attendance", None)
+                sec4.pop("programDeliveryAndAttainment", None)
+                sec4.pop("studentSupport", None)
+                sec4.pop("qualityControlMeasures", None)
+
+                # 2024 uses flat courses only, remove categories array
+                for sem in data.get("semesters", []):
+                    sem.pop("categories", None)
+                    if "courses" not in sem:
+                        sem["courses"] = []
+
         # Standardize 8 Semesters minimum
         while len(data["semesters"]) < 8:
-            data["semesters"].append(
-                {"sem_no": len(data["semesters"]) + 1, "courses": [], "categories": []})
+            sem_base = {"sem_no": len(data["semesters"]) + 1}
+            if schema == "2026":
+                sem_base["categories"] = []
+            else:
+                sem_base["courses"] = []
+            data["semesters"].append(sem_base)
+
         data["semesters"].sort(key=lambda x: x["sem_no"])
 
         # Basic Confidence & Validation logic
@@ -701,13 +737,19 @@ def process_pdf(file_path: str, requested_schema: str = "auto") -> Dict[str, Any
         if not data["details"].get("program_name"):
             warnings.append("Program Name missing.")
 
-        courses_count = sum(len(s.get("courses", [])) + sum(len(c.get("courses", []))
-                            for c in s.get("categories", [])) for s in data.get("semesters", []))
+        # Determine course count depending on schema
+        if schema == "2026":
+            courses_count = sum(len(c.get("courses", [])) for s in data.get(
+                "semesters", []) for c in s.get("categories", []))
+        else:
+            courses_count = sum(len(s.get("courses", []))
+                                for s in data.get("semesters", []))
+
         if courses_count < 10:
             score -= 40
             warnings.append("Very few or no courses detected.")
 
-        if schema == "2026" and not data["section4"]["technicalCompetencyCourses"]:
+        if schema == "2026" and not data["section4"].get("technicalCompetencyCourses"):
             warnings.append("Technical Competency Courses not found.")
 
         data["parserWarnings"] = warnings

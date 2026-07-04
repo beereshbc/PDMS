@@ -8,6 +8,16 @@
  *           polymorphic Section 4 (Electives for 2024 / Institutional
  *           Delivery & Quality fields for 2026).
  *
+ * IMPORTANT (2026 schema policy):
+ *   Full-document PDF auto-import is INTENTIONALLY restricted to the 2024
+ *   schema only. The 2026 schema uses a dynamic, category-based structure
+ *   that does not map safely onto the legacy flat parser, which was causing
+ *   2026 documents to be saved with 2024-shaped data. For 2026, every
+ *   table-shaped subsection (semester categories, technical competency
+ *   courses) instead exposes an "AI Auto-Fill" button that opens a small
+ *   AI parser modal — the creator pastes a copied table and the AI extracts
+ *   structured rows into just that section.
+ *
  * Designed for: ~80,000 concurrent users
  * React Optimizations: useMemo, useCallback, lazy renders, stable refs
  */
@@ -365,6 +375,10 @@ const buildApiService = (axios, createrToken) => {
       axios.post("/api/creater/pd/ai-enhance", body, { headers }),
     aiEnhanceSection: (body) =>
       axios.post("/api/creater/pd/ai-enhance-section", body, { headers }),
+    // NEW: AI table-paste parser — used by the "AI Auto-Fill" buttons across
+    // both the 2024 and 2026 schemas
+    parseTable: (body) =>
+      axios.post("/api/creater/pd/parse-table", body, { headers }),
   };
 };
 
@@ -995,6 +1009,103 @@ const AIAssistantModal = ({
   );
 };
 
+const TableParserModal = ({
+  isOpen,
+  onClose,
+  onApply,
+  apiService,
+  tableType,
+  title,
+  subtitle,
+}) => {
+  const [tableText, setTableText] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) setTableText("");
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleParse = async () => {
+    if (!tableText.trim()) return toast.error("Please paste a table first.");
+    setLoading(true);
+    try {
+      const { data } = await apiService.parseTable({ tableText, tableType });
+      if (data.success && data.parsedRows) {
+        onApply(data.parsedRows);
+        toast.success("Table parsed successfully!");
+        onClose();
+      } else {
+        toast.error(data.message || "Failed to parse table.");
+      }
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message || "Failed to connect to AI service.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
+        <div className="bg-emerald-50 px-6 py-4 flex items-center justify-between border-b border-emerald-100">
+          <div>
+            <h3 className="font-bold text-emerald-800 text-base">{title}</h3>
+            {subtitle && (
+              <p className="text-xs text-emerald-600 mt-1">{subtitle}</p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="text-emerald-400 hover:bg-emerald-100 p-1.5 rounded-lg transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-6 flex-1">
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+            <FileText size={14} className="text-emerald-500" />
+            Paste Table Data
+          </label>
+          <textarea
+            className="w-full h-64 p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/30 text-sm resize-none text-gray-800 placeholder:text-gray-400 font-mono"
+            placeholder="Paste the raw text from your Word, Excel, or PDF table here..."
+            value={tableText}
+            onChange={(e) => setTableText(e.target.value)}
+            disabled={loading}
+          />
+        </div>
+
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50">
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="px-5 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleParse}
+            disabled={loading || !tableText.trim()}
+            className="flex items-center gap-2 px-6 py-2 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 shadow-sm transition-all"
+          >
+            {loading ? (
+              <RefreshCw size={15} className="animate-spin" />
+            ) : (
+              <Wand2 size={15} />
+            )}
+            {loading ? "Extracting..." : "Extract Courses"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ═════════════════════════════════════════════════════════════════════════════
 // § 9. MAIN COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1149,7 +1260,7 @@ const CreatePD = () => {
         try {
           setMetaData(JSON.parse(savedMeta));
           setPdData(JSON.parse(savedData));
-          toast("Restored unsaved draft", { icon: "📁" });
+          toast("Restored unsaved draft");
         } catch {
           clearLocalDraft();
         }
@@ -1452,6 +1563,10 @@ const CreatePD = () => {
 
   const processPDFUpload = useCallback(
     async (file, isRetry = false) => {
+      // Hard guard: full-document PDF import is only supported for the 2024
+      // schema. This prevents the 2026 dynamic structure from ever being
+      // saved through the legacy flat-course mapping path.
+
       if (file.type !== "application/pdf") {
         return dispatchUpload({
           type: "ERROR",
@@ -1469,11 +1584,11 @@ const CreatePD = () => {
       dispatchUpload({ type: "START", controller });
 
       const formData = new FormData();
-      formData.append("pdFile", file);
-      // Explicitly append schema version again just to be 100% safe
+      // CRITICAL FIX: Append schemaVersion BEFORE the file!
+      // Multer sequentially parses the stream, so it needs to read this first.
       formData.append("schemaVersion", metaData.schemaVersion);
+      formData.append("pdFile", file);
 
-      // Simulate early step transitions while HTTP request is in-flight
       const step1Timer = setTimeout(
         () =>
           dispatchUpload({
@@ -1543,7 +1658,7 @@ const CreatePD = () => {
           : 100;
         const schemaDetected = data.schemaVersion || metaData.schemaVersion;
 
-        // ── Merge parsed data into state ──
+        // Merge parsed data into state
         setPdData((prev) => normaliseParsedData(prev, imp));
 
         if (imp.details?.program_name) {
@@ -1596,7 +1711,6 @@ const CreatePD = () => {
         )
           return;
 
-        // Auto-retry fallback
         if (!isRetry && metaData.parseMode === "auto") {
           toast("Dynamic parser failed — retrying with stable engine…", {
             icon: "🔄",
@@ -1648,6 +1762,10 @@ const CreatePD = () => {
       // Update the UI immediately
       setMetaData((p) => ({ ...p, schemaVersion: newSchema }));
 
+      // Clear any lingering PDF-uploader state — the uploader is 2024-only,
+      // so a leftover error/summary from a prior schema shouldn't persist.
+      dispatchUpload({ type: "RESET" });
+
       if (!metaData.programCode) {
         setDirty(true);
         return;
@@ -1662,6 +1780,7 @@ const CreatePD = () => {
 
         if (existingForSchema) {
           // Found an existing document for this schema year -> Auto-fetch it!
+          await fetchLatestPD();
           await fetchFullPD(existingForSchema._id);
         } else {
           // No history for this specific schema year -> Give them a clean slate
@@ -1942,6 +2061,183 @@ const CreatePD = () => {
         return { ...sem, categories: cats };
       });
       return { ...p, semesters: s };
+    });
+  }, []);
+
+  // ── NEW: 2026 AI Auto-Fill (Table Paste Parser) ─────────────────────────
+  // A single, generic modal-driven flow that lets a creator paste a copied
+  // table for either (a) a specific semester category, or (b) the Technical
+  // Competency Courses table, and have the AI extract structured rows.
+  // ── ADVANCED AI Auto-Fill (Table Paste Parser) ─────────────────────────
+  // A single, generic modal-driven flow that lets a creator paste a copied
+  // table for any table-based section across the 2024 and 2026 schemas.
+  const [tableParserConfig, setTableParserConfig] = useState({
+    isOpen: false,
+    mode: null, // "category" | "techCompetency" | "flatCourses2024" | "electives2024" | "structureTable"
+    si: null, // Semester Index
+    catIdx: null, // Category Index
+    type: null, // "prof" or "open" for electives
+    gi: null, // Group Index for electives
+  });
+
+  const openCategoryTableParser = useCallback((si, catIdx) => {
+    setTableParserConfig({
+      isOpen: true,
+      mode: "category",
+      si,
+      catIdx,
+      type: null,
+      gi: null,
+    });
+  }, []);
+
+  const openTechCompetencyTableParser = useCallback(() => {
+    setTableParserConfig({
+      isOpen: true,
+      mode: "techCompetency",
+      si: null,
+      catIdx: null,
+      type: null,
+      gi: null,
+    });
+  }, []);
+
+  // For 2024 Flat Semesters
+  const openFlatTableParser = useCallback((si) => {
+    setTableParserConfig({
+      isOpen: true,
+      mode: "flatCourses2024",
+      si,
+      catIdx: null,
+      type: null,
+      gi: null,
+    });
+  }, []);
+
+  // For 2024 Elective Groups
+  const openElectiveTableParser = useCallback((type, gi) => {
+    setTableParserConfig({
+      isOpen: true,
+      mode: "electives2024",
+      type,
+      gi,
+      si: null,
+      catIdx: null,
+    });
+  }, []);
+
+  // For Programme Structure Table
+  const openStructureTableParser = useCallback(() => {
+    setTableParserConfig({
+      isOpen: true,
+      mode: "structureTable",
+      si: null,
+      catIdx: null,
+      type: null,
+      gi: null,
+    });
+  }, []);
+
+  const closeTableParser = useCallback(() => {
+    setTableParserConfig({
+      isOpen: false,
+      mode: null,
+      si: null,
+      catIdx: null,
+      type: null,
+      gi: null,
+    });
+  }, []);
+
+  /** Applies AI-extracted rows into the correct part of pdData, based on mode. */
+  const handleTableParserApply = useCallback((parsedRows) => {
+    if (!Array.isArray(parsedRows) || parsedRows.length === 0) return;
+    setDirty(true);
+
+    setTableParserConfig((cfg) => {
+      // 1. Handle Programme Structure rows (Different Object Shape)
+      if (cfg.mode === "structureTable") {
+        const cleanedStructureRows = parsedRows.map((r) => ({
+          category: (r.category || "").toString().trim(),
+          code: (r.code || "").toString().toUpperCase().trim(),
+          credits: parseInt(r.credits, 10) || 0,
+        }));
+
+        setPdData((p) => ({
+          ...p,
+          structure_table: [...p.structure_table, ...cleanedStructureRows],
+        }));
+        return cfg;
+      }
+
+      // 2. Handle Course rows (Shared Shape for Semesters & Electives)
+      const VALID_TYPES = ["Theory", "Lab", "Theory+Lab", "Project"];
+      const cleanedCourses = parsedRows.map((c) => ({
+        code: (c.code || "").toString().toUpperCase().trim(),
+        title: (c.title || "").toString().trim(),
+        credits: parseInt(c.credits, 10) || 0,
+        type: VALID_TYPES.includes(c.type) ? c.type : "Theory",
+        category: c.category || "Core",
+      }));
+
+      // 2026 Category Courses
+      if (cfg.mode === "category" && cfg.si !== null && cfg.catIdx !== null) {
+        setPdData((p) => {
+          const s = [...p.semesters];
+          s[cfg.si] = { ...s[cfg.si] };
+          s[cfg.si].categories = [...s[cfg.si].categories];
+          s[cfg.si].categories[cfg.catIdx] = {
+            ...s[cfg.si].categories[cfg.catIdx],
+          };
+          s[cfg.si].categories[cfg.catIdx].courses = [
+            ...s[cfg.si].categories[cfg.catIdx].courses,
+            ...cleanedCourses,
+          ];
+          return { ...p, semesters: s };
+        });
+      }
+      // 2026 Technical Competency Courses
+      else if (cfg.mode === "techCompetency") {
+        setPdData((p) => ({
+          ...p,
+          section4: {
+            ...p.section4,
+            technicalCompetencyCourses: [
+              ...p.section4.technicalCompetencyCourses,
+              ...cleanedCourses.map(({ code, title, credits }) => ({
+                code,
+                title,
+                credits,
+              })),
+            ],
+          },
+        }));
+      }
+      // 2024 Flat Semester Courses
+      else if (cfg.mode === "flatCourses2024" && cfg.si !== null) {
+        setPdData((p) => {
+          const s = [...p.semesters];
+          s[cfg.si] = {
+            ...s[cfg.si],
+            courses: [...s[cfg.si].courses, ...cleanedCourses],
+          };
+          return { ...p, semesters: s };
+        });
+      }
+      // 2024 Elective Groups
+      else if (cfg.mode === "electives2024" && cfg.gi !== null) {
+        const key =
+          cfg.type === "prof" ? "professionalElectives" : "openElectives";
+        setPdData((p) => {
+          const a = [...p.section4[key]];
+          a[cfg.gi] = {
+            ...a[cfg.gi],
+            courses: [...a[cfg.gi].courses, ...cleanedCourses],
+          };
+          return { ...p, section4: { ...p.section4, [key]: a } };
+        });
+      }
+      return cfg;
     });
   }, []);
 
@@ -2300,10 +2596,35 @@ const CreatePD = () => {
       if (!metaData.programId) return toast.error("Select a program first.");
       setLoading(true);
 
+      // 🔴 STRICT DB SAVING STRIPPER 🔴
+      // We explicitly clone and remove cross-schema arrays so MongoDB never throws schema validation errors
+      let sanitizedPdData = JSON.parse(JSON.stringify(pdData));
+
+      if (metaData.schemaVersion === "2026") {
+        // Remove 2024 Fields
+        delete sanitizedPdData.prof_electives;
+        delete sanitizedPdData.open_electives;
+        if (sanitizedPdData.section4) {
+          delete sanitizedPdData.section4.professionalElectives;
+          delete sanitizedPdData.section4.openElectives;
+        }
+        sanitizedPdData.semesters.forEach((sem) => delete sem.courses);
+      } else {
+        // Remove 2026 Fields
+        if (sanitizedPdData.section4) {
+          delete sanitizedPdData.section4.technicalCompetencyCourses;
+          delete sanitizedPdData.section4.teachingLearningMethods;
+          delete sanitizedPdData.section4.attendance;
+          delete sanitizedPdData.section4.programDeliveryAndAttainment;
+          delete sanitizedPdData.section4.studentSupport;
+          delete sanitizedPdData.section4.qualityControlMeasures;
+        }
+        sanitizedPdData.semesters.forEach((sem) => delete sem.categories);
+      }
+
       const payload = {
         programId: metaData.programCode,
         programName: metaData.programName,
-        // CRITICAL FIX: Mapping the correct user-input schemeYear
         schemeYear: metaData.schemeYear || metaData.schemaVersion,
         schemaVersion: metaData.schemaVersion,
         effectiveAy: metaData.effectiveAy,
@@ -2311,7 +2632,7 @@ const CreatePD = () => {
         academicCredits: metaData.academicCredits,
         isNewProgram: metaData.isNew,
         status,
-        pdData,
+        pdData: sanitizedPdData, // Send cleaned data
         reviewerId,
       };
 
@@ -2490,8 +2811,8 @@ const CreatePD = () => {
               </div>
               <p className="text-[10px] text-gray-400 mt-1.5 ml-0.5">
                 {metaData.schemaVersion === "2026"
-                  ? "Semesters are grouped by category (e.g. Academic, Lab, Elective)."
-                  : "Flat semester course list — compatible with pre-2026 documents."}
+                  ? "Semesters are grouped by category (e.g. Academic, Lab, Elective). Manual entry + AI Auto-Fill only."
+                  : "Flat semester course list — compatible with pre-2026 documents. Full PDF import available."}
               </p>
             </div>
 
@@ -2566,107 +2887,142 @@ const CreatePD = () => {
         </div>
       </SectionCard>
 
-      {/* ── Polymorphic AI Parser ── */}
-      <SectionCard
-        icon={<UploadCloud size={16} className="text-violet-500" />}
-        iconBg="bg-violet-50"
-        title="Polymorphic AI Document Parser"
-        subtitle={`Smart extraction engine — current mode: ${metaData.parseMode} | schema: ${metaData.schemaVersion}`}
-        action={
-          <select
-            value={metaData.parseMode}
-            onChange={handleParseModeChange}
-            className="text-xs font-semibold px-2 py-1.5 bg-violet-50 text-violet-700 border border-violet-200 rounded-lg outline-none cursor-pointer"
-          >
-            <option value="auto">Auto Mode</option>
-            {/* <option value="stable">Stable (2024)</option>
-            <option value="dynamic">Dynamic AI (2026+)</option> */}
-          </select>
-        }
-      >
-        {/* Drop zone */}
-        <div
-          className={`relative border-2 border-dashed rounded-2xl p-6 text-center transition-all ${
-            dragActive
-              ? "border-violet-500 bg-violet-50 scale-[1.005]"
-              : "border-gray-200 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-300"
-          }`}
-          onDragEnter={handleDrag}
-          onDragLeave={handleDrag}
-          onDragOver={handleDrag}
-          onDrop={handleDrop}
+      {/* ── PDF Parser (2024 ONLY) — restricted per 2026 schema policy ── */}
+      {metaData.schemaVersion === "2024" ? (
+        <SectionCard
+          icon={<UploadCloud size={16} className="text-violet-500" />}
+          iconBg="bg-violet-50"
+          title="AI Document Parser (2024 Schema)"
+          subtitle={`Smart extraction engine — current mode: ${metaData.parseMode}`}
+          action={
+            <select
+              value={metaData.parseMode}
+              onChange={handleParseModeChange}
+              className="text-xs font-semibold px-2 py-1.5 bg-violet-50 text-violet-700 border border-violet-200 rounded-lg outline-none cursor-pointer"
+            >
+              <option value="auto">Auto Mode</option>
+            </select>
+          }
         >
-          <input
-            type="file"
-            accept=".pdf"
-            ref={fileInputRef}
-            onChange={handleFileSelect}
-            className="hidden"
-            id="pd-import-upload"
-          />
+          {/* Drop zone */}
+          <div
+            className={`relative border-2 border-dashed rounded-2xl p-6 text-center transition-all ${
+              dragActive
+                ? "border-violet-500 bg-violet-50 scale-[1.005]"
+                : "border-gray-200 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-300"
+            }`}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <input
+              type="file"
+              accept=".pdf"
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              className="hidden"
+              id="pd-import-upload"
+            />
 
-          {/* ── IDLE ── */}
-          {uploadState.status === "idle" && (
-            <div className="py-2">
-              <div className="mx-auto w-14 h-14 bg-white rounded-2xl shadow-sm flex items-center justify-center mb-3 border border-gray-100">
-                <UploadCloud size={26} className="text-violet-500" />
+            {/* ── IDLE ── */}
+            {uploadState.status === "idle" && (
+              <div className="py-2">
+                <div className="mx-auto w-14 h-14 bg-white rounded-2xl shadow-sm flex items-center justify-center mb-3 border border-gray-100">
+                  <UploadCloud size={26} className="text-violet-500" />
+                </div>
+                <h4 className="text-sm font-semibold text-gray-800 mb-1">
+                  Drag & drop your syllabus PDF
+                </h4>
+                <p className="text-xs text-gray-500 mb-4">
+                  Max 15 MB · Engine auto-detects layout type for the 2024
+                  schema
+                </p>
+                <label
+                  htmlFor="pd-import-upload"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all bg-white border border-gray-200 text-gray-700 hover:border-violet-300 hover:text-violet-600 shadow-sm"
+                >
+                  Browse Files
+                </label>
               </div>
-              <h4 className="text-sm font-semibold text-gray-800 mb-1">
-                Drag & drop your syllabus PDF
-              </h4>
-              <p className="text-xs text-gray-500 mb-4">
-                Max 15 MB · Engine auto-detects schema and layout type
+            )}
+
+            {/* ── IN PROGRESS ── */}
+            {["uploading", "parsing", "mapping"].includes(
+              uploadState.status,
+            ) && (
+              <ParsingProgressView
+                uploadState={uploadState}
+                onCancel={cancelUpload}
+              />
+            )}
+
+            {/* ── ERROR ── */}
+            {uploadState.status === "error" && (
+              <div className="py-2">
+                <ServerCrash size={32} className="mx-auto text-rose-400 mb-3" />
+                <p className="text-sm font-semibold text-rose-600 mb-1">
+                  Extraction Failed
+                </p>
+                <p className="text-xs text-rose-500 mb-4 max-w-sm mx-auto">
+                  {uploadState.message}
+                </p>
+                {uploadState.errorDetails && (
+                  <pre className="text-[10px] text-left bg-rose-50 border border-rose-100 rounded-xl p-3 mb-4 overflow-x-auto max-w-sm mx-auto text-rose-400 whitespace-pre-wrap">
+                    {uploadState.errorDetails.slice(0, 200)}
+                  </pre>
+                )}
+                <button
+                  onClick={() => dispatchUpload({ type: "RESET" })}
+                  className="text-xs font-medium bg-white px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-600"
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+
+            {/* ── SUCCESS ── */}
+            {uploadState.status === "success" && uploadState.summary && (
+              <ExtractionSummary
+                summary={uploadState.summary}
+                onReset={() => dispatchUpload({ type: "RESET" })}
+              />
+            )}
+          </div>
+        </SectionCard>
+      ) : (
+        <SectionCard
+          icon={<Sparkles size={16} className="text-violet-500" />}
+          iconBg="bg-violet-50"
+          title="AI-Assisted Manual Entry — 2026 Schema"
+          subtitle="Full PDF auto-import is disabled for the 2026 schema"
+        >
+          <div className="flex items-start gap-3 p-4 bg-indigo-50/60 border border-indigo-100 rounded-xl">
+            <Info size={16} className="text-indigo-500 mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-indigo-800 leading-relaxed space-y-2">
+              <p className="font-semibold">Why is PDF upload disabled here?</p>
+              <p>
+                The 2026 schema uses a dynamic, category-based semester
+                structure that doesn't map safely onto the legacy flat-course
+                parser — importing a full PDF here previously risked saving 2026
+                documents with 2024-shaped data.
               </p>
-              <label
-                htmlFor="pd-import-upload"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all bg-white border border-gray-200 text-gray-700 hover:border-violet-300 hover:text-violet-600 shadow-sm"
-              >
-                Browse Files
-              </label>
+              <p>
+                Instead, fill in the institutional details below manually, then
+                head to <strong>Step 3 (Structure)</strong> and{" "}
+                <strong>Step 4 (Additional/Electives)</strong> — every category
+                and course table there has its own{" "}
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-600">
+                  <Wand2 size={11} /> AI Auto-Fill
+                </span>{" "}
+                button. Copy a table straight from your source document (Word /
+                PDF / Excel) and paste it in — the AI will extract and fill the
+                courses for you, scoped to just that section.
+              </p>
             </div>
-          )}
-
-          {/* ── IN PROGRESS ── */}
-          {["uploading", "parsing", "mapping"].includes(uploadState.status) && (
-            <ParsingProgressView
-              uploadState={uploadState}
-              onCancel={cancelUpload}
-            />
-          )}
-
-          {/* ── ERROR ── */}
-          {uploadState.status === "error" && (
-            <div className="py-2">
-              <ServerCrash size={32} className="mx-auto text-rose-400 mb-3" />
-              <p className="text-sm font-semibold text-rose-600 mb-1">
-                Extraction Failed
-              </p>
-              <p className="text-xs text-rose-500 mb-4 max-w-sm mx-auto">
-                {uploadState.message}
-              </p>
-              {uploadState.errorDetails && (
-                <pre className="text-[10px] text-left bg-rose-50 border border-rose-100 rounded-xl p-3 mb-4 overflow-x-auto max-w-sm mx-auto text-rose-400 whitespace-pre-wrap">
-                  {uploadState.errorDetails.slice(0, 200)}
-                </pre>
-              )}
-              <button
-                onClick={() => dispatchUpload({ type: "RESET" })}
-                className="text-xs font-medium bg-white px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-600"
-              >
-                Try Again
-              </button>
-            </div>
-          )}
-
-          {/* ── SUCCESS ── */}
-          {uploadState.status === "success" && uploadState.summary && (
-            <ExtractionSummary
-              summary={uploadState.summary}
-              onReset={() => dispatchUpload({ type: "RESET" })}
-            />
-          )}
-        </div>
-      </SectionCard>
+          </div>
+        </SectionCard>
+      )}
 
       {/* ── Institutional Details ── */}
       <SectionCard
@@ -2951,6 +3307,13 @@ const CreatePD = () => {
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => openCategoryTableParser(si, catIdx)}
+                  className="flex items-center gap-1 text-[10px] uppercase font-bold text-emerald-600 px-2 py-1 bg-white border border-emerald-200 rounded hover:bg-emerald-50"
+                  title="Paste a table and let AI extract courses into this category"
+                >
+                  <Wand2 size={11} /> AI Auto-Fill
+                </button>
+                <button
                   onClick={() => addCourse2026(si, catIdx)}
                   className="text-[10px] uppercase font-bold text-indigo-600 px-2 py-1 bg-white border border-indigo-200 rounded hover:bg-indigo-50"
                 >
@@ -3062,7 +3425,7 @@ const CreatePD = () => {
                         colSpan={6}
                         className="px-4 py-4 text-center text-xs text-gray-300 italic"
                       >
-                        No courses yet. Click + Course.
+                        No courses yet. Click + Course, or use AI Auto-Fill.
                       </td>
                     </tr>
                   )}
@@ -3080,6 +3443,7 @@ const CreatePD = () => {
     ),
     [
       updateCategoryName2026,
+      openCategoryTableParser,
       addCourse2026,
       removeCategory2026,
       updateCourse2026,
@@ -3198,7 +3562,7 @@ const CreatePD = () => {
                   colSpan={8}
                   className="px-4 py-6 text-center text-xs text-gray-300 italic"
                 >
-                  No courses yet. Click Add.
+                  No courses yet. Click Add, or use AI Auto-Fill.
                 </td>
               </tr>
             )}
@@ -3248,12 +3612,21 @@ const CreatePD = () => {
         iconBg="bg-blue-50"
         title="Programme Structure"
         action={
-          <button
-            onClick={addStructureItem}
-            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm"
-          >
-            <Plus size={11} className="text-blue-500" /> Add Row
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={openStructureTableParser}
+              className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100"
+              title="Paste a table and let AI extract structure rows"
+            >
+              <Wand2 size={11} /> AI Auto-Fill
+            </button>
+            <button
+              onClick={addStructureItem}
+              className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm"
+            >
+              <Plus size={11} className="text-blue-500" /> Add Row
+            </button>
+          </div>
         }
         noPad
       >
@@ -3320,7 +3693,7 @@ const CreatePD = () => {
                     colSpan={5}
                     className="px-4 py-8 text-center text-xs text-gray-300"
                   >
-                    No rows yet. Click Add Row.
+                    No rows yet. Click Add Row, or use AI Auto-Fill.
                   </td>
                 </tr>
               )}
@@ -3403,12 +3776,22 @@ const CreatePD = () => {
                     <Plus size={11} /> Add Category
                   </button>
                 ) : (
-                  <button
-                    onClick={() => addCourse2024(si)}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg"
-                  >
-                    <Plus size={11} /> Add Course
-                  </button>
+                  <>
+                    {/* AI Auto-Fill for 2024 flat semester course table */}
+                    <button
+                      onClick={() => openFlatTableParser(si)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100"
+                      title="Paste a table and let AI extract courses into this semester"
+                    >
+                      <Wand2 size={11} /> AI Auto-Fill
+                    </button>
+                    <button
+                      onClick={() => addCourse2024(si)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg"
+                    >
+                      <Plus size={11} /> Add Course
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => removeSemester(si)}
@@ -3485,6 +3868,14 @@ const CreatePD = () => {
                     />
                   </div>
                   <div className="flex items-center gap-2">
+                    {/* AI Auto-Fill for this elective group's course table */}
+                    <button
+                      onClick={() => openElectiveTableParser(type, gi)}
+                      className="text-xs px-2.5 py-1.5 font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 flex items-center gap-1"
+                      title="Paste a table and let AI extract courses into this group"
+                    >
+                      <Wand2 size={11} /> AI Auto-Fill
+                    </button>
                     <button
                       onClick={() => addElectiveCourse(type, gi)}
                       className="text-xs px-2.5 py-1.5 font-medium bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50"
@@ -3493,7 +3884,7 @@ const CreatePD = () => {
                     </button>
                     <button
                       onClick={() => removeElectiveGroup(type, gi)}
-                      className="text-gray-300 hover:text-rose-400 p-1"
+                      className="text-gray-300 hover:text-rose-400 p-1.5 border border-transparent hover:bg-rose-50 rounded-lg"
                     >
                       <Trash2 size={13} />
                     </button>
@@ -3563,7 +3954,7 @@ const CreatePD = () => {
                             colSpan={5}
                             className="px-4 py-4 text-center text-xs text-gray-300 italic"
                           >
-                            No courses. Click + Course.
+                            No courses. Click + Course, or use AI Auto-Fill.
                           </td>
                         </tr>
                       )}
@@ -3591,6 +3982,7 @@ const CreatePD = () => {
       removeElectiveCourse,
       updateElectiveCourse,
       openElectiveAssignModal,
+      openElectiveTableParser,
     ],
   );
 
@@ -3610,6 +4002,19 @@ const CreatePD = () => {
                   />
                 </div>
                 <button
+                  onClick={() =>
+                    triggerAIAssistant(
+                      `${title} — Item ${i + 1}`,
+                      item,
+                      (res) => updateSection4ArrayItem(key, i, res),
+                    )
+                  }
+                  className="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-2 rounded-lg flex-shrink-0"
+                  title="AI Enhance this item"
+                >
+                  <Sparkles size={14} />
+                </button>
+                <button
                   onClick={() => removeSection4ArrayItem(key, i)}
                   className="text-rose-400 hover:bg-rose-50 p-2 rounded-lg flex-shrink-0"
                 >
@@ -3623,6 +4028,19 @@ const CreatePD = () => {
                   onChange={(v) => updateSection4ArrayItem(key, i, v)}
                   placeholder={`Enter ${title.toLowerCase()} item`}
                 />
+                <button
+                  onClick={() =>
+                    triggerAIAssistant(
+                      `${title} — Item ${i + 1}`,
+                      item,
+                      (res) => updateSection4ArrayItem(key, i, res),
+                    )
+                  }
+                  className="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-2 rounded-lg flex-shrink-0"
+                  title="AI Enhance this item"
+                >
+                  <Sparkles size={14} />
+                </button>
                 <button
                   onClick={() => removeSection4ArrayItem(key, i)}
                   className="text-rose-400 hover:bg-rose-50 p-2 rounded-lg flex-shrink-0"
@@ -3647,6 +4065,7 @@ const CreatePD = () => {
       removeSection4ArrayItem,
       addSection4ArrayItem,
       joditTiny,
+      triggerAIAssistant,
     ],
   );
 
@@ -3665,12 +4084,21 @@ const CreatePD = () => {
             iconBg="bg-violet-50"
             title="Technical Competency Courses"
             action={
-              <button
-                onClick={addTechCompetencyCourse}
-                className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm"
-              >
-                <Plus size={11} /> Add Course
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={openTechCompetencyTableParser}
+                  className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100"
+                  title="Paste a table and let AI extract courses"
+                >
+                  <Wand2 size={12} /> AI Auto-Fill
+                </button>
+                <button
+                  onClick={addTechCompetencyCourse}
+                  className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 shadow-sm"
+                >
+                  <Plus size={11} /> Add Course
+                </button>
+              </div>
             }
             noPad
           >
@@ -3744,7 +4172,8 @@ const CreatePD = () => {
                         colSpan={4}
                         className="px-4 py-6 text-center text-xs text-gray-300 italic"
                       >
-                        No technical competency courses yet.
+                        No technical competency courses yet. Click + Add Course,
+                        or use AI Auto-Fill.
                       </td>
                     </tr>
                   )}
@@ -3825,7 +4254,21 @@ const CreatePD = () => {
           >
             <div className="space-y-4">
               <div>
-                <FieldLabel>Description</FieldLabel>
+                <div className="flex items-center justify-between mb-1.5">
+                  <FieldLabel>Description</FieldLabel>
+                  <button
+                    onClick={() =>
+                      triggerAIAssistant(
+                        "Assessment & Grading — Description",
+                        pdData.section4?.assessmentGrading?.description || "",
+                        (res) => updateAssessmentGrading("description", res),
+                      )
+                    }
+                    className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg hover:bg-indigo-100 border border-indigo-200"
+                  >
+                    <Sparkles size={11} /> AI Enhance
+                  </button>
+                </div>
                 <JoditEditor
                   value={pdData.section4?.assessmentGrading?.description || ""}
                   config={joditShort}
@@ -3833,7 +4276,21 @@ const CreatePD = () => {
                 />
               </div>
               <div>
-                <FieldLabel>Grade Rules</FieldLabel>
+                <div className="flex items-center justify-between mb-1.5">
+                  <FieldLabel>Grade Rules</FieldLabel>
+                  <button
+                    onClick={() =>
+                      triggerAIAssistant(
+                        "Assessment & Grading — Grade Rules",
+                        pdData.section4?.assessmentGrading?.gradeRules || "",
+                        (res) => updateAssessmentGrading("gradeRules", res),
+                      )
+                    }
+                    className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg hover:bg-indigo-100 border border-indigo-200"
+                  >
+                    <Sparkles size={11} /> AI Enhance
+                  </button>
+                </div>
                 <JoditEditor
                   value={pdData.section4?.assessmentGrading?.gradeRules || ""}
                   config={joditTiny}
@@ -3841,7 +4298,23 @@ const CreatePD = () => {
                 />
               </div>
               <div>
-                <FieldLabel>Passing Criteria</FieldLabel>
+                <div className="flex items-center justify-between mb-1.5">
+                  <FieldLabel>Passing Criteria</FieldLabel>
+                  <button
+                    onClick={() =>
+                      triggerAIAssistant(
+                        "Assessment & Grading — Passing Criteria",
+                        pdData.section4?.assessmentGrading?.passingCriteria ||
+                          "",
+                        (res) =>
+                          updateAssessmentGrading("passingCriteria", res),
+                      )
+                    }
+                    className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg hover:bg-indigo-100 border border-indigo-200"
+                  >
+                    <Sparkles size={11} /> AI Enhance
+                  </button>
+                </div>
                 <JoditEditor
                   value={
                     pdData.section4?.assessmentGrading?.passingCriteria || ""
@@ -3898,6 +4371,20 @@ const CreatePD = () => {
             icon={<Info size={16} className="text-gray-400" />}
             iconBg="bg-gray-100"
             title="Additional Notes"
+            action={
+              <button
+                onClick={() =>
+                  triggerAIAssistant(
+                    "Additional Notes",
+                    pdData.section4?.notes || "",
+                    (res) => handleSection4Change("notes", res),
+                  )
+                }
+                className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 border border-indigo-200"
+              >
+                <Sparkles size={13} /> AI Enhance
+              </button>
+            }
           >
             <JoditEditor
               value={pdData.section4?.notes || ""}
@@ -4064,6 +4551,36 @@ const CreatePD = () => {
         currentContent={aiModalConfig.content}
         onApply={aiModalConfig.applyCallback}
         apiService={apiService}
+      />
+
+      <TableParserModal
+        isOpen={tableParserConfig.isOpen}
+        onClose={closeTableParser}
+        onApply={handleTableParserApply}
+        apiService={apiService}
+        tableType={
+          tableParserConfig.mode === "techCompetency"
+            ? "technicalCompetency2026"
+            : tableParserConfig.mode === "flatCourses2024"
+              ? "flatSemesterCourses2024"
+              : tableParserConfig.mode === "electives2024"
+                ? "electiveGroupCourses2024"
+                : tableParserConfig.mode === "structureTable"
+                  ? "programmeStructureTable"
+                  : "semesterCategory2026"
+        }
+        title={
+          tableParserConfig.mode === "techCompetency"
+            ? "AI Auto-Fill — Technical Competency Courses"
+            : tableParserConfig.mode === "flatCourses2024"
+              ? "AI Auto-Fill — Semester Courses"
+              : tableParserConfig.mode === "electives2024"
+                ? "AI Auto-Fill — Elective Group Courses"
+                : tableParserConfig.mode === "structureTable"
+                  ? "AI Auto-Fill — Programme Structure"
+                  : "AI Auto-Fill — Semester Category Courses"
+        }
+        subtitle="Paste a table copied from your syllabus document — the AI will extract courses and add them here."
       />
 
       <ReviewSubmitModal
