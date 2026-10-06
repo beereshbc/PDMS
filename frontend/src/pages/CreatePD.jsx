@@ -766,11 +766,10 @@ const ReviewSubmitModal = ({ isOpen, onClose, onConfirm, apiService }) => {
             admins.map((admin) => (
               <label
                 key={admin._id}
-                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
-                  selected === admin._id
-                    ? "border-blue-500 bg-blue-50/50"
-                    : "border-gray-200 hover:border-blue-300"
-                }`}
+                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selected === admin._id
+                  ? "border-blue-500 bg-blue-50/50"
+                  : "border-gray-200 hover:border-blue-300"
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <input
@@ -1297,7 +1296,7 @@ const CreatePD = () => {
       try {
         const { data } = await apiService.fetchVersions(code);
         if (data.success) setRecentVersions(data.versions);
-      } catch (_) {}
+      } catch (_) { }
     },
     [apiService],
   );
@@ -2012,18 +2011,18 @@ const CreatePD = () => {
         const cats = sem.categories.map((cat, j) =>
           j === catIdx
             ? {
-                ...cat,
-                courses: [
-                  ...cat.courses,
-                  {
-                    code: "",
-                    title: "",
-                    credits: 3,
-                    type: "Theory",
-                    category: "Core",
-                  },
-                ],
-              }
+              ...cat,
+              courses: [
+                ...cat.courses,
+                {
+                  code: "",
+                  title: "",
+                  credits: 3,
+                  type: "Theory",
+                  category: "Core",
+                },
+              ],
+            }
             : cat,
         );
         return { ...sem, categories: cats };
@@ -2459,6 +2458,18 @@ const CreatePD = () => {
     });
   }, []);
 
+  const handleAssignTechCompetencyCreator = useCallback((ci, creator) => {
+    setDirty(true);
+    setPdData((p) => {
+      const a = (p.section4?.technicalCompetencyCourses || []).map((c, j) =>
+        j === ci
+          ? { ...c, assigneeId: creator.id, assigneeName: creator.name }
+          : c,
+      );
+      return { ...p, section4: { ...p.section4, technicalCompetencyCourses: a } };
+    });
+  }, []);
+
   const openAssignModal = useCallback((si, ci, c, catIdx = null) => {
     setCurrentAssignCtx({
       semIndex: si,
@@ -2477,6 +2488,15 @@ const CreatePD = () => {
       groupIndex: gi,
       courseIndex: ci,
       code: c.code || "Elective",
+      currentAssigneeId: c.assigneeId,
+    });
+    setIsAssignModalOpen(true);
+  }, []);
+  const openTechCompetencyAssignModal = useCallback((ci, c) => {
+    setCurrentAssignCtx({
+      isTechCompetency: true,
+      courseIndex: ci,
+      code: c.code || "Technical Competency Course",
       currentAssigneeId: c.assigneeId,
     });
     setIsAssignModalOpen(true);
@@ -2682,41 +2702,41 @@ const CreatePD = () => {
       !!metaData.programId,
 
       Array.isArray(pdData.peos) &&
-        pdData.peos.some((p) => p?.trim()) &&
-        Array.isArray(pdData.psos) &&
-        pdData.psos.some((p) => p?.trim()),
+      pdData.peos.some((p) => p?.trim()) &&
+      Array.isArray(pdData.psos) &&
+      pdData.psos.some((p) => p?.trim()),
 
       metaData.schemaVersion === "2026"
         ? Array.isArray(pdData.semesters) &&
-          pdData.semesters.some((s) => {
-            const categories = Array.isArray(s?.categories) ? s.categories : [];
+        pdData.semesters.some((s) => {
+          const categories = Array.isArray(s?.categories) ? s.categories : [];
 
-            const categoryCourses = categories.flatMap((cat) =>
-              Array.isArray(cat?.courses) ? cat.courses : [],
-            );
+          const categoryCourses = categories.flatMap((cat) =>
+            Array.isArray(cat?.courses) ? cat.courses : [],
+          );
 
-            return categories.length > 0 || categoryCourses.length > 0;
-          })
+          return categories.length > 0 || categoryCourses.length > 0;
+        })
         : Array.isArray(pdData.semesters) &&
-          pdData.semesters.some(
-            (s) => Array.isArray(s?.courses) && s.courses.length > 0,
-          ),
+        pdData.semesters.some(
+          (s) => Array.isArray(s?.courses) && s.courses.length > 0,
+        ),
 
       metaData.schemaVersion === "2026"
         ? !!(
-            pdData.section4?.programDeliveryAndAttainment?.trim() ||
-            pdData.section4?.attendance?.trim() ||
-            (Array.isArray(pdData.section4?.technicalCompetencyCourses) &&
-              pdData.section4.technicalCompetencyCourses.length > 0)
-          )
+          pdData.section4?.programDeliveryAndAttainment?.trim() ||
+          pdData.section4?.attendance?.trim() ||
+          (Array.isArray(pdData.section4?.technicalCompetencyCourses) &&
+            pdData.section4.technicalCompetencyCourses.length > 0)
+        )
         : (Array.isArray(pdData.section4?.professionalElectives) &&
-            pdData.section4.professionalElectives.some(
-              (g) => Array.isArray(g?.courses) && g.courses.length > 0,
-            )) ||
-          (Array.isArray(pdData.section4?.openElectives) &&
-            pdData.section4.openElectives.some(
-              (g) => Array.isArray(g?.courses) && g.courses.length > 0,
-            )),
+          pdData.section4.professionalElectives.some(
+            (g) => Array.isArray(g?.courses) && g.courses.length > 0,
+          )) ||
+        (Array.isArray(pdData.section4?.openElectives) &&
+          pdData.section4.openElectives.some(
+            (g) => Array.isArray(g?.courses) && g.courses.length > 0,
+          )),
     ],
 
     [metaData.programId, metaData.schemaVersion, pdData],
@@ -2818,11 +2838,10 @@ const CreatePD = () => {
 
             {/* Active schema badge */}
             <div
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold ${
-                metaData.schemaVersion === "2026"
-                  ? "bg-indigo-50 border-indigo-200 text-indigo-600"
-                  : "bg-amber-50 border-amber-200 text-amber-600"
-              }`}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold ${metaData.schemaVersion === "2026"
+                ? "bg-indigo-50 border-indigo-200 text-indigo-600"
+                : "bg-amber-50 border-amber-200 text-amber-600"
+                }`}
             >
               <Zap size={13} />
               {metaData.schemaVersion === "2026"
@@ -2906,11 +2925,10 @@ const CreatePD = () => {
         >
           {/* Drop zone */}
           <div
-            className={`relative border-2 border-dashed rounded-2xl p-6 text-center transition-all ${
-              dragActive
-                ? "border-violet-500 bg-violet-50 scale-[1.005]"
-                : "border-gray-200 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-300"
-            }`}
+            className={`relative border-2 border-dashed rounded-2xl p-6 text-center transition-all ${dragActive
+              ? "border-violet-500 bg-violet-50 scale-[1.005]"
+              : "border-gray-200 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-300"
+              }`}
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
@@ -2951,11 +2969,11 @@ const CreatePD = () => {
             {["uploading", "parsing", "mapping"].includes(
               uploadState.status,
             ) && (
-              <ParsingProgressView
-                uploadState={uploadState}
-                onCancel={cancelUpload}
-              />
-            )}
+                <ParsingProgressView
+                  uploadState={uploadState}
+                  onCancel={cancelUpload}
+                />
+              )}
 
             {/* ── ERROR ── */}
             {uploadState.status === "error" && (
@@ -4106,7 +4124,7 @@ const CreatePD = () => {
               <table className="w-full border-collapse text-xs">
                 <thead className="bg-gray-50/60 border-b border-gray-100">
                   <tr>
-                    {["Code", "Title", "Cr", ""].map((h, i) => (
+                    {["Code", "Title", "Cr", "Assignee", ""].map((h, i) => (
                       <th
                         key={i}
                         className="px-3 py-2.5 text-left font-semibold text-gray-400 uppercase tracking-wider text-[10px]"
@@ -4117,66 +4135,60 @@ const CreatePD = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {/* BULLETPROOF FIX: Optional chaining and fallback array */}
-                  {(pdData.section4?.technicalCompetencyCourses || []).map(
-                    (c, i) => (
-                      <tr key={i} className="hover:bg-gray-50/60 group">
-                        <td className="px-2 py-2 w-28">
-                          <OptimizedInput
-                            value={c.code}
-                            onChange={(v) =>
-                              updateTechCompetencyCourse(i, "code", v)
-                            }
-                            className="!py-1.5 !text-xs uppercase !px-2"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <OptimizedInput
-                            value={c.title}
-                            onChange={(v) =>
-                              updateTechCompetencyCourse(i, "title", v)
-                            }
-                            className="!py-1.5 !text-xs !px-2"
-                          />
-                        </td>
-                        <td className="px-2 py-2 w-16">
-                          <OptimizedInput
-                            type="number"
-                            value={c.credits}
-                            onChange={(v) =>
-                              updateTechCompetencyCourse(
-                                i,
-                                "credits",
-                                parseInt(v) || 0,
-                              )
-                            }
-                            className="!py-1.5 !text-xs !text-center"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <button
-                            onClick={() => removeTechCompetencyCourse(i)}
-                            className="text-gray-300 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </td>
-                      </tr>
-                    ),
-                  )}
-                  {(!pdData.section4?.technicalCompetencyCourses ||
-                    pdData.section4.technicalCompetencyCourses.length ===
-                      0) && (
-                    <tr>
-                      <td
-                        colSpan={4}
-                        className="px-4 py-6 text-center text-xs text-gray-300 italic"
-                      >
-                        No technical competency courses yet. Click + Add Course,
-                        or use AI Auto-Fill.
+                  {(pdData.section4?.technicalCompetencyCourses || []).map((c, i) => (
+                    <tr key={i} className="hover:bg-gray-50/60 group">
+                      <td className="px-2 py-2 w-28">
+                        <OptimizedInput
+                          value={c.code}
+                          onChange={(v) => updateTechCompetencyCourse(i, "code", v)}
+                          className="!py-1.5 !text-xs uppercase !px-2"
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <OptimizedInput
+                          value={c.title}
+                          onChange={(v) => updateTechCompetencyCourse(i, "title", v)}
+                          className="!py-1.5 !text-xs !px-2"
+                        />
+                      </td>
+                      <td className="px-2 py-2 w-16">
+                        <OptimizedInput
+                          type="number"
+                          value={c.credits}
+                          onChange={(v) =>
+                            updateTechCompetencyCourse(i, "credits", parseInt(v) || 0)
+                          }
+                          className="!py-1.5 !text-xs !text-center"
+                        />
+                      </td>
+                      <td className="px-2 py-2 w-28">
+                        <AssignBtn
+                          course={c}
+                          onClick={() => openTechCompetencyAssignModal(i, c)}
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          onClick={() => removeTechCompetencyCourse(i)}
+                          className="text-gray-300 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <Trash2 size={12} />
+                        </button>
                       </td>
                     </tr>
-                  )}
+                  ))}
+                  {(!pdData.section4?.technicalCompetencyCourses ||
+                    pdData.section4.technicalCompetencyCourses.length === 0) && (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className="px-4 py-6 text-center text-xs text-gray-300 italic"
+                        >
+                          No technical competency courses yet. Click + Add Course, or use AI
+                          Auto-Fill.
+                        </td>
+                      </tr>
+                    )}
                 </tbody>
               </table>
             </div>
@@ -4305,7 +4317,7 @@ const CreatePD = () => {
                       triggerAIAssistant(
                         "Assessment & Grading — Passing Criteria",
                         pdData.section4?.assessmentGrading?.passingCriteria ||
-                          "",
+                        "",
                         (res) =>
                           updateAssessmentGrading("passingCriteria", res),
                       )
@@ -4600,7 +4612,9 @@ const CreatePD = () => {
         currentAssigneeId={currentAssignCtx?.currentAssigneeId}
         onSelect={(creator) => {
           if (!currentAssignCtx) return;
-          if (currentAssignCtx.isElective) {
+          if (currentAssignCtx.isTechCompetency) {
+            handleAssignTechCompetencyCreator(currentAssignCtx.courseIndex, creator);
+          } else if (currentAssignCtx.isElective) {
             handleAssignElectiveCreator(
               currentAssignCtx.electiveType,
               currentAssignCtx.groupIndex,
@@ -4661,11 +4675,10 @@ const CreatePD = () => {
                       {metaData.programName}
                     </span>
                     <span
-                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase tracking-widest border ${
-                        metaData.schemaVersion === "2026"
-                          ? "text-indigo-600 bg-indigo-50 border-indigo-200"
-                          : "text-amber-600 bg-amber-50 border-amber-200"
-                      }`}
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase tracking-widest border ${metaData.schemaVersion === "2026"
+                        ? "text-indigo-600 bg-indigo-50 border-indigo-200"
+                        : "text-amber-600 bg-amber-50 border-amber-200"
+                        }`}
                     >
                       {metaData.schemaVersion} Schema
                     </span>
