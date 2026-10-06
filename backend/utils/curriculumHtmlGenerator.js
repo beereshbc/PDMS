@@ -11,7 +11,7 @@ const marker = (id) =>
  * @param {Object} options - Options for generation
  * @param {boolean} options.includeTOC - Whether to include TOC (default: true)
  * @param {boolean} options.fullBook - Whether to include front matter and back cover (default: false)
- * @param {Array} options.tocItems - Pre‑built TOC items with page numbers (optional)
+ * @param {Array} options.tocItems - Pre-built TOC items with page numbers (optional)
  * @returns {string} - Full HTML document as string
  */
 export const generateCurriculumHTML = (bookData, options = {}) => {
@@ -22,7 +22,7 @@ export const generateCurriculumHTML = (bookData, options = {}) => {
   const pd = programData?.pd_data || {};
   const pdd = pd;
 
-  // ── Helper: Strip non‑ASCII printable characters ──────────
+  // ── Helper: Strip non-ASCII printable characters ──────────
   const sanitizeText = (text) => {
     if (text === null || text === undefined) return '';
     const str = String(text);
@@ -437,171 +437,426 @@ export const generateCurriculumHTML = (bookData, options = {}) => {
   `;
 
   // ──────────────────────────────────────────────────────────────
-  // 8. WRAP IN FULL HTML DOCUMENT
+  // 8. WRAP IN FULL HTML DOCUMENT WITH PREMIUM STRUCTURED STYLES
   // ──────────────────────────────────────────────────────────────
 
   return `
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
       <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>${sanitizeText(programData.program_name || "Curriculum Book")}</title>
       <style>
-        /* --- Base Print Styles --- */
+        /* ═══════════════════════════════════════════════════════════
+           RESET & BASE
+           ═══════════════════════════════════════════════════════════ */
+        *, *::before, *::after {
+          box-sizing: border-box;
+        }
+        
+        html {
+          -webkit-text-size-adjust: 100%;
+          -ms-text-size-adjust: 100%;
+        }
+
         @page {
           size: A4 portrait;
-          margin: 15mm 15mm;
+          margin: 20mm 18mm;
         }
+
         body {
-          font-family: "Times New Roman", Times, serif;
+          font-family: "Times New Roman", Times, Georgia, serif;
           font-size: 11pt;
-          line-height: 1.6;
-          color: #000;
-          background: #fff;
-          margin: 0;
+          line-height: 1.65;
+          color: #1a1a1a;
+          background: #ffffff;
+          margin: 0 auto;
           padding: 0;
+          max-width: 210mm;
+          min-height: 100vh;
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
         }
+
+        /* ═══════════════════════════════════════════════════════════
+           MAIN CONTAINER - CENTERED, STRUCTURED
+           ═══════════════════════════════════════════════════════════ */
         .curriculum-print-container {
           display: block;
           width: 100%;
+          max-width: 210mm;
+          margin: 0 auto;
+          padding: 0;
+          overflow-x: hidden;
         }
+
+        /* ═══════════════════════════════════════════════════════════
+           PAGE BREAKS
+           ═══════════════════════════════════════════════════════════ */
         .page-break {
           page-break-before: always;
         }
+
+        /* ═══════════════════════════════════════════════════════════
+           TYPOGRAPHY
+           ═══════════════════════════════════════════════════════════ */
         h1 {
-          font-family: Arial, sans-serif;
+          font-family: "Segoe UI", Arial, Helvetica, sans-serif;
           font-size: 24pt;
-          margin-bottom: 10px;
-          color: #1a3a5c;
+          font-weight: 700;
+          margin: 0 0 16px 0;
+          color: #0f2b46;
+          letter-spacing: -0.5px;
+          page-break-after: avoid;
         }
+
         h2 {
-          font-family: Arial, sans-serif;
+          font-family: "Segoe UI", Arial, Helvetica, sans-serif;
           font-size: 18pt;
-          margin-bottom: 5px;
+          font-weight: 600;
+          margin: 24px 0 12px 0;
+          color: #0f2b46;
+          page-break-after: avoid;
         }
+
         h3 {
-          font-family: Arial, sans-serif;
+          font-family: "Segoe UI", Arial, Helvetica, sans-serif;
           font-size: 14pt;
-          margin-top: 20px;
-          border-bottom: 1px solid #000;
-          padding-bottom: 5px;
+          font-weight: 600;
+          margin: 28px 0 12px 0;
+          border-bottom: 2px solid #0f2b46;
+          padding-bottom: 6px;
+          color: #0f2b46;
+          page-break-after: avoid;
         }
+
         h4 {
-          font-family: Arial, sans-serif;
+          font-family: "Segoe UI", Arial, Helvetica, sans-serif;
           font-size: 12pt;
-          margin-top: 15px;
-          border-bottom: 1px solid #000;
-          padding-bottom: 5px;
+          font-weight: 600;
+          margin: 20px 0 10px 0;
+          border-bottom: 1px solid #c0c0c0;
+          padding-bottom: 4px;
+          color: #333333;
+          page-break-after: avoid;
         }
+
+        p {
+          margin: 0 0 12px 0;
+          text-align: justify;
+          hyphens: auto;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           TABLES - STRUCTURED & CENTERED
+           ═══════════════════════════════════════════════════════════ */
         table {
-          width: 100%;
+          width: 100% !important;
+          max-width: 100%;
           border-collapse: collapse;
-          margin-bottom: 15px;
+          margin: 16px auto;
           font-size: 10pt;
           page-break-inside: auto;
+          table-layout: fixed;
+          word-break: break-word;
         }
+
+        thead {
+          display: table-header-group;
+        }
+
         tr {
           page-break-inside: avoid;
           page-break-after: auto;
         }
+
         th, td {
-          border: 1px solid #000;
-          padding: 6px;
+          border: 1px solid #2c2c2c;
+          padding: 8px 10px;
           text-align: left;
           vertical-align: top;
+          word-break: break-word;
+          overflow-wrap: break-word;
         }
+
         th {
-          background-color: #f0f0f0 !important;
-          font-weight: bold;
+          background-color: #e8eef4 !important;
+          font-weight: 700;
+          font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+          font-size: 9.5pt;
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
-        .text-center {
-          text-align: center;
-        }
-        .cdp-rich p {
-          margin: 0 0 5px 0;
-          text-align: justify;
-        }
-        .cdp-rich ul, .cdp-rich ol {
-          padding-left: 20px;
-          margin: 0 0 10px 0;
+
+        td {
+          font-size: 10pt;
         }
 
-        /* --- TOC Styling --- */
+        /* ═══════════════════════════════════════════════════════════
+           LISTS
+           ═══════════════════════════════════════════════════════════ */
+        ul, ol {
+          padding-left: 24px;
+          margin: 8px 0 16px 0;
+        }
+
+        li {
+          margin-bottom: 6px;
+          text-align: justify;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           TABLE OF CONTENTS - PREMIUM STYLING
+           ═══════════════════════════════════════════════════════════ */
         .toc-page {
           page-break-before: always;
-          padding: 40px;
-          font-family: 'Times New Roman', Times, serif;
+          padding: 40px 30px;
+          font-family: "Times New Roman", Times, Georgia, serif;
+          max-width: 100%;
         }
+
         .toc-title {
           text-align: center;
-          font-size: 20pt;
-          border-bottom: 2px solid #000;
-          padding-bottom: 10px;
-          margin-bottom: 20px;
+          font-size: 22pt;
+          font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+          font-weight: 700;
+          border-bottom: 3px double #0f2b46;
+          padding-bottom: 14px;
+          margin-bottom: 28px;
+          color: #0f2b46;
+          letter-spacing: 1px;
         }
+
         .toc-list {
           list-style: none;
           padding: 0;
           margin: 0;
           font-size: 11pt;
-          line-height: 1.8;
-        }
-        .toc-item {
-          display: flex;
-          align-items: center;
-          white-space: nowrap;
-          width: 100%;
-          margin-bottom: 6px;
-        }
-        .toc-item.level-0 {
-          padding-left: 0;
-          font-weight: bold;
-        }
-        .toc-item.level-1 {
-          padding-left: 20px;
-          font-weight: bold;
-        }
-        .toc-item.level-2 {
-          padding-left: 40px;
-          font-weight: normal;
-        }
-        .toc-item.level-3 {
-          padding-left: 60px;
-          font-weight: normal;
-        }
-        .toc-link {
-          text-decoration: none;
-          color: #000;
-        }
-        .toc-title-text {
-          flex: 0 0 auto;
-        }
-        .toc-dots {
-          flex: 1 1 auto;
-          border-bottom: 1px dotted #000;
-          margin: 0 10px;
-          min-width: 10px;
-        }
-        .toc-page-num {
-          flex: 0 0 50px;
-          text-align: right;
-          font-family: 'Times New Roman', Times, serif;
+          line-height: 2;
         }
 
-        /* --- Print-specific overrides --- */
+        .toc-item {
+          display: flex;
+          align-items: baseline;
+          white-space: nowrap;
+          width: 100%;
+          margin-bottom: 4px;
+        }
+
+        .toc-item.level-0 {
+          padding-left: 0;
+          font-weight: 700;
+          font-size: 11.5pt;
+        }
+
+        .toc-item.level-1 {
+          padding-left: 24px;
+          font-weight: 600;
+        }
+
+        .toc-item.level-2 {
+          padding-left: 48px;
+          font-weight: 400;
+        }
+
+        .toc-item.level-3 {
+          padding-left: 72px;
+          font-weight: 400;
+          font-size: 10.5pt;
+        }
+
+        .toc-link {
+          text-decoration: none;
+          color: #0f2b46;
+          transition: color 0.2s ease;
+        }
+
+        .toc-link:hover {
+          color: #1a6fb5;
+          text-decoration: underline;
+        }
+
+        .toc-title-text {
+          flex: 0 0 auto;
+          max-width: 85%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .toc-dots {
+          flex: 1 1 auto;
+          border-bottom: 1.5px dotted #888;
+          margin: 0 10px;
+          min-width: 20px;
+          position: relative;
+          top: -4px;
+        }
+
+        .toc-page-num {
+          flex: 0 0 auto;
+          min-width: 40px;
+          text-align: right;
+          font-family: "Times New Roman", Times, Georgia, serif;
+          font-weight: 600;
+          color: #0f2b46;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           RICH CONTENT
+           ═══════════════════════════════════════════════════════════ */
+        .cdp-rich p {
+          margin: 0 0 8px 0;
+          text-align: justify;
+        }
+
+        .cdp-rich ul, .cdp-rich ol {
+          padding-left: 22px;
+          margin: 6px 0 12px 0;
+        }
+
+        .cdp-rich li {
+          margin-bottom: 4px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           IMAGES - STRUCTURED & CENTERED
+           ═══════════════════════════════════════════════════════════ */
+        img {
+          max-width: 100% !important;
+          height: auto !important;
+          display: block;
+          margin: 0 auto;
+        }
+
+        .curriculum-print-container img {
+          max-width: 100%;
+          height: auto;
+          object-fit: contain;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           UTILITY CLASSES
+           ═══════════════════════════════════════════════════════════ */
+        .text-center {
+          text-align: center;
+        }
+
+        .text-right {
+          text-align: right;
+        }
+
+        .mt-20 {
+          margin-top: 20px;
+        }
+
+        .mb-20 {
+          margin-bottom: 20px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           PRINT-SPECIFIC OVERRIDES
+           ═══════════════════════════════════════════════════════════ */
         @media print {
-          body * { visibility: visible; }
-          .curriculum-print-container, .curriculum-print-container * { visibility: visible; }
-          .curriculum-print-container {
-            position: relative;
-            display: block;
-            width: 100%;
+          body {
+            margin: 0;
+            padding: 0;
+            background: #fff;
+            max-width: 100%;
           }
+
+          .curriculum-print-container {
+            max-width: 100%;
+            padding: 0;
+          }
+
           .page-break {
             page-break-before: always;
           }
+
+          .toc-page {
+            padding: 20px 10px;
+          }
+
+          .toc-item {
+            white-space: normal;
+          }
+
+          th {
+            background-color: #e8eef4 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          a {
+            text-decoration: none;
+            color: #000;
+          }
+
+          a[href]::after {
+            content: "";
+          }
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           RESPONSIVE (SCREEN PREVIEW)
+           ═══════════════════════════════════════════════════════════ */
+        @media screen and (max-width: 768px) {
+          body {
+            font-size: 10pt;
+            padding: 10px;
+          }
+
+          .curriculum-print-container {
+            padding: 0 8px;
+          }
+
+          h1 { font-size: 18pt; }
+          h2 { font-size: 15pt; }
+          h3 { font-size: 13pt; }
+          h4 { font-size: 11pt; }
+
+          table {
+            font-size: 9pt;
+          }
+
+          th, td {
+            padding: 5px 6px;
+          }
+
+          .toc-page {
+            padding: 20px 10px;
+          }
+
+          .toc-item.level-1 { padding-left: 16px; }
+          .toc-item.level-2 { padding-left: 32px; }
+          .toc-item.level-3 { padding-left: 48px; }
+        }
+
+        @media screen and (max-width: 480px) {
+          body {
+            font-size: 9pt;
+            padding: 6px;
+          }
+
+          h1 { font-size: 16pt; }
+          h2 { font-size: 13pt; }
+          h3 { font-size: 11pt; }
+          h4 { font-size: 10pt; }
+
+          table {
+            font-size: 8pt;
+          }
+
+          th, td {
+            padding: 4px 5px;
+          }
+
+          .toc-item.level-1 { padding-left: 12px; }
+          .toc-item.level-2 { padding-left: 24px; }
+          .toc-item.level-3 { padding-left: 36px; }
         }
       </style>
     </head>
@@ -740,12 +995,10 @@ export const buildTOCItems = (bookData, markerMap, frontMatterCount = 0) => {
   return items;
 };
 
-
-
 /**
  * Generate HTML for the Table of Contents with accurate page numbers
  * @param {Object} bookData - Contains programData and courses
- * @param {Map<string, number>} coursePageMap - Map of courseCode -> page index (0‑based in curriculum PDF)
+ * @param {Map<string, number>} coursePageMap - Map of courseCode -> page index (0-based in curriculum PDF)
  * @param {number} coverPageCount - Number of pages in the cover PDF (to offset page numbers)
  * @returns {string} - HTML string for the TOC page
  */
