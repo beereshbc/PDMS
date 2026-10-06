@@ -16,7 +16,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://pdms-creater.vercel.app",
-  "https://pdms-admin.vercel.app",
+  "https://pdms-clone-o2vm.vercel.app",
 ];
 
 app.use(
@@ -68,6 +68,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: "Internal Server Error" });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is flying on port ${PORT}`);
-});
+// Keep your existing app.listen() only for local development
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Server is flying on port ${PORT}`);
+  });
+}
+
+// Export for Vercel
+export default app;
