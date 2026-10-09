@@ -23,7 +23,6 @@ import AdminDashboard from "./admin/pages/AdminDashboard";
 import PDReviewList from "./admin/pages/PDReviewList";
 import CDReviewList from "./admin/pages/CDReviewList";
 import CurriculumCompiler from "./admin/pages/CurriculumCompiler";
-import StaticAssetsManager from "./admin/pages/StaticAssetsManager";
 import PDReviewDetail from "./admin/pages/PDReviewDetail";
 
 const App = () => {
@@ -66,8 +65,8 @@ const App = () => {
             <Route path="/admin/pd-reviews" element={<PDReviewList />} />
             <Route path="/admin/cd-reviews" element={<CDReviewList />} />
             <Route path="/admin/compiler" element={<CurriculumCompiler />} />
-            <Route path="/admin/assets" element={<StaticAssetsManager />} />
             <Route path="/admin/pd-review/:id" element={<PDReviewDetail />} />
+       
           </>
         )}
 

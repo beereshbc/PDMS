@@ -5,7 +5,6 @@ import {
   FileSignature,
   Library,
   Layers,
-  Image as ImageIcon,
   LogOut,
   X,
 } from "lucide-react";
@@ -28,7 +27,6 @@ const AdminSidebar = ({ isMobileOpen, setIsMobileOpen }) => {
     { name: "PD Reviews", icon: FileSignature, path: "/admin/pd-reviews" },
     { name: "CD Reviews", icon: Library, path: "/admin/cd-reviews" },
     { name: "Curriculum Compiler", icon: Layers, path: "/admin/compiler" },
-    { name: "Static Assets", icon: ImageIcon, path: "/admin/assets" },
   ];
 
   return (

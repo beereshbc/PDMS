@@ -378,7 +378,7 @@ const buildApiService = (axios, createrToken) => {
     // NEW: AI table-paste parser — used by the "AI Auto-Fill" buttons across
     // both the 2024 and 2026 schemas
     parseTable: (body) =>
-      axios.post("/api/creater/pd/parse-table", body, { headers }),
+      axios.post("/api/creater/pd/ai-parse-table", body, { headers }),
   };
 };
 

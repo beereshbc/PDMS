@@ -17,18 +17,15 @@ import {
   getCDVersionsForAdmin,
   getGroupedCDReviews,
   getAllPDsForAdmin,
-  // ─── NEW IMPORTS ──────────────────────────────────────────────────────────
-  downloadCurriculumBook,
-  downloadCurriculumBookPD,
-  previewCurriculumBook,
   // ─── FRONT MATTER PAGES IMPORTS ─────────────────────────────────────────
   getFrontMatterPages, 
   saveFrontMatterPage,
   getFrontMatterPage,
   resetFrontMatterPage ,
   uploadFrontMatterImage,
-  exportCurriculumDocument,
-  exportMultipleFormats,
+  getApprovedCDsForProgram,
+  getCDByCourseCode,
+  getCDDetailById,
 } from "../controllers/adminController.js";
 import authAdmin from "../middlewares/adminAuth.js";
 
@@ -62,12 +59,6 @@ adminRouter.put("/reviews/cd/:id", processCDReview);
 adminRouter.get("/compiler/readiness/:programId", checkProgramReadiness);
 adminRouter.get("/compiler/compile/:programId", compileCurriculumBook);
 
-// ─── DOWNLOAD ROUTES ──────────────────────────────────────────────────────
-adminRouter.get("/compiler/download/:programId", downloadCurriculumBook);
-adminRouter.get("/compiler/download/pd/:programId", downloadCurriculumBookPD);
-
-// ─── NEW: PREVIEW ROUTE (returns HTML and TOC for frontend) ──────────────
-adminRouter.get("/compiler/preview/:programId", previewCurriculumBook);
 
 // Admin PD List
 adminRouter.get("/pds/all", getAllPDsForAdmin);
@@ -89,13 +80,9 @@ adminRouter.post('/compiler/frontmatter/reset/:pageName', resetFrontMatterPage);
 // ─── NEW: IMAGE UPLOAD ROUTE ─────────────────────────────────────────────
 adminRouter.post('/compiler/frontmatter/image', uploadFrontMatterImage);
 
-// ─── DOCUMENT EXPORT ROUTES ─────────────────────────────────────
 
-// Export as document (Word/HTML/DOCX)
-adminRouter.post("/export-doc/:programId", authAdmin, exportCurriculumDocument);
-
-// Export multiple formats at once
-adminRouter.post("/export-multiple/:programId", authAdmin, exportMultipleFormats);
-
+adminRouter.get("/compiler/program/:programId/cds", getApprovedCDsForProgram);
+adminRouter.get("/compiler/cd/:courseCode", getCDByCourseCode);
+adminRouter.get("/compiler/cd-by-id/:id", getCDDetailById);
 
 export default adminRouter;

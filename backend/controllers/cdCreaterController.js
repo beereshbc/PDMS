@@ -595,66 +595,98 @@ export const getCDCreatorHistory = async (req, res) => {
 export const getAssignedCDs = async (req, res) => {
   try {
     const creatorId = req.id;
+    const isMine = (c) => c?.assigneeId && String(c.assigneeId) === String(creatorId);
 
-    // Fetch all PDs where this creator is assigned, sorted by newest first
     const pds = await PD.find({
       $or: [
         { "pd_data.semesters.courses.assigneeId": creatorId },
-        { "pd_data.prof_electives.courses.assigneeId": creatorId },
-        { "pd_data.open_electives.courses.assigneeId": creatorId },
+        { "pd_data.semesters.categories.courses.assigneeId": creatorId },
+        { "pd_data.section4.professionalElectives.courses.assigneeId": creatorId },
+        { "pd_data.section4.openElectives.courses.assigneeId": creatorId },
+        // NEW: 2026 technical competency courses
+        { "pd_data.section4.technicalCompetencyCourses.assigneeId": creatorId },
       ],
-    })
-      .populate("created_by", "name email")
-      .sort({ created_at: -1 });
+    }).populate("created_by", "name");
 
-    // Use a Map to ensure we only get the LATEST assignment per unique Course Code
-    const assignedCoursesMap = new Map();
+    let assignedCourses = [];
 
     pds.forEach((pd) => {
-      const checkAndPush = (course, contextInfo) => {
-        if (course.assigneeId === creatorId) {
-          // If we haven't seen this courseCode yet, add it (since we sorted by newest PD first)
-          if (!assignedCoursesMap.has(course.code)) {
-            assignedCoursesMap.set(course.code, {
-              courseCode: course.code,
-              courseTitle: course.title,
-              credits: course.credits,
-              type: course.type || "Theory",
-              programCode: pd.program_id,
-              programName: pd.program_name,
-              pdVersion: pd.version_no,
-              pdCreatorName: pd.created_by?.name || "Unknown",
-              pdCreatorEmail: pd.created_by?.email || "Unknown",
-              context: contextInfo,
+      const pName = pd.program_name;
+      const pCode = pd.program_id;
+      const creatorName = pd.created_by?.name || "Admin";
+
+      pd.pd_data?.semesters?.forEach((sem) => {
+        sem.courses?.forEach((c) => {
+          if (isMine(c)) {
+            assignedCourses.push({
+              courseCode: c.code, courseTitle: c.title,
+              programName: pName, programCode: pCode,
+              type: c.type || "Theory", credits: c.credits,
+              context: `Semester ${sem.sem_no}`, pdCreatorName: creatorName,
             });
           }
+        });
+        sem.categories?.forEach((cat) => {
+          cat.courses?.forEach((c) => {
+            if (isMine(c)) {
+              assignedCourses.push({
+                courseCode: c.code, courseTitle: c.title,
+                programName: pName, programCode: pCode,
+                type: c.type || "Theory", credits: c.credits,
+                context: `Semester ${sem.sem_no} (${cat.categoryName})`,
+                pdCreatorName: creatorName,
+              });
+            }
+          });
+        });
+      });
+
+      pd.pd_data?.section4?.professionalElectives?.forEach((grp, gi) => {
+        grp.courses?.forEach((c) => {
+          if (isMine(c)) {
+            assignedCourses.push({
+              courseCode: c.code, courseTitle: c.title,
+              programName: pName, programCode: pCode,
+              type: "Professional Elective", credits: c.credits,
+              context: grp.title || `PE Group ${gi + 1}`,
+              pdCreatorName: creatorName,
+            });
+          }
+        });
+      });
+
+      pd.pd_data?.section4?.openElectives?.forEach((grp, gi) => {
+        grp.courses?.forEach((c) => {
+          if (isMine(c)) {
+            assignedCourses.push({
+              courseCode: c.code, courseTitle: c.title,
+              programName: pName, programCode: pCode,
+              type: "Open Elective", credits: c.credits,
+              context: grp.title || `OE Group ${gi + 1}`,
+              pdCreatorName: creatorName,
+            });
+          }
+        });
+      });
+
+      // NEW: 2026 Technical Competency Courses
+      pd.pd_data?.section4?.technicalCompetencyCourses?.forEach((c) => {
+        if (isMine(c)) {
+          assignedCourses.push({
+            courseCode: c.code, courseTitle: c.title,
+            programName: pName, programCode: pCode,
+            type: "Technical Competency", credits: c.credits,
+            context: "Technical Competency Courses",
+            pdCreatorName: creatorName,
+          });
         }
-      };
-
-      pd.pd_data?.semesters?.forEach((sem) =>
-        sem.courses?.forEach((c) => checkAndPush(c, `Semester ${sem.sem_no}`)),
-      );
-      pd.pd_data?.prof_electives?.forEach((grp) =>
-        grp.courses?.forEach((c) =>
-          checkAndPush(c, `Professional Elective (Sem ${grp.sem})`),
-        ),
-      );
-      pd.pd_data?.open_electives?.forEach((grp) =>
-        grp.courses?.forEach((c) =>
-          checkAndPush(c, `Open Elective (Sem ${grp.sem})`),
-        ),
-      );
+      });
     });
 
-    res.json({
-      success: true,
-      assignedCourses: Array.from(assignedCoursesMap.values()),
-    });
+    res.json({ success: true, assignedCourses });
   } catch (error) {
     console.error("Error fetching assigned CDs:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to fetch assigned courses." });
+    res.status(500).json({ success: false, message: "Failed to fetch assigned courses." });
   }
 };
 
