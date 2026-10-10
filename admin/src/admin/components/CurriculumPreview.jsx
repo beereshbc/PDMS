@@ -1403,6 +1403,70 @@ export const SingleCDPreviewModal = ({ isOpen, onClose, cd, meta, selectedSectio
 };
 
 /* ============================================================
+   FRONT MATTER ORDER
+
+   The backend may return front-matter files in filesystem/alphabetical
+   order. Never rely on that order for the compiled book. The book uses
+   this explicit publication order everywhere: preview, TOC, PDF/print,
+   and standalone HTML export.
+============================================================ */
+
+const FRONT_MATTER_ORDER = {
+  cover: 0,
+  chancellor: 1,
+  vc: 2,
+  pvc: 3,
+  registrar: 4,
+  director: 5,
+  hod: 6,
+  acknowledgement: 7,
+  bos: 8,
+  academic_council: 9,
+  back_cover: 10,
+};
+
+const normaliseFrontMatterKey = (name) => {
+  const value = String(name || "")
+    .toLowerCase()
+    .replace(/\.[^.]+$/, "")
+    .replace(/^\d+[_-]?/, "")
+    .replace(/[-\s]+/g, "_");
+
+  if (value === "cover" || value.includes("front_cover")) return "cover";
+  if (value === "chancellor" || (value.includes("chancellor") && !value.includes("vice"))) return "chancellor";
+  if (value === "pvc" || value.includes("pro_vice_chancellor") || value.includes("provice_chancellor")) return "pvc";
+  if (value === "vc" || value.includes("vice_chancellor")) return "vc";
+  if (value.includes("registrar")) return "registrar";
+  if (value.includes("director")) return "director";
+  if (value === "hod" || value.includes("head_of_department")) return "hod";
+  if (value.includes("acknowledg")) return "acknowledgement";
+  if (value === "bos" || value.includes("board_of_studies")) return "bos";
+  if (value.includes("academic_council")) return "academic_council";
+  if (value === "back" || value.includes("back_cover")) return "back_cover";
+
+  return value;
+};
+
+const frontMatterOrderValue = (page) => {
+  const key = normaliseFrontMatterKey(page?.name);
+  return Object.prototype.hasOwnProperty.call(FRONT_MATTER_ORDER, key)
+    ? FRONT_MATTER_ORDER[key]
+    : 1000;
+};
+
+const sortFrontMatterPages = (pages = []) =>
+  pages
+    .map((page, index) => ({ page, index }))
+    .sort((a, b) => {
+      const orderDiff = frontMatterOrderValue(a.page) - frontMatterOrderValue(b.page);
+      if (orderDiff !== 0) return orderDiff;
+
+      // Keep duplicate/unknown pages stable instead of alphabetically sorting them.
+      return a.index - b.index;
+    })
+    .map(({ page }) => page);
+
+/* ============================================================
    FULL CURRICULUM PREVIEW
 ============================================================ */
 
@@ -1429,37 +1493,37 @@ export const FullCurriculumPreview = ({
   const wrapRef = useRef(null);
   const areaRef = useRef(null);
 
-  /* Split front matter into ordered buckets */
+  /* Split front matter and apply the explicit publication order. */
   const frontMatterSplit = useMemo(() => {
     const cover = [];
     const acknowledgement = [];
     const council = [];
     const other = [];
     const backCover = [];
-    const norm = (s) => (s || "").toLowerCase();
 
     frontMatterPages.forEach((p) => {
-      const n = norm(p.name);
-      if (n.includes("back_cover") || n.includes("back-cover") || n === "back") {
+      const key = normaliseFrontMatterKey(p?.name);
+
+      if (key === "back_cover") {
         backCover.push(p);
-      } else if (n === "cover" || n.includes("front_cover")) {
+      } else if (key === "cover") {
         cover.push(p);
-      } else if (n.includes("acknowledg")) {
+      } else if (key === "acknowledgement") {
         acknowledgement.push(p);
-      } else if (
-        n.includes("academic_council") ||
-        n.includes("academic-council") ||
-        n === "bos" ||
-        n.includes("board_of_studies") ||
-        n.includes("board-of-studies")
-      ) {
+      } else if (key === "bos" || key === "academic_council") {
         council.push(p);
       } else {
         other.push(p);
       }
     });
 
-    return { cover, acknowledgement, council, other, backCover };
+    return {
+      cover: sortFrontMatterPages(cover),
+      acknowledgement: sortFrontMatterPages(acknowledgement),
+      council: sortFrontMatterPages(council),
+      other: sortFrontMatterPages(other),
+      backCover: sortFrontMatterPages(backCover),
+    };
   }, [frontMatterPages]);
 
   const sortedCDs = useMemo(() => {
@@ -1487,6 +1551,15 @@ export const FullCurriculumPreview = ({
 
     items.push({ id: "cpv-top", label: "Cover Page", level: 0, kind: "section" });
 
+    // Front matter follows the publication order, never the backend/filesystem order.
+    frontMatterSplit.other.forEach((p) =>
+      items.push({
+        id: `frontmatter-${p.name}`,
+        label: p.displayName || p.name,
+        level: 0,
+        kind: "front",
+      })
+    );
     frontMatterSplit.acknowledgement.forEach((p) =>
       items.push({
         id: `frontmatter-${p.name}`,
@@ -1503,14 +1576,6 @@ export const FullCurriculumPreview = ({
         kind: "front",
       });
     }
-    frontMatterSplit.other.forEach((p) =>
-      items.push({
-        id: `frontmatter-${p.name}`,
-        label: p.displayName || p.name,
-        level: 0,
-        kind: "front",
-      })
-    );
 
     items.push({ id: "cpv-toc", label: "Table of Contents", level: 0, kind: "section" });
 
@@ -1871,12 +1936,17 @@ export const FullCurriculumPreview = ({
               )}
             </div>
 
-            {/* 2. ACKNOWLEDGEMENT */}
+            {/* 2. OTHER FRONT MATTER: Chancellor → VC → PVC → Registrar → Director → HOD */}
+            {frontMatterSplit.other.map((p) => (
+              <FrontMatterPage key={p.name} page={p} id={`frontmatter-${p.name}`} />
+            ))}
+
+            {/* 3. ACKNOWLEDGEMENT */}
             {frontMatterSplit.acknowledgement.map((p) => (
               <FrontMatterPage key={p.name} page={p} id={`frontmatter-${p.name}`} />
             ))}
 
-            {/* 3. ACADEMIC COUNCIL + BOS (merged page) */}
+            {/* 4. ACADEMIC COUNCIL + BOS (merged page) */}
             {frontMatterSplit.council.length > 0 && (
               <div id="cpv-council" className="cpv-doc cpv-doc-fm">
                 {frontMatterSplit.council.map((p, i) => (
@@ -1905,11 +1975,6 @@ export const FullCurriculumPreview = ({
                 ))}
               </div>
             )}
-
-            {/* 4. OTHER FRONT MATTER */}
-            {frontMatterSplit.other.map((p) => (
-              <FrontMatterPage key={p.name} page={p} id={`frontmatter-${p.name}`} />
-            ))}
 
             {/* 5. TABLE OF CONTENTS */}
             <div className="cpv-doc" id="cpv-toc">
@@ -2511,6 +2576,8 @@ export const generateStandaloneHTML = ({
     grouped.get(s).push(cd);
   });
 
+  // Never use the backend filesystem order here.
+  // Apply the same explicit publication order used by the live preview.
   const cover = [];
   const acknowledgement = [];
   const council = [];
@@ -2518,27 +2585,29 @@ export const generateStandaloneHTML = ({
   const backCover = [];
 
   frontMatterPages.forEach((p) => {
-    const n = (p.name || "").toLowerCase();
-    if (n.includes("back_cover") || n.includes("back-cover") || n === "back") backCover.push(p);
-    else if (n === "cover" || n.includes("front_cover")) cover.push(p);
-    else if (n.includes("acknowledg")) acknowledgement.push(p);
-    else if (
-      n.includes("academic_council") ||
-      n.includes("academic-council") ||
-      n === "bos" ||
-      n.includes("board_of_studies") ||
-      n.includes("board-of-studies")
-    )
-      council.push(p);
+    const key = normaliseFrontMatterKey(p?.name);
+
+    if (key === "back_cover") backCover.push(p);
+    else if (key === "cover") cover.push(p);
+    else if (key === "acknowledgement") acknowledgement.push(p);
+    else if (key === "bos" || key === "academic_council") council.push(p);
     else other.push(p);
   });
+
+  // Explicit order: Cover → Chancellor → VC → PVC → Registrar → Director
+  // → HOD → Acknowledgement → BOS → Academic Council → Back Cover.
+  const orderedCover = sortFrontMatterPages(cover);
+  const orderedAcknowledgement = sortFrontMatterPages(acknowledgement);
+  const orderedCouncil = sortFrontMatterPages(council);
+  const orderedOther = sortFrontMatterPages(other);
+  const orderedBackCover = sortFrontMatterPages(backCover);
 
   const fmPageHTML = (p) => `<div class="cpv-doc cpv-doc-fm" id="frontmatter-${esc(p.name)}">
     <div class="cpv-frontpage">${normaliseAssets(p.content, "front_matter")}</div>
   </div>`;
 
-  const coverHTML = cover.length
-    ? cover.map(fmPageHTML).join("")
+  const coverHTML = orderedCover.length
+    ? orderedCover.map(fmPageHTML).join("")
     : `
     <div class="cpv-doc cpv-doc-fm" id="cpv-top">
       <div class="cpv-cover">
@@ -2581,8 +2650,8 @@ export const generateStandaloneHTML = ({
   const fmHTML = (pages) => pages.map(fmPageHTML).join("");
 
   const councilHTML =
-    council.length > 0
-      ? `<div class="cpv-doc cpv-doc-fm" id="cpv-council">${council
+    orderedCouncil.length > 0
+      ? `<div class="cpv-doc cpv-doc-fm" id="cpv-council">${orderedCouncil
           .map(
             (p, i) =>
               `${i > 0 ? '<div style="border-top:1pt solid var(--rule);margin:8mm 0 6mm 0;"></div>' : ""}
@@ -2601,13 +2670,21 @@ export const generateStandaloneHTML = ({
       <div class="cpv-toc-title">Table of Contents</div>
       <div class="cpv-toc-section">Front Matter</div>
       <div class="cpv-toc-entry"><span class="title">Cover Page</span><span class="num"></span></div>
+      ${orderedOther
+        .map(
+          (p) =>
+            `<div class="cpv-toc-entry cpv-toc-sub"><span class="title">${esc(
+              p.displayName || p.name
+            )}</span><span class="num"></span></div>`
+        )
+        .join("")}
       ${
-        acknowledgement.length
+        orderedAcknowledgement.length
           ? `<div class="cpv-toc-entry cpv-toc-sub"><span class="title">Acknowledgements</span><span class="num"></span></div>`
           : ""
       }
       ${
-        council.length
+        orderedCouncil.length
           ? `<div class="cpv-toc-entry cpv-toc-sub"><span class="title">Academic Council &amp; Board of Studies</span><span class="num"></span></div>`
           : ""
       }
@@ -2672,8 +2749,8 @@ export const generateStandaloneHTML = ({
     });
   });
 
-  const backHTML = backCover.length
-    ? fmHTML(backCover)
+  const backHTML = orderedBackCover.length
+    ? fmHTML(orderedBackCover)
     : `<div class="cpv-doc" id="cpv-back"><div class="cpv-backcover">
         <div class="bc-title">${esc(institution)}</div>
         <div class="bc-sub">End of Curriculum — ${esc(
@@ -2699,9 +2776,9 @@ export const generateStandaloneHTML = ({
 <body>
   <div class="cpv-print-area">
     ${coverHTML}
-    ${fmHTML(acknowledgement)}
+    ${fmHTML(orderedOther)}
+    ${fmHTML(orderedAcknowledgement)}
     ${councilHTML}
-    ${fmHTML(other)}
     ${tocHTML}
     ${bodyHTML}
     ${backHTML}

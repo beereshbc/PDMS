@@ -28,6 +28,9 @@ import {
   SortAsc,
   RefreshCw,
   FileCode,
+  Save,
+  RotateCcw,
+  AlertTriangle,
 } from "lucide-react";
 import { useAppContext } from "../context/AppContext";
 import { toast } from "react-hot-toast";
@@ -77,22 +80,26 @@ const ProgressBar = ({ pct }) => (
 );
 
 /* ============================================================
-   CLEAN EDITOR MODAL (unchanged — stub preserved)
+   HELPERS FOR FRONT MATTER EDITOR
 ============================================================ */
 
-const CleanEditorModal = ({
-  isOpen,
-  onClose,
-  pageName,
-  htmlContent,
-  onSave,
-  isSaving,
-  frontMatterPages,
-  getDisplayName,
-  onPageSelect,
-}) => {
-  if (!isOpen) return null;
-  return null; // preserved stub; original implementation untouched
+const fmBasename = (src) => {
+  if (!src) return "";
+  const clean = src.split("?")[0].split("#")[0];
+  return clean.split("/").pop() || "";
+};
+
+const fmEscapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const fmDisplaySrc = (src) => {
+  if (!src) return "";
+  if (/^(https?:|data:|blob:)/.test(src)) return src;
+  const filename = fmBasename(src);
+  if (!filename) return src;
+  const base =
+    (typeof import.meta !== "undefined" && import.meta.env?.VITE_BASE_URL) ||
+    "http://localhost:5000";
+  return `${base}/templates/front_matter/images/${filename}`;
 };
 
 /* ============================================================
@@ -128,13 +135,20 @@ const CurriculumCompiler = () => {
     sortBy: "semester-asc",
   }));
 
-  /* ---------------- Front matter ---------------- */
+  /* ---------------- Front matter (list) ---------------- */
   const [frontMatterPages, setFrontMatterPages] = useState([]);
   const [loadingPages, setLoadingPages] = useState(false);
+
+  /* ---------------- Front matter editor state ---------------- */
   const [pageEditorOpen, setPageEditorOpen] = useState(false);
   const [selectedPage, setSelectedPage] = useState(null);
-  const [pageContent, setPageContent] = useState("");
-  const [isSavingPage, setIsSavingPage] = useState(false);
+  const [editorDraft, setEditorDraft] = useState("");
+  const [editorOriginal, setEditorOriginal] = useState("");
+  const [editorTab, setEditorTab] = useState("visual"); // "visual" | "html"
+  const [editorSaving, setEditorSaving] = useState(false);
+  const [editorResetting, setEditorResetting] = useState(false);
+  const [editorUploadingImage, setEditorUploadingImage] = useState(null);
+  const editorRef = useRef(null);
 
   /* ---------------- Preview ---------------- */
   const [singlePreviewCD, setSinglePreviewCD] = useState(null);
@@ -286,20 +300,299 @@ const CurriculumCompiler = () => {
   }, []);
 
   /* ============================================================
-     FRONT MATTER HANDLERS
+     FRONT MATTER EDITOR HANDLERS
   ============================================================ */
 
-  const handleEditPage = (page) => {
-    setSelectedPage(page);
-    setPageContent(page.content || "");
+  const editorDirty = editorDraft !== editorOriginal;
+
+  const openEditor = () => {
+    if (frontMatterPages.length === 0) {
+      toast.error("No front matter pages available");
+      return;
+    }
+    const coverPage =
+      frontMatterPages.find((p) => p.name === "cover") || frontMatterPages[0];
+    setSelectedPage(coverPage);
+    setEditorDraft(coverPage.content || "");
+    setEditorOriginal(coverPage.content || "");
+    setEditorTab("visual");
     setPageEditorOpen(true);
   };
-  const handlePageSelect = (page) => {
+
+  // Prepare HTML for the visual editor.
+  // The saved HTML keeps the original image source, while the visual editor
+  // uses a browser-accessible URL for rendering.
+  const prepareVisualHtml = useCallback((html) => {
+    if (!html || typeof document === "undefined") return html || "";
+
+    const container = document.createElement("div");
+    container.innerHTML = html;
+
+    container.querySelectorAll("img").forEach((img) => {
+      const originalSrc =
+        img.getAttribute("data-original-src") || img.getAttribute("src") || "";
+
+      img.setAttribute("data-original-src", originalSrc);
+      img.setAttribute("data-editor-image", "true");
+      img.setAttribute("src", fmDisplaySrc(originalSrc));
+      img.setAttribute("title", "Click to replace this image");
+      img.style.cursor = "pointer";
+      img.style.maxWidth = "100%";
+      img.style.height = "auto";
+    });
+
+    return container.innerHTML;
+  }, []);
+
+  // Convert the visual editor HTML back to the original HTML before saving.
+  const serializeVisualHtml = useCallback(() => {
+    if (!editorRef.current) return editorDraft;
+
+    const container = editorRef.current.cloneNode(true);
+
+    container.querySelectorAll("img").forEach((img) => {
+      const originalSrc = img.getAttribute("data-original-src");
+      if (originalSrc) img.setAttribute("src", originalSrc);
+
+      img.removeAttribute("data-original-src");
+      img.removeAttribute("data-editor-image");
+      img.removeAttribute("title");
+      img.style.cursor = "";
+      img.style.maxWidth = "";
+      img.style.height = "";
+    });
+
+    return container.innerHTML;
+  }, [editorDraft]);
+
+  // Sync the contentEditable DOM whenever the selected page, editor tab,
+  // or modal visibility changes.
+  useEffect(() => {
+    if (!pageEditorOpen || editorTab !== "visual" || !editorRef.current) return;
+    editorRef.current.innerHTML = prepareVisualHtml(editorDraft);
+  }, [selectedPage, editorTab, pageEditorOpen, prepareVisualHtml]);
+
+  const handleSelectEditorPage = (page) => {
+    if (page.name === selectedPage?.name) return;
+
+    if (editorDirty && !confirm("You have unsaved changes. Discard them?")) {
+      return;
+    }
+
     setSelectedPage(page);
-    setPageContent(page.content || "");
+    setEditorDraft(page.content || "");
+    setEditorOriginal(page.content || "");
   };
-  const handleSavePage = async (/* payload */) => {
-    /* preserved — original implementation untouched */
+
+  const handleEditorInput = () => {
+    if (!editorRef.current) return;
+
+    // Keep the browser/display URL out of the saved HTML.
+    const content = serializeVisualHtml();
+    setEditorDraft(content);
+  };
+
+  const handleEditorImageClick = (event) => {
+    const image = event.target.closest("img[data-editor-image='true']");
+    if (!image) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const originalSrc =
+      image.getAttribute("data-original-src") || image.getAttribute("src") || "";
+
+    handleEditorReplaceImage({
+      src: originalSrc,
+      filename: fmBasename(originalSrc),
+      alt: image.getAttribute("alt") || "",
+      element: image,
+    });
+  };
+
+  const handleEditorSave = async () => {
+    if (!selectedPage) return;
+
+    setEditorSaving(true);
+
+    try {
+      const contentToSave =
+        editorTab === "visual" && editorRef.current
+          ? serializeVisualHtml()
+          : editorDraft;
+
+      await axios.post(
+        "/api/admin/compiler/frontmatter/save",
+        { pageName: selectedPage.name, content: contentToSave },
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
+
+      setEditorDraft(contentToSave);
+      setEditorOriginal(contentToSave);
+      toast.success("Changes saved successfully");
+      fetchFrontMatterPages();
+    } catch (err) {
+      console.error("Save error:", err);
+      toast.error(err.response?.data?.message || "Save failed");
+    } finally {
+      setEditorSaving(false);
+    }
+  };
+
+  const handleEditorReset = async () => {
+    if (!selectedPage) return;
+
+    const confirmed = confirm(
+      `Reset "${getDisplayName(selectedPage.name)}" to default?\n\nAll unsaved changes on this page will be lost.`
+    );
+
+    if (!confirmed) return;
+
+    setEditorResetting(true);
+
+    try {
+      const resetResponse = await axios.post(
+        `/api/admin/compiler/frontmatter/reset/${selectedPage.name}`,
+        {},
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
+
+      if (resetResponse.data?.success === false) {
+        throw new Error(resetResponse.data?.message || "Reset failed");
+      }
+
+      const { data } = await axios.get(
+        `/api/admin/compiler/frontmatter/page/${selectedPage.name}`,
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
+
+      if (!data.success || !data.page) {
+        throw new Error(data.message || "Failed to load the reset page");
+      }
+
+      const resetContent = data.page.content || "";
+
+      setSelectedPage(data.page);
+      setEditorDraft(resetContent);
+      setEditorOriginal(resetContent);
+      setEditorTab("visual");
+
+      if (editorRef.current) {
+        editorRef.current.innerHTML = prepareVisualHtml(resetContent);
+      }
+
+      await fetchFrontMatterPages();
+      toast.success("Page restored to default");
+    } catch (err) {
+      console.error("Reset error:", err);
+      toast.error(
+        err.response?.data?.message || err.message || "Reset failed"
+      );
+    } finally {
+      setEditorResetting(false);
+    }
+  };
+
+  const handleEditorReplaceImage = (imageMeta) => {
+    if (!selectedPage || !imageMeta?.filename) {
+      toast.error("Unable to identify the selected image");
+      return;
+    }
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+
+    input.onchange = async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      setEditorUploadingImage(imageMeta.filename);
+
+      try {
+        const formData = new FormData();
+        formData.append("pageName", selectedPage.name);
+        formData.append("filename", file.name);
+        formData.append("oldFilename", imageMeta.filename);
+        formData.append("image", file);
+
+        const { data } = await axios.post(
+          "/api/admin/compiler/frontmatter/image",
+          formData,
+          {
+            headers: {
+              Authorization: `Bearer ${adminToken}`,
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+
+        if (!data.success) {
+          toast.error(data.message || "Upload failed");
+          return;
+        }
+
+        const oldFilename = imageMeta.filename;
+        const newFilename = data.filename || file.name;
+
+        // Update the saved HTML source.
+        const re = new RegExp(
+          `(src\\s*=\\s*["'])([^"']*?${fmEscapeRe(oldFilename)})(["'])`,
+          "gi"
+        );
+
+        const updatedDraft = editorDraft.replace(
+          re,
+          (_match, quoteStart, src, quoteEnd) =>
+            `${quoteStart}${src.replace(oldFilename, newFilename)}${quoteEnd}`
+        );
+
+        setEditorDraft(updatedDraft);
+
+        // Update the image currently visible in the editor immediately.
+        if (editorRef.current) {
+          editorRef.current.querySelectorAll("img[data-editor-image='true']").forEach((img) => {
+            const currentOriginal =
+              img.getAttribute("data-original-src") || img.getAttribute("src") || "";
+
+            if (currentOriginal.includes(oldFilename)) {
+              const newOriginal = currentOriginal.replace(
+                oldFilename,
+                newFilename
+              );
+
+              img.setAttribute("data-original-src", newOriginal);
+              img.setAttribute("src", fmDisplaySrc(newOriginal));
+              img.setAttribute("title", "Click to replace this image");
+            }
+          });
+        }
+
+        toast.success("Image replaced. Click Save Changes to save it.");
+      } catch (err) {
+        console.error("Image replacement error:", err);
+        toast.error(
+          err.response?.data?.message || "Image upload failed"
+        );
+      } finally {
+        setEditorUploadingImage(null);
+      }
+    };
+
+    input.click();
+  };
+
+  const handleEditorClose = () => {
+    if (editorDirty && !confirm("You have unsaved changes. Close anyway?")) {
+      return;
+    }
+
+    setPageEditorOpen(false);
+    setSelectedPage(null);
+    setEditorDraft("");
+    setEditorOriginal("");
+    setEditorTab("visual");
+    setEditorUploadingImage(null);
   };
 
   /* ============================================================
@@ -534,7 +827,7 @@ const CurriculumCompiler = () => {
       displayName: getDisplayName(p.name),
     })),
     selectedCDs: getSelectedCDs,
-    selectedSections: globalSections, // ← same map applies to every selected CD
+    selectedSections: globalSections,
     programInfo: {
       programName: selectedPd?.program_name,
       programCode: selectedPd?.program_id,
@@ -728,7 +1021,7 @@ const CurriculumCompiler = () => {
               </div>
             )}
 
-            {/* Front Matter Editor */}
+            {/* Front Matter Editor card */}
             {selectedPd && readiness && !checking && (
               <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-sm">
                 <div className="flex items-center justify-between">
@@ -737,10 +1030,7 @@ const CurriculumCompiler = () => {
                     <h3 className="font-bold text-stone-700">Front Matter Pages</h3>
                   </div>
                   <button
-                    onClick={() => {
-                      if (frontMatterPages.length > 0) handleEditPage(frontMatterPages[0]);
-                      else toast.error("No front matter pages available");
-                    }}
+                    onClick={openEditor}
                     disabled={frontMatterPages.length === 0 || loadingPages}
                     className="flex items-center gap-2 px-4 py-2.5 bg-amber-600 text-white text-sm font-bold rounded-lg hover:bg-amber-700 transition-all shadow-md shadow-amber-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -800,7 +1090,6 @@ const CurriculumCompiler = () => {
 
                 {/* Filter panel */}
                 <div className="p-5 border-b border-stone-200 bg-stone-50/30 space-y-4">
-                  {/* Row 1: search + sort + reset */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div className="relative md:col-span-2">
                       <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
@@ -843,7 +1132,6 @@ const CurriculumCompiler = () => {
                     </button>
                   </div>
 
-                  {/* Row 2: semester chips */}
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wider mr-1">
                       Semesters:
@@ -880,7 +1168,6 @@ const CurriculumCompiler = () => {
                     })}
                   </div>
 
-                  {/* Row 3: status + availability */}
                   <div className="flex flex-wrap items-center gap-3">
                     <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wider mr-1">
                       Status:
@@ -919,7 +1206,6 @@ const CurriculumCompiler = () => {
                     </label>
                   </div>
 
-                  {/* Row 4: universal selection */}
                   <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-stone-200">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
@@ -1220,22 +1506,197 @@ const CurriculumCompiler = () => {
         curriculumConfig={curriculumConfig}
       />
 
-      {/* Front Matter Editor */}
-      <CleanEditorModal
-        isOpen={pageEditorOpen}
-        onClose={() => {
-          setPageEditorOpen(false);
-          setSelectedPage(null);
-          setPageContent("");
-        }}
-        pageName={selectedPage ? getDisplayName(selectedPage.name) : ""}
-        htmlContent={pageContent}
-        onSave={handleSavePage}
-        isSaving={isSavingPage}
-        frontMatterPages={frontMatterPages}
-        getDisplayName={getDisplayName}
-        onPageSelect={handlePageSelect}
-      />
+      {/* ============================================================
+          FRONT MATTER EDITOR MODAL (inline)
+      ============================================================ */}
+      {pageEditorOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-5">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[1180px] h-[88vh] min-h-[560px] flex flex-col overflow-hidden border border-stone-200">
+            {/* Header */}
+            <div className="flex items-center justify-between gap-4 px-5 py-3 border-b border-stone-200 bg-white flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+                  <FileCode size={18} className="text-amber-700" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-black text-stone-900 truncate">
+                      Front Matter Editor
+                    </h2>
+                    {selectedPage && (
+                      <span className="hidden sm:inline-flex text-[10px] font-bold text-stone-500 bg-stone-100 border border-stone-200 px-2 py-1 rounded-full">
+                        {getDisplayName(selectedPage.name)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-stone-500 mt-0.5 truncate">
+                    Edit pages directly. Click an image to replace it.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <button
+                  onClick={handleEditorReset}
+                  disabled={editorResetting || !selectedPage}
+                  title="Restore this page to its default content"
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-stone-600 border border-stone-300 rounded-lg hover:bg-stone-100 hover:border-stone-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {editorResetting ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <RotateCcw size={13} />
+                  )}
+                  Reset to Default
+                </button>
+
+                <button
+                  onClick={handleEditorSave}
+                  disabled={editorSaving || !editorDirty || !selectedPage}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {editorSaving ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Save size={13} />
+                  )}
+                  {editorDirty ? "Save Changes" : "Saved"}
+                </button>
+
+                <button
+                  onClick={handleEditorClose}
+                  title="Close editor"
+                  className="p-2 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition"
+                >
+                  <X size={17} />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex flex-1 min-h-0">
+              {/* Sidebar */}
+              <aside className="w-56 flex-shrink-0 border-r border-stone-200 bg-stone-50/70 overflow-y-auto">
+                <div className="p-3">
+                  <div className="flex items-center justify-between px-1 mb-2.5">
+                    <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
+                      Pages
+                    </p>
+                    <span className="text-[10px] font-bold text-stone-400">
+                      {frontMatterPages.length}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    {frontMatterPages.map((page) => {
+                      const isActive = page.name === selectedPage?.name;
+                      return (
+                        <button
+                          key={page.name}
+                          onClick={() => handleSelectEditorPage(page)}
+                          className={`w-full text-left px-3 py-2.5 rounded-lg text-xs transition-all ${
+                            isActive
+                              ? "bg-amber-100 text-amber-900 font-bold shadow-sm"
+                              : "text-stone-600 hover:bg-white hover:text-stone-900"
+                          }`}
+                        >
+                          <span className="block truncate">
+                            {getDisplayName(page.name)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </aside>
+
+              {/* Main editor */}
+              <main className="flex-1 flex flex-col min-w-0 bg-stone-100">
+                {/* Tab bar */}
+                <div className="h-11 flex items-end gap-1 px-4 border-b border-stone-200 bg-white flex-shrink-0">
+                  <button
+                    onClick={() => setEditorTab("visual")}
+                    className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-t-lg transition-colors ${
+                      editorTab === "visual"
+                        ? "bg-stone-50 border-b-2 border-amber-600 text-amber-700"
+                        : "text-stone-500 hover:text-stone-700 hover:bg-stone-50"
+                    }`}
+                  >
+                    <Eye size={13} /> Visual
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (editorTab === "visual") {
+                        setEditorDraft(serializeVisualHtml());
+                      }
+                      setEditorTab("html");
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-t-lg transition-colors ${
+                      editorTab === "html"
+                        ? "bg-stone-50 border-b-2 border-amber-600 text-amber-700"
+                        : "text-stone-500 hover:text-stone-700 hover:bg-stone-50"
+                    }`}
+                  >
+                    <FileCode size={13} /> HTML
+                  </button>
+
+                  {editorDirty && (
+                    <span className="ml-auto mr-2 mb-2 flex items-center gap-1 text-[10px] text-amber-600 font-bold">
+                      <AlertTriangle size={11} /> Unsaved changes
+                    </span>
+                  )}
+                </div>
+
+                {/* Content area */}
+                <div className="flex-1 min-h-0 overflow-hidden p-4 sm:p-5">
+                  {editorTab === "visual" ? (
+                    <div className="h-full overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-sm">
+                      <div className="min-h-full px-6 py-7 sm:px-10 sm:py-9">
+                        <div
+                          ref={editorRef}
+                          contentEditable
+                          suppressContentEditableWarning
+                          onInput={handleEditorInput}
+                          onClick={handleEditorImageClick}
+                          className="editor-document outline-none min-h-full text-stone-800 [&_img[data-editor-image='true']]:cursor-pointer [&_img[data-editor-image='true']]:transition-all [&_img[data-editor-image='true']:hover]:opacity-80 [&_img[data-editor-image='true']:hover]:ring-4 [&_img[data-editor-image='true']:hover]:ring-amber-200 [&_img[data-editor-image='true']:hover]:rounded-md"
+                          style={{
+                            fontFamily: "'Times New Roman', Times, serif",
+                            fontSize: "14px",
+                            lineHeight: 1.6,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <textarea
+                      value={editorDraft}
+                      onChange={(event) => setEditorDraft(event.target.value)}
+                      spellCheck={false}
+                      className="w-full h-full bg-slate-950 text-green-300 font-mono text-xs leading-6 p-4 rounded-xl border border-slate-800 outline-none resize-none focus:ring-2 focus:ring-amber-200"
+                    />
+                  )}
+                </div>
+
+                {/* Helpful footer */}
+                <div className="h-9 flex items-center justify-between px-4 border-t border-stone-200 bg-white text-[10px] text-stone-400 flex-shrink-0">
+                  <span>
+                    {editorTab === "visual"
+                      ? "Tip: click an image to replace it"
+                      : "HTML changes are applied when you switch to Visual"}
+                  </span>
+                  {editorUploadingImage && (
+                    <span className="flex items-center gap-1.5 text-amber-600 font-bold">
+                      <Loader2 size={11} className="animate-spin" />
+                      Uploading image…
+                    </span>
+                  )}
+                </div>
+              </main>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 };
