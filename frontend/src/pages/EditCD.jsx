@@ -317,7 +317,7 @@ const OptimizedInput = ({
         if (local !== value) onChange(e.target.value);
       }}
       className={[
-        `w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-150`,
+        `w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-150 disabled:bg-stone-100 disabled:text-stone-500 disabled:cursor-not-allowed disabled:border-stone-200`,
         className,
       ].join(" ")}
     />
@@ -1748,6 +1748,7 @@ const EditCD = () => {
     versionNo: "1.0.0",
     status: "Draft",
     isNew: true,
+    isLocked: false,
   });
   const [cdData, setCdData] = useState(sanitizeCDData({}));
 
@@ -1805,7 +1806,12 @@ const EditCD = () => {
       const savedDirty = localStorage.getItem("cd_draft_dirty");
       if (savedMeta && savedData) {
         try {
-          setMetaData(JSON.parse(savedMeta));
+          const parsedMeta = JSON.parse(savedMeta);
+          setMetaData({
+            ...parsedMeta,
+            isLocked:
+              parsedMeta.isLocked ?? Boolean(parsedMeta.courseCode || ""),
+          });
           setCdData(JSON.parse(savedData));
           if (savedDirty) setDirtySections(new Set(JSON.parse(savedDirty)));
           toast("Restored unsaved draft", { icon: "💾" });
@@ -1955,6 +1961,7 @@ const EditCD = () => {
       versionNo: fetchedCd.cdVersion || "1.0.0",
       status: fetchedCd.status || "Draft",
       isNew: false,
+      isLocked: true,
     });
     setDirtySections(new Set());
   };
@@ -1996,14 +2003,26 @@ const EditCD = () => {
 
   const loadExtractedCourse = (obj) => {
     const s = sanitizeCDData(obj);
-    setCdData(s);
+
+    // ── Preserve the current Course Code & Title — do NOT let the PDF overwrite them ──
+    const preservedCode = metaData.courseCode || cdData.courseCode || "";
+    const preservedTitle = metaData.courseTitle || cdData.courseTitle || "";
+
+    setCdData((prev) => ({
+      ...s,
+      courseCode: preservedCode,
+      courseTitle: preservedTitle,
+    }));
+
     setMetaData((p) => ({
       ...p,
-      courseCode: s.courseCode || "",
-      courseTitle: s.courseTitle || "",
-      programName: s.programTitle || "",
+      courseCode: preservedCode,
+      courseTitle: preservedTitle,
+      programName: s.programTitle || p.programName,
       isNew: true,
+      isLocked: true, // still locked after PDF parse (as before)
     }));
+
     setDirtySections(new Set(["all"]));
     setExtractedCourses([]);
   };
@@ -2082,6 +2101,7 @@ const EditCD = () => {
           setMetaData((p) => ({
             ...p,
             isNew: false,
+            isLocked: true,
             versionNo: data.version,
             status,
           }));
@@ -2132,14 +2152,15 @@ const EditCD = () => {
           courseTitle: course.courseTitle,
           programName: course.programName,
           isNew: true,
+          isLocked: true,
         }));
+        // ✅ FIX: use flat cdData shape (matches sanitizeCDData / transformForSave).
+        //    Previously this used `cdData.identity.*` which does not exist,
+        //    causing transformForSave() to send an empty identity.courseCode.
         setCdData((p) => ({
           ...p,
-          identity: {
-            ...p.identity,
-            courseCode: course.courseCode,
-            courseTitle: course.courseTitle,
-          },
+          courseCode: course.courseCode,
+          courseTitle: course.courseTitle,
           credits: { ...p.credits, total: course.credits || 0 },
         }));
         setDirtySections(new Set(["all"]));
@@ -2247,20 +2268,26 @@ const EditCD = () => {
         onPolish={() => handleSectionPolish("Course Identity", "identity")}
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-5 gap-y-4">
-          {identityFields.map((f) => (
-            <div key={f.key}>
-              <FieldLabel required={f.required}>{f.label}</FieldLabel>
-              <OptimizedInput
-                value={cdData[f.key] || cdData.identity?.[f.key]}
-                onChange={(v) => {
-                  upd(f.key, v);
-                  if (["courseCode", "courseTitle"].includes(f.key))
-                    setMetaData((p) => ({ ...p, [f.key]: v }));
-                }}
-                placeholder={f.label}
-              />
-            </div>
-          ))}
+          {identityFields.map((f) => {
+            const isLockedField =
+              metaData.isLocked &&
+              (f.key === "courseCode" || f.key === "courseTitle");
+            return (
+              <div key={f.key}>
+                <FieldLabel required={f.required}>{f.label}</FieldLabel>
+                <OptimizedInput
+                  value={cdData[f.key] || cdData.identity?.[f.key]}
+                  onChange={(v) => {
+                    upd(f.key, v);
+                    if (["courseCode", "courseTitle"].includes(f.key))
+                      setMetaData((p) => ({ ...p, [f.key]: v }));
+                  }}
+                  placeholder={f.label}
+                  disabled={isLockedField}
+                />
+              </div>
+            );
+          })}
           <div className="sm:col-span-2 xl:col-span-3">
             <FieldLabel>Semester Duration</FieldLabel>
             <OptimizedInput
