@@ -2976,13 +2976,13 @@ const EditCD = () => {
             <ArrowLeft size={16} /> Previous
           </button>
           <div className="flex items-center gap-2">
-            <button
+            {/* <button
               onClick={handleSaveAndNext}
               disabled={loading || !metaData.courseCode}
               className="px-4 py-2 text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl hover:bg-emerald-100 transition-all"
             >
               Save & Next
-            </button>
+            </button> */}
             <button
               onClick={() => setActiveStep((p) => Math.min(4, p + 1))}
               disabled={activeStep === 4}

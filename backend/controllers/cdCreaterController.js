@@ -10,6 +10,7 @@ import CD_Section3_Syllabus from "../models/cd/CD_Section3_Syllabus.js";
 import CD_Section4_Resources from "../models/cd/CD_Section4_Resources.js";
 import Admin from "../models/Admin.js";
 import PD from "../models/pd/PD.js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -698,7 +699,7 @@ export const parseTableWithAI = async (req, res) => {
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-3.5-flash",
       generationConfig: { responseMimeType: "application/json" },
     });
 
